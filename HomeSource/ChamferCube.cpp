@@ -52,12 +52,14 @@ void AChamferCube::AddQuadInternal(TArray<int32>& Triangles, int32 V1, int32 V2,
 {
     Triangles.Add(V1); Triangles.Add(V2); Triangles.Add(V3); // Triangle 1
     Triangles.Add(V1); Triangles.Add(V3); Triangles.Add(V4); // Triangle 2
+    //Triangles.Add(V1); Triangles.Add(V3); Triangles.Add(V2); // Triangle 1: V1 -> V3 -> V2
+    //Triangles.Add(V1); Triangles.Add(V4); Triangles.Add(V3); // Triangle 2: V1 -> V4 -> V3
 }
 
 // Dummy implementations for helper functions that are now integrated or changed
-void AChamferCube::GenerateMainFaces(float InnerSize, TArray<FVector>& Vertices, TArray<int32>& Triangles, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, const FVector InnerCorner[8]) {}
-void AChamferCube::GenerateEdgeChamfers(float Size, float ChamferSize, int32 Sections, TArray<FVector>& Vertices, TArray<int32>& Triangles, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, const FVector InnerCorner[8]) {}
-void AChamferCube::GenerateCornerChamfers(float ChamferSize, int32 Sections, TArray<FVector>& Vertices, TArray<int32>& Triangles, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, const FVector InnerCorner[8]) {}
+//void AChamferCube::GenerateMainFaces(float InnerSize, TArray<FVector>& Vertices, TArray<int32>& Triangles, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, const FVector InnerCorner[8]) {}
+//void AChamferCube::GenerateEdgeChamfers(float Size, float ChamferSize, int32 Sections, TArray<FVector>& Vertices, TArray<int32>& Triangles, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, const FVector InnerCorner[8]) {}
+//void AChamferCube::GenerateCornerChamfers(float ChamferSize, int32 Sections, TArray<FVector>& Vertices, TArray<int32>& Triangles, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, const FVector InnerCorner[8]) {}
 
 
 // Main Generation Function
@@ -161,14 +163,14 @@ void AChamferCube::GenerateChamferedCube(float Size, float ChamferSize, int32 Se
     int32 PzNxPy = GetOrAddVertex(FVector(-InnerOffset, InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(0, 1));
     int32 PzNxNy = GetOrAddVertex(FVector(-InnerOffset, -InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(0, 0));
     int32 PzPxNy = GetOrAddVertex(FVector(InnerOffset, -InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(1, 0));
-    AddQuadInternal(Triangles, PzNxNy, PzPxNy, PzPxPy, PzNxPy); // Winding for +Z
+    AddQuadInternal(Triangles, PzNxNy, PzNxPy, PzPxPy, PzPxNy); // Winding for +Z
 
     // -Z Face
     int32 NzPxPy = GetOrAddVertex(FVector(InnerOffset, InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(1, 0));
     int32 NzNxPy = GetOrAddVertex(FVector(-InnerOffset, InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(0, 0));
     int32 NzNxNy = GetOrAddVertex(FVector(-InnerOffset, -InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(0, 1));
     int32 NzPxNy = GetOrAddVertex(FVector(InnerOffset, -InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(1, 1));
-    AddQuadInternal(Triangles, NzNxNy, NzNxPy, NzPxPy, NzPxNy); // Winding for -Z
+    AddQuadInternal(Triangles, NzNxNy, NzPxNy, NzPxPy, NzNxPy); // Winding for -Z
 
 
     // --- 2. Generate Edge Chamfers (12 of them) ---
@@ -193,20 +195,26 @@ void AChamferCube::GenerateChamferedCube(float Size, float ChamferSize, int32 Se
 
     // +X direction edges
     EdgeDefs.Add({ 0, 1, FVector(1,0,0), FVector(0,-1,0), FVector(0,0,-1) }); // --X-Y-Z to +X-Y-Z
-    EdgeDefs.Add({ 2, 3, FVector(1,0,0), FVector(0,1,0), FVector(0,0,-1) }); // -X+Y-Z to +X+Y-Z
-    EdgeDefs.Add({ 4, 5, FVector(1,0,0), FVector(0,-1,0), FVector(0,0,1) }); // -X-Y+Z to +X-Y+Z
+    //EdgeDefs.Add({ 2, 3, FVector(1,0,0), FVector(0,1,0), FVector(0,0,-1) }); // -X+Y-Z to +X+Y-Z
+    EdgeDefs.Add({ 2, 3, FVector(1,0,0), FVector(0,0,-1), FVector(0,1,0) }); // --X-Y-Z to +X-Y-Z
+    //EdgeDefs.Add({ 4, 5, FVector(1,0,0), FVector(0,-1,0), FVector(0,0,1) }); // -X-Y+Z to +X-Y+Z
+    EdgeDefs.Add({ 4, 5, FVector(1,0,0), FVector(0,0,1), FVector(0,-1,0) }); // -X-Y+Z to +X-Y+Z
     EdgeDefs.Add({ 6, 7, FVector(1,0,0), FVector(0,1,0), FVector(0,0,1) }); // -X+Y+Z to +X+Y+Z
 
     // +Y direction edges
-    EdgeDefs.Add({ 0, 2, FVector(0,1,0), FVector(-1,0,0), FVector(0,0,-1) }); // -X-Y-Z to -X+Y-Z
+    //EdgeDefs.Add({ 0, 2, FVector(0,1,0), FVector(-1,0,0), FVector(0,0,-1) }); // -X-Y-Z to -X+Y-Z
+    EdgeDefs.Add({ 0, 2, FVector(0,1,0), FVector(0,0,-1), FVector(-1,0,0) }); // -X-Y-Z to -X+Y-Z
     EdgeDefs.Add({ 1, 3, FVector(0,1,0), FVector(1,0,0), FVector(0,0,-1) }); // +X-Y-Z to +X+Y-Z
     EdgeDefs.Add({ 4, 6, FVector(0,1,0), FVector(-1,0,0), FVector(0,0,1) }); // -X-Y+Z to -X+Y+Z
-    EdgeDefs.Add({ 5, 7, FVector(0,1,0), FVector(1,0,0), FVector(0,0,1) }); // +X-Y+Z to +X+Y+Z
+    //EdgeDefs.Add({ 5, 7, FVector(0,1,0), FVector(1,0,0), FVector(0,0,1) }); // +X-Y+Z to +X+Y+Z
+    EdgeDefs.Add({ 5, 7, FVector(0,1,0), FVector(0,0,1), FVector(1,0,0) }); // +X-Y+Z to +X+Y+Z
 
     // +Z direction edges
     EdgeDefs.Add({ 0, 4, FVector(0,0,1), FVector(-1,0,0), FVector(0,-1,0) }); // -X-Y-Z to -X-Y+Z
-    EdgeDefs.Add({ 1, 5, FVector(0,0,1), FVector(1,0,0), FVector(0,-1,0) }); // +X-Y-Z to +X-Y+Z
-    EdgeDefs.Add({ 2, 6, FVector(0,0,1), FVector(-1,0,0), FVector(0,1,0) }); // -X+Y-Z to -X+Y+Z
+    //EdgeDefs.Add({ 1, 5, FVector(0,0,1), FVector(1,0,0), FVector(0,-1,0) }); // +X-Y-Z to +X-Y+Z
+    EdgeDefs.Add({ 1, 5, FVector(0,0,1), FVector(0,-1,0), FVector(1,0,0) }); // +X-Y-Z to +X-Y+Z (Normals Swapped!)
+    //EdgeDefs.Add({ 2, 6, FVector(0,0,1), FVector(-1,0,0), FVector(0,1,0) }); // -X+Y-Z to -X+Y+Z
+    EdgeDefs.Add({ 2, 6, FVector(0,0,1), FVector(0,1,0), FVector(-1,0,0) }); // -X+Y-Z to -X+Y+Z
     EdgeDefs.Add({ 3, 7, FVector(0,0,1), FVector(1,0,0), FVector(0,1,0) }); // +X+Y-Z to +X+Y+Z
 
 
@@ -258,62 +266,61 @@ void AChamferCube::GenerateChamferedCube(float Size, float ChamferSize, int32 Se
 
 
     // --- 3. Generate Corner Chamfers (8 of them) ---
-    // These are spherical sections, connecting three main faces and three edge chamfers.
-    // Each corner is centered at a CorePoint.
+   // These are spherical sections, connecting three main faces and three edge chamfers.
+   // Each corner is centered at a CorePoint.
 
     for (int32 i = 0; i < 8; ++i)
     {
         FVector CurrentCorePoint = CorePoints[i];
 
-        // Define the three "axes" or primary directions from this core point
+        // 判断当前是否是您要特殊处理（渲染顺序不同）的角落
+        bool bSpecialCornerRenderingOrder = false; // 更名以明确其目的
+        if (i == 4 || i == 7 || i == 2 || i == 1) // 对应 -x-y+z, +x+y+z, -x+y-z, +x-y-z
+        {
+            bSpecialCornerRenderingOrder = true;
+        }
+
+        // 定义三个轴方向的法线
         FVector AxisX = FVector(FMath::Sign(CurrentCorePoint.X), 0, 0);
         FVector AxisY = FVector(0, FMath::Sign(CurrentCorePoint.Y), 0);
         FVector AxisZ = FVector(0, 0, FMath::Sign(CurrentCorePoint.Z));
 
-        // Use a grid for the spherical patch vertices
         TArray<TArray<int32>> CornerVerticesGrid;
         CornerVerticesGrid.SetNum(Sections + 1);
         for (int32 Lat = 0; Lat <= Sections; ++Lat)
         {
-            CornerVerticesGrid[Lat].SetNum(Sections + 1 - Lat); // Decreasing number of vertices per "latitude" ring
+            CornerVerticesGrid[Lat].SetNum(Sections + 1 - Lat);
         }
 
-        // Generate vertices for the quarter sphere
-        for (int32 Lat = 0; Lat <= Sections; ++Lat) // Latitude-like sections (from pole to equator)
+        // 生成四分之一球体的顶点
+        for (int32 Lat = 0; Lat <= Sections; ++Lat)
         {
-            float LatAlpha = (float)Lat / Sections; // V-coordinate for UV, also controls "elevation"
-            for (int32 Lon = 0; Lon <= Sections - Lat; ++Lon) // Longitude-like segments (around the pole)
+            float LatAlpha = (float)Lat / Sections;
+            for (int32 Lon = 0; Lon <= Sections - Lat; ++Lon)
             {
-                float LonAlpha = (float)Lon / Sections; // U-coordinate for UV, also controls "azimuth"
+                float LonAlpha = (float)Lon / Sections;
 
-                // Spherical Normal calculation based on the quadrant of the CorePoint
-                float XSign = FMath::Sign(CurrentCorePoint.X);
-                float YSign = FMath::Sign(CurrentCorePoint.Y);
-                float ZSign = FMath::Sign(CurrentCorePoint.Z);
+                FVector CurrentNormal = (AxisX * (1.0f - LatAlpha - LonAlpha) + AxisY * LatAlpha + AxisZ * LonAlpha);
+                CurrentNormal.Normalize();
 
-                // Use normalized barycentric coordinates to smoothly interpolate normals between the 3 axes.
-                // This is a common way to generate the surface for a spherical corner.
-                FVector CurrentNormal = (AxisX * (1.0f - LatAlpha - LonAlpha) + AxisY * LatAlpha + AxisZ * LonAlpha).GetSafeNormal();
-
-                // If you prefer a more direct spherical parametrization:
-                // float Phi = FMath::Lerp(0.0f, PI / 2.0f, LatAlpha); // Elevation from XY plane (0 to 90 degrees)
-                // float Theta = FMath::Lerp(0.0f, PI / 2.0f, LonAlpha); // Azimuth in XY plane (0 to 90 degrees)
-                // FVector CurrentNormal;
-                // CurrentNormal.X = XSign * FMath::Cos(Phi) * FMath::Cos(Theta);
-                // CurrentNormal.Y = YSign * FMath::Cos(Phi) * FMath::Sin(Theta);
-                // CurrentNormal.Z = ZSign * FMath::Sin(Phi);
-                // CurrentNormal.Normalize(); // Ensure unit vector
+                // *** 重要的是：这里不进行 CurrentNormal = -CurrentNormal; 的操作。***
+                // 法线本身应保持指向外部，只有渲染顺序改变。
 
                 FVector CurrentPos = CurrentCorePoint + CurrentNormal * ChamferSize;
 
-                // Simple UVs for the quarter sphere. May need refinement for proper texturing.
                 FVector2D UV = FVector2D(LonAlpha, LatAlpha);
+                // 如果需要，这里可以根据 bSpecialCornerRenderingOrder 调整 UV 映射
+                // 例如：
+                // if (bSpecialCornerRenderingOrder)
+                // {
+                //     UV = FVector2D(1.0f - LonAlpha, LatAlpha); // 示例：仅反转U轴，产生镜像纹理
+                // }
 
                 CornerVerticesGrid[Lat][Lon] = GetOrAddVertex(CurrentPos, CurrentNormal, UV);
             }
         }
 
-        // Generate triangles for the spherical patch
+        // 生成四分之一球体的三角形
         for (int32 Lat = 0; Lat < Sections; ++Lat)
         {
             for (int32 Lon = 0; Lon < Sections - Lat; ++Lon)
@@ -322,20 +329,31 @@ void AChamferCube::GenerateChamferedCube(float Size, float ChamferSize, int32 Se
                 int32 V10 = CornerVerticesGrid[Lat + 1][Lon];
                 int32 V01 = CornerVerticesGrid[Lat][Lon + 1];
 
-                // First triangle of the quad
-                Triangles.Add(V00); Triangles.Add(V10); Triangles.Add(V01); // Standard winding
+                // 根据是否是特殊角落，调整三角形缠绕顺序
+                if (bSpecialCornerRenderingOrder)
+                {
+                    Triangles.Add(V00); Triangles.Add(V01); Triangles.Add(V10);
+                }
+                else
+                {
+                    Triangles.Add(V00); Triangles.Add(V10); Triangles.Add(V01); // 原始: V00, V01, V10 -> 交换 V01 和 V10
+                }
 
-                // Second triangle if it's a quad (not at the very edge of the patch)
-                if (Lon < Sections - Lat - 1)
+                if (Lon + 1 < CornerVerticesGrid[Lat + 1].Num())
                 {
                     int32 V11 = CornerVerticesGrid[Lat + 1][Lon + 1];
-                    Triangles.Add(V10); Triangles.Add(V11); Triangles.Add(V01); // Second triangle
+                    if (bSpecialCornerRenderingOrder)
+                    {
+                        Triangles.Add(V10); Triangles.Add(V11); Triangles.Add(V01);
+                    }
+                    else
+                    {
+                        Triangles.Add(V10); Triangles.Add(V01); Triangles.Add(V11); // 原始: V10, V11, V01 -> 交换 V11 和 V01
+                    }
                 }
             }
         }
     }
-
-
     // Finally, create the mesh section
     ProceduralMesh->CreateMeshSection_LinearColor(
         0,                 // Section Index
