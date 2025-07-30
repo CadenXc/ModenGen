@@ -1,81 +1,113 @@
 #include "CubeGenerator.h"
-#include "KismetProceduralMeshLibrary.h"
-#include "Kismet/GameplayStatics.h"
-#include "ProceduralMeshComponent.h"
 
 ACubeGenerator::ACubeGenerator()
 {
-	PrimaryActorTick.bCanEverTick = false;
-
-	ProcMesh = CreateDefaultSubobject<UProceduralMeshComponent>("ProcMesh");
-	RootComponent = ProcMesh;
-	ProcMesh->CastShadow = true;
-	ProcMesh->SetCollisionResponseToChannel(ECollisionChannel::ECC_Visibility, ECollisionResponse::ECR_Block);
-	GenerateCube();
+    PrimaryActorTick.bCanEverTick = false;
+    ProcMesh = CreateDefaultSubobject<UProceduralMeshComponent>("ProcMesh");
+    RootComponent = ProcMesh;
 }
 
-void ACubeGenerator::BeginPlay()
+void ACubeGenerator::OnConstruction(const FTransform& Transform)
 {
-	Super::BeginPlay();
+    Super::OnConstruction(Transform);
+    GenerateBeveledCube();
 }
 
-void ACubeGenerator::GenerateCube()
+void ACubeGenerator::GenerateBeveledCube()
 {
-	FVector P0 = FVector(0.f, 0.f, 0.f);
-	FVector P1 = FVector(0.f, 0.f, CubeSize);
-	FVector P2 = FVector(CubeSize, 0.f, CubeSize);
-	FVector P3 = FVector(CubeSize, 0.f, 0.f);
-	FVector P4 = FVector(CubeSize, CubeSize, CubeSize);
-	FVector P5 = FVector(CubeSize, CubeSize, 0.f);
-	FVector P6 = FVector(0.f, CubeSize, CubeSize);
-	FVector P7 = FVector(0.f, CubeSize, 0.f);
+    TArray<FVector> Vertices;
+    TArray<int32> Triangles;
+    TArray<FVector> Normals;
+    TArray<FVector2D> UVs;
+    TArray<FProcMeshTangent> Tangents;
+    TArray<FColor> Colors;
 
-	// Front face
-	CreateFace(P1, P2, P4, P6, 0);
+    const float HalfSize = Size * 0.5f;
+    const float InnerSize = HalfSize - BevelRadius;
 
-	// Back face
-	CreateFace(P3, P0, P7, P5, 1);
+    // 8 corners of the cube
+    FVector Corners[8] = {
+        FVector(InnerSize, InnerSize, InnerSize),
+        FVector(InnerSize, InnerSize, -InnerSize),
+        FVector(InnerSize, -InnerSize, InnerSize),
+        FVector(InnerSize, -InnerSize, -InnerSize),
+        FVector(-InnerSize, InnerSize, InnerSize),
+        FVector(-InnerSize, InnerSize, -InnerSize),
+        FVector(-InnerSize, -InnerSize, InnerSize),
+        FVector(-InnerSize, -InnerSize, -InnerSize)
+    };
 
-	// Left face
-	CreateFace(P0, P1, P6, P7, 2);
+    // Add beveled corners
+    AddCorner(Vertices, Triangles, Corners[0], FVector(1, 0, 0), FVector(0, 1, 0), FVector(0, 0, 1));
+    AddCorner(Vertices, Triangles, Corners[1], FVector(1, 0, 0), FVector(0, 1, 0), FVector(0, 0, -1));
+    AddCorner(Vertices, Triangles, Corners[2], FVector(1, 0, 0), FVector(0, -1, 0), FVector(0, 0, 1));
+    AddCorner(Vertices, Triangles, Corners[3], FVector(1, 0, 0), FVector(0, -1, 0), FVector(0, 0, -1));
+    AddCorner(Vertices, Triangles, Corners[4], FVector(-1, 0, 0), FVector(0, 1, 0), FVector(0, 0, 1));
+    AddCorner(Vertices, Triangles, Corners[5], FVector(-1, 0, 0), FVector(0, 1, 0), FVector(0, 0, -1));
+    AddCorner(Vertices, Triangles, Corners[6], FVector(-1, 0, 0), FVector(0, -1, 0), FVector(0, 0, 1));
+    AddCorner(Vertices, Triangles, Corners[7], FVector(-1, 0, 0), FVector(0, -1, 0), FVector(0, 0, -1));
 
-	// Right face
-	CreateFace(P2, P3, P5, P4, 3);
+    // Add flat faces
+    AddQuad(Vertices, Triangles, Corners[2], Corners[0], Corners[4], Corners[6]); // Front
+    AddQuad(Vertices, Triangles, Corners[1], Corners[3], Corners[7], Corners[5]); // Back
+    AddQuad(Vertices, Triangles, Corners[1], Corners[0], Corners[2], Corners[3]); // Right
+    AddQuad(Vertices, Triangles, Corners[4], Corners[5], Corners[7], Corners[6]); // Left
+    AddQuad(Vertices, Triangles, Corners[4], Corners[0], Corners[1], Corners[5]); // Top
+    AddQuad(Vertices, Triangles, Corners[7], Corners[3], Corners[2], Corners[6]); // Bottom
 
-	// Top face
-	CreateFace(P6, P4, P5, P7, 4);
+    // Generate normals and UVs
+    for (int32 i = 0; i < Vertices.Num(); i++)
+    {
+        Normals.Add(Vertices[i].GetSafeNormal());
+        UVs.Add(FVector2D(Vertices[i].X, Vertices[i].Y) / Size + 0.5f);
+        Tangents.Add(FProcMeshTangent(1, 0, 0));
+        Colors.Add(FColor::White);
+    }
 
-	// Bottom face
-	CreateFace(P0, P3, P2, P1, 5);
+    ProcMesh->CreateMeshSection(0, Vertices, Triangles, Normals, UVs, Colors, Tangents, true);
 }
 
-void ACubeGenerator::CreateFace(const FVector& BottomLeft, const FVector& BottomRight,
-	const FVector& TopRight, const FVector& TopLeft, int32 SectionIndex)
+void ACubeGenerator::AddQuad(TArray<FVector>& Vertices, TArray<int32>& Triangles,
+    const FVector& A, const FVector& B, const FVector& C, const FVector& D)
 {
-	TArray<FVector> Vertices = { BottomLeft, TopLeft, TopRight, BottomRight };
-	TArray<int32> Triangles = { 0,1,2, 0,2,3 };
+    int32 Index = Vertices.Num();
+    Vertices.Add(A); Vertices.Add(B); Vertices.Add(C); Vertices.Add(D);
 
-	TArray<FVector> Normals;
-	TArray<FColor> Colors;
+    Triangles.Add(Index); Triangles.Add(Index + 1); Triangles.Add(Index + 2);
+    Triangles.Add(Index); Triangles.Add(Index + 2); Triangles.Add(Index + 3);
+}
 
-	FVector InternalNormal = FVector::CrossProduct(Vertices[1] - Vertices[0], Vertices[2] - Vertices[0]).GetSafeNormal();
+void ACubeGenerator::AddCorner(TArray<FVector>& Vertices, TArray<int32>& Triangles,
+    const FVector& Center, const FVector& X, const FVector& Y, const FVector& Z)
+{
+    int32 BaseIndex = Vertices.Num();
 
-	FVector Normal = InternalNormal;
-	const int32 VertexSize = 4;
-	for (int32 i = 0; i < 4; i++)
-	{
-		Normals.Add(Normal);
-		Colors.Add(FColor::White);
-	}
+    // Generate vertices
+    for (int32 i = 0; i <= BevelSegments; i++)
+    {
+        float Phi = PI * 0.5f * i / BevelSegments;
+        for (int32 j = 0; j <= BevelSegments; j++)
+        {
+            float Theta = PI * 0.5f * j / BevelSegments;
+            FVector Dir = (X * FMath::Sin(Phi) * FMath::Cos(Theta) +
+                Y * FMath::Sin(Phi) * FMath::Sin(Theta) +
+                Z * FMath::Cos(Phi)).GetSafeNormal();
+            Vertices.Add(Center + Dir * BevelRadius);
+        }
+    }
 
-	TArray<FVector2D> UVs;
-	UVs.Add(FVector2D(0, 0));
-	UVs.Add(FVector2D(1, 0));
-	UVs.Add(FVector2D(1, 1));
-	UVs.Add(FVector2D(0, 1));
+    // Generate triangles
+    for (int32 i = 0; i < BevelSegments; i++)
+    {
+        for (int32 j = 0; j < BevelSegments; j++)
+        {
+            int32 a = BaseIndex + i * (BevelSegments + 1) + j;
+            int32 b = BaseIndex + (i + 1) * (BevelSegments + 1) + j;
+            int32 c = BaseIndex + (i + 1) * (BevelSegments + 1) + j + 1;
+            int32 d = BaseIndex + i * (BevelSegments + 1) + j + 1;
 
-	TArray<FProcMeshTangent> Tangents;
-	UKismetProceduralMeshLibrary::CalculateTangentsForMesh(Vertices, Triangles, UVs, Normals, Tangents);
-
-	ProcMesh->CreateMeshSection(SectionIndex, Vertices, Triangles, Normals, UVs, Colors, Tangents, true);
+            Triangles.Add(a); Triangles.Add(b); Triangles.Add(c);
+            Triangles.Add(a); Triangles.Add(c); Triangles.Add(d);
+        }
+    }
 }

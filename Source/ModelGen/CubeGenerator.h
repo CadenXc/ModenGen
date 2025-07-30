@@ -1,37 +1,40 @@
-#pragma once
 
+#pragma once
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "ProceduralMeshComponent.h"
 #include "CubeGenerator.generated.h"
 
-class UProceduralMeshComponent;
-
-UCLASS()
+UCLASS(meta = (BlueprintSpawnableComponent))
 class MODELGEN_API ACubeGenerator : public AActor
 {
-	GENERATED_BODY()
+    GENERATED_BODY()
 
 public:
-	ACubeGenerator();
+    ACubeGenerator();
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube")
-		float CubeSize = 100.0f;
+    UPROPERTY(VisibleAnywhere)
+        UProceduralMeshComponent* ProcMesh;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube")
-		int32 ChamferDegree = 1;
+    UPROPERTY(EditAnywhere, Category = "Cube Settings")
+        float Size = 100.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cube")
-		float ChamferRadius = 0.1f;
+    UPROPERTY(EditAnywhere, Category = "Cube Settings", meta = (ClampMin = "0.1", ClampMax = "50.0"))
+        float BevelRadius = 10.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Cube Settings", meta = (ClampMin = "1", ClampMax = "8"))
+        int32 BevelSegments = 4;
+
+    UFUNCTION(BlueprintCallable, Category = "Generation")
+        void GenerateBeveledCube();
 
 protected:
-	virtual void BeginPlay() override;
+    virtual void OnConstruction(const FTransform& Transform) override;
 
 private:
-	UProceduralMeshComponent* ProcMesh;
-
-	void GenerateCube();
-	void CreateFace(const FVector& BottomLeft, const FVector& BottomRight,
-		const FVector& TopRight, const FVector& TopLeft, int32 SectionIndex);
+    void AddQuad(TArray<FVector>& Vertices, TArray<int32>& Triangles,
+        const FVector& A, const FVector& B, const FVector& C, const FVector& D);
+    void AddCorner(TArray<FVector>& Vertices, TArray<int32>& Triangles,
+        const FVector& Center, const FVector& X, const FVector& Y, const FVector& Z);
 };
-
 
