@@ -20,12 +20,12 @@ bin-release/
 # UE
 .vs/
 Binaries/
-Config/
-Content/
+#Config/
+#Content/
 DerivedDataCache/
 Intermediate/
 Saved/
 Script/
 ModelGen.sln
-ModelGen.uproject
+#ModelGen.uproject
 
