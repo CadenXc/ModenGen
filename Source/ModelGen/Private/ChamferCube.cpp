@@ -10,16 +10,16 @@ AChamferCube::AChamferCube()
     ProceduralMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("GeneratedMesh"));
     RootComponent = ProceduralMesh;
 
-    // ÆôÓÃÒì²½Åö×²Íø¸ñÉú³É£¬Ìá¸ßĞÔÄÜ
+    // å¯ç”¨å¼‚æ­¥ç¢°æ’ç½‘æ ¼ç”Ÿæˆï¼Œæé«˜æ€§èƒ½
     ProceduralMesh->bUseAsyncCooking = true; 
-    // ÆôÓÃÅö×²²éÑ¯ºÍÎïÀí
+    // å¯ç”¨ç¢°æ’æŸ¥è¯¢å’Œç‰©ç†
     ProceduralMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-    // Ä¬ÈÏ²»Ä£ÄâÎïÀí
+    // é»˜è®¤ä¸æ¨¡æ‹Ÿç‰©ç†
     ProceduralMesh->SetSimulatePhysics(false);
 
     GenerateChamferedCube(CubeSize, CubeChamferSize, ChamferSections);
 
-    // ÉèÖÃ²ÄÖÊ
+    // è®¾ç½®æè´¨
     static ConstructorHelpers::FObjectFinder<UMaterial> MaterialFinder(TEXT("Material'/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall'"));
     if (MaterialFinder.Succeeded())
     {
@@ -39,66 +39,68 @@ void AChamferCube::BeginPlay()
 
 }
 
+void AChamferCube::OnConstruction(const FTransform& Transform)
+{
+    Super::OnConstruction(Transform);
+    GenerateChamferedCube(CubeSize, CubeChamferSize, ChamferSections);
+
+}
 void AChamferCube::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 }
 
-// ¸¨Öúº¯Êı£ºÌí¼Ó¶¥µã£¬²¢·µ»ØÆäÔÚ¶¥µãÊı×éÖĞµÄË÷Òı
-// ²ÎÊı£º
-//   Vertices: ¶¥µãÎ»ÖÃÊı×é
-//   Normals: ¶¥µã·¨ÏßÊı×é
-//   UV0: ¶¥µãUV×ø±êÊı×é£¨µÚ0Ì×UV£©
-//   VertexColors: ¶¥µãÑÕÉ«Êı×é
-//   Tangents: ¶¥µãÇĞÏßÊı×é
-//   Pos: ¶¥µãÎ»ÖÃ
-//   Normal: ¶¥µã·¨Ïß
-//   UV: ¶¥µãUV×ø±ê
+// è¾…åŠ©å‡½æ•°ï¼šæ·»åŠ é¡¶ç‚¹ï¼Œå¹¶è¿”å›å…¶åœ¨é¡¶ç‚¹æ•°ç»„ä¸­çš„ç´¢å¼•
+// å‚æ•°ï¼š/
+//   Vertices: é¡¶ç‚¹ä½ç½®æ•°ç»„
+//   Normals: é¡¶ç‚¹æ³•çº¿æ•°ç»„
+//   UV0: é¡¶ç‚¹UVåæ ‡æ•°ç»„ï¼ˆç¬¬0å¥—UVï¼‰
+//   VertexColors: é¡¶ç‚¹é¢œè‰²æ•°ç»„
+//   Tangents: é¡¶ç‚¹åˆ‡çº¿æ•°ç»„
+//   Pos: é¡¶ç‚¹ä½ç½®
+//   Normal: é¡¶ç‚¹æ³•çº¿
+//   UV: é¡¶ç‚¹UVåæ ‡
 int32 AChamferCube::AddVertexInternal(TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents,
     const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
     Vertices.Add(Pos);
     Normals.Add(Normal);
     UV0.Add(UV);
-    VertexColors.Add(FLinearColor::White); // Ìí¼Ó¶¥µãÑÕÉ«£¬Ä¬ÈÏÎª°×É«
+    //VertexColors.Add(FLinearColor::White);
 
-    // ¼ÆËãÇĞÏß£ºÍ¨³£ÇĞÏß´¹Ö±ÓÚ·¨ÏßºÍUpVector¡£
-    // Èç¹û·¨ÏßºÍUpVector¹²Ïß£¨ÀıÈç·¨Ïß³¯ÉÏ»ò³¯ÏÂ£©£¬ÔòÊ¹ÓÃRightVector×÷Îª±¸ÓÃ¡£
+    // è®¡ç®—åˆ‡çº¿ï¼šé€šå¸¸åˆ‡çº¿å‚ç›´äºæ³•çº¿å’ŒUpVectorã€‚
+    // å¦‚æœæ³•çº¿å’ŒUpVectorå…±çº¿ï¼ˆä¾‹å¦‚æ³•çº¿æœä¸Šæˆ–æœä¸‹ï¼‰ï¼Œåˆ™ä½¿ç”¨RightVectorä½œä¸ºå¤‡ç”¨ã€‚
     FVector TangentDirection = FVector::CrossProduct(Normal, FVector::UpVector);
-    if (TangentDirection.IsNearlyZero()) // Èç¹û²æ»ı½á¹û½Ó½üÁãÏòÁ¿£¬ËµÃ÷·¨ÏßºÍUpVectorÆ½ĞĞ»ò·´Æ½ĞĞ
+    if (TangentDirection.IsNearlyZero()) // å¦‚æœå‰ç§¯ç»“æœæ¥è¿‘é›¶å‘é‡ï¼Œè¯´æ˜æ³•çº¿å’ŒUpVectorå¹³è¡Œæˆ–åå¹³è¡Œ
     {
-        TangentDirection = FVector::CrossProduct(Normal, FVector::RightVector); // ³¢ÊÔÓëRightVector²æ»ı
+        TangentDirection = FVector::CrossProduct(Normal, FVector::RightVector); // å°è¯•ä¸RightVectorå‰ç§¯
     }
-    TangentDirection.Normalize(); // ¹éÒ»»¯ÇĞÏßÏòÁ¿
-    Tangents.Add(FProcMeshTangent(TangentDirection, false)); // Ìí¼ÓÇĞÏß£¬false±íÊ¾ÇĞÏß·½ÏòÎ´·­×ª
+    TangentDirection.Normalize(); // å½’ä¸€åŒ–åˆ‡çº¿å‘é‡
+    Tangents.Add(FProcMeshTangent(TangentDirection, false)); // æ·»åŠ åˆ‡çº¿ï¼Œfalseè¡¨ç¤ºåˆ‡çº¿æ–¹å‘æœªç¿»è½¬
 
-    return Vertices.Num() - 1; // ·µ»ØĞÂÌí¼Ó¶¥µãµÄË÷Òı
+    return Vertices.Num() - 1; // è¿”å›æ–°æ·»åŠ é¡¶ç‚¹çš„ç´¢å¼•
 }
 
-// ¸¨Öúº¯Êı£ºÌí¼ÓÒ»¸öËÄ±ßĞÎ£¨ÓÉÁ½¸öÈı½ÇĞÎ×é³É£©
-// ´Ëº¯Êı°´ÕÕ V1-V2-V3-V4 µÄË³Ğò´´½¨ËÄ±ßĞÎ£¬ÒÔÈ·±£ÍâÏòÃæµÄÄæÊ±Õë²øÈÆË³Ğò¡£
-// ËÄ±ßĞÎÊ¾ÒâÍ¼£º
+// è¾…åŠ©å‡½æ•°ï¼šæ·»åŠ ä¸€ä¸ªå››è¾¹å½¢ï¼ˆç”±ä¸¤ä¸ªä¸‰è§’å½¢ç»„æˆï¼‰
+// æ­¤å‡½æ•°æŒ‰ç…§ V1-V2-V3-V4 çš„é¡ºåºåˆ›å»ºå››è¾¹å½¢ï¼Œä»¥ç¡®ä¿å¤–å‘é¢çš„é€†æ—¶é’ˆç¼ ç»•é¡ºåºã€‚
+// å››è¾¹å½¢ç¤ºæ„å›¾ï¼š
 // V1 -- V4
 // |    |
 // V2 -- V3
 void AChamferCube::AddQuadInternal(TArray<int32>& Triangles, int32 V1, int32 V2, int32 V3, int32 V4)
 {
-    // Èı½ÇĞÎ1£ºV1 -> V2 -> V3 (ÄæÊ±Õë²øÈÆ£¬ÓÃÓÚÍâÏòÃæ)
     Triangles.Add(V1); Triangles.Add(V2); Triangles.Add(V3);
-    // Èı½ÇĞÎ2£ºV1 -> V3 -> V4 (ÄæÊ±Õë²øÈÆ£¬ÓÃÓÚÍâÏòÃæ)
     Triangles.Add(V1); Triangles.Add(V3); Triangles.Add(V4);
 }
 
 int32 AChamferCube::GetOrAddVertex(TMap<FVector, int32>& UniqueVerticesMap, TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
-	// ³¢ÊÔÔÚ UniqueVerticesMap ÖĞ²éÕÒµ±Ç°Î»ÖÃµÄ¶¥µã
 	int32* FoundIndex = UniqueVerticesMap.Find(Pos);
 	if (FoundIndex)
 	{
 		return *FoundIndex; 
 	}
 
-	// Èç¹ûÎ´ÕÒµ½£¬ÔòÌí¼ÓĞÂ¶¥µã
 	int32 NewIndex = AddVertexInternal(Vertices, Normals, UV0, VertexColors, Tangents, Pos, Normal, UV);
 	UniqueVerticesMap.Add(Pos, NewIndex); 
 	return NewIndex; 
@@ -106,12 +108,12 @@ int32 AChamferCube::GetOrAddVertex(TMap<FVector, int32>& UniqueVerticesMap, TArr
 
 void AChamferCube::GenerateMainFaces(TMap<FVector, int32>& UniqueVerticesMap, TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, TArray<int32>& Triangles, float HalfSize, float InnerOffset)
 {
-    // --- 1. Éú³ÉÖ÷Ãæ£¨6¸ö£©µÄ¶¥µãºÍÈı½ÇĞÎ ---
-    // ÕâĞ©ÊÇÁ¢·½ÌåµÄ´óÆ½Ãæ±íÃæ¡£ËüÃÇµÄ¶¥µãÊÇµ¹½Ç¿ªÊ¼µÄµØ·½¡£
-    // Ã¿¸öÖ÷ÃæÓÉ4¸ö¶¥µã¶¨Òå£¬ÕâĞ©¶¥µãÎ»ÓÚÖ÷Æ½ÃæºÍµ¹½Ç°ë¾¶µÄ½»µã´¦¡£
+    // --- 1. ç”Ÿæˆä¸»é¢ï¼ˆ6ä¸ªï¼‰çš„é¡¶ç‚¹å’Œä¸‰è§’å½¢ ---
+    // è¿™äº›æ˜¯ç«‹æ–¹ä½“çš„å¤§å¹³é¢è¡¨é¢ã€‚å®ƒä»¬çš„é¡¶ç‚¹æ˜¯å€’è§’å¼€å§‹çš„åœ°æ–¹ã€‚
+    // æ¯ä¸ªä¸»é¢ç”±4ä¸ªé¡¶ç‚¹å®šä¹‰ï¼Œè¿™äº›é¡¶ç‚¹ä½äºä¸»å¹³é¢å’Œå€’è§’åŠå¾„çš„äº¤ç‚¹å¤„ã€‚
 
-    // +X Ãæ (·¨Ïß: (1,0,0))
-    // ÕâĞ©¶¥µã¶¨ÒåÁË +X ÃæÔÚµ¹½ÇÆğµã´¦µÄËÄ¸ö½Çµã
+    // +X é¢ (æ³•çº¿: (1,0,0))
+    // è¿™äº›é¡¶ç‚¹å®šä¹‰äº† +X é¢åœ¨å€’è§’èµ·ç‚¹å¤„çš„å››ä¸ªè§’ç‚¹
     int32 PxPyPz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
         FVector(HalfSize, InnerOffset, InnerOffset), FVector(1, 0, 0), FVector2D(0, 1));
     int32 PxPyNz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
@@ -123,7 +125,7 @@ void AChamferCube::GenerateMainFaces(TMap<FVector, int32>& UniqueVerticesMap, TA
     AddQuadInternal(Triangles, PxNyNz, PxNyPz, PxPyPz, PxPyNz);
 
 
-    // -X Ãæ (·¨Ïß: (-1,0,0))
+    // -X é¢ (æ³•çº¿: (-1,0,0))
     int32 NxPyPz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
         FVector(-HalfSize, InnerOffset, InnerOffset), FVector(-1, 0, 0), FVector2D(1, 1));
     int32 NxPyNz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
@@ -134,7 +136,7 @@ void AChamferCube::GenerateMainFaces(TMap<FVector, int32>& UniqueVerticesMap, TA
         FVector(-HalfSize, -InnerOffset, InnerOffset), FVector(-1, 0, 0), FVector2D(0, 1));
     AddQuadInternal(Triangles, NxNyNz, NxPyNz, NxPyPz, NxNyPz);
 
-    // +Y Ãæ (·¨Ïß: (0,1,0))
+    // +Y é¢ (æ³•çº¿: (0,1,0))
     int32 PyPxPz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
         FVector(InnerOffset, HalfSize, InnerOffset), FVector(0, 1, 0), FVector2D(0, 1));
     int32 PyPxNz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
@@ -145,7 +147,7 @@ void AChamferCube::GenerateMainFaces(TMap<FVector, int32>& UniqueVerticesMap, TA
         FVector(-InnerOffset, HalfSize, InnerOffset), FVector(0, 1, 0), FVector2D(1, 1));
     AddQuadInternal(Triangles, PyNxNz, PyPxNz, PyPxPz, PyNxPz);
 
-    // -Y Ãæ (·¨Ïß: (0,-1,0))
+    // -Y é¢ (æ³•çº¿: (0,-1,0))
     int32 NyPxPz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
         FVector(InnerOffset, -HalfSize, InnerOffset), FVector(0, -1, 0), FVector2D(1, 1));
     int32 NyPxNz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
@@ -156,7 +158,7 @@ void AChamferCube::GenerateMainFaces(TMap<FVector, int32>& UniqueVerticesMap, TA
         FVector(-InnerOffset, -HalfSize, InnerOffset), FVector(0, -1, 0), FVector2D(0, 1));
     AddQuadInternal(Triangles, NyNxNz, NyNxPz, NyPxPz, NyPxNz);
 
-    // +Z Ãæ (·¨Ïß: (0,0,1))
+    // +Z é¢ (æ³•çº¿: (0,0,1))
     int32 PzPxPy = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
         FVector(InnerOffset, InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(1, 1));
     int32 PzNxPy = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
@@ -167,7 +169,7 @@ void AChamferCube::GenerateMainFaces(TMap<FVector, int32>& UniqueVerticesMap, TA
         FVector(InnerOffset, -InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(1, 0));
     AddQuadInternal(Triangles, PzNxNy, PzNxPy, PzPxPy, PzPxNy);
 
-    // -Z Ãæ (·¨Ïß: (0,0,-1))
+    // -Z é¢ (æ³•çº¿: (0,0,-1))
     int32 NzPxPy = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
         FVector(InnerOffset, InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(1, 0));
     int32 NzNxPy = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
@@ -182,60 +184,60 @@ void AChamferCube::GenerateMainFaces(TMap<FVector, int32>& UniqueVerticesMap, TA
 
 void AChamferCube::GenerateEdgeChamfers(TMap<FVector, int32>& UniqueVerticesMap, TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, TArray<int32>& Triangles, const TArray<FVector>& CorePoints, float ChamferSize, int32 Sections)
 {
-    // ¶¨Òå±ßÔµµ¹½ÇÊı¾İ½á¹¹
+    // å®šä¹‰è¾¹ç¼˜å€’è§’æ•°æ®ç»“æ„
     struct FEdgeChamferDef
     {
-        int32 Core1Idx;         // µÚÒ»¸ö CorePoint µÄË÷Òı
-        int32 Core2Idx;         // µÚ¶ş¸ö CorePoint µÄË÷Òı
-        FVector AxisDirection;  // ±ßÔµµÄ·½Ïò
-        FVector Normal1;        // ÆğÊ¼·¨Ïß
-        FVector Normal2;        // ½áÊø·¨Ïß
+        int32 Core1Idx;         // ç¬¬ä¸€ä¸ª CorePoint çš„ç´¢å¼•
+        int32 Core2Idx;         // ç¬¬äºŒä¸ª CorePoint çš„ç´¢å¼•
+        FVector AxisDirection;  // è¾¹ç¼˜çš„æ–¹å‘
+        FVector Normal1;        // èµ·å§‹æ³•çº¿
+        FVector Normal2;        // ç»“æŸæ³•çº¿
     };
 
     TArray<FEdgeChamferDef> EdgeDefs;
 
-    // Ìî³äËùÓĞ12Ìõ±ßµÄ¶¨Òå
-    // +X ·½ÏòµÄ±ßÔµ (Æ½ĞĞÓÚ X Öá)
-    EdgeDefs.Add({ 0, 1, FVector(1,0,0), FVector(0,-1,0), FVector(0,0,-1) }); // -Y/-Z ±ßÔµ
-    EdgeDefs.Add({ 2, 3, FVector(1,0,0), FVector(0,0,-1), FVector(0,1,0) });  // +Y/-Z ±ßÔµ
-    EdgeDefs.Add({ 4, 5, FVector(1,0,0), FVector(0,0,1), FVector(0,-1,0) });  // -Y/+Z ±ßÔµ
-    EdgeDefs.Add({ 6, 7, FVector(1,0,0), FVector(0,1,0), FVector(0,0,1) });   // +Y/+Z ±ßÔµ
+    // å¡«å……æ‰€æœ‰12æ¡è¾¹çš„å®šä¹‰
+    // +X æ–¹å‘çš„è¾¹ç¼˜ (å¹³è¡Œäº X è½´)
+    EdgeDefs.Add({ 0, 1, FVector(1,0,0), FVector(0,-1,0), FVector(0,0,-1) }); // -Y/-Z è¾¹ç¼˜
+    EdgeDefs.Add({ 2, 3, FVector(1,0,0), FVector(0,0,-1), FVector(0,1,0) });  // +Y/-Z è¾¹ç¼˜
+    EdgeDefs.Add({ 4, 5, FVector(1,0,0), FVector(0,0,1), FVector(0,-1,0) });  // -Y/+Z è¾¹ç¼˜
+    EdgeDefs.Add({ 6, 7, FVector(1,0,0), FVector(0,1,0), FVector(0,0,1) });   // +Y/+Z è¾¹ç¼˜
 
-    // +Y ·½ÏòµÄ±ßÔµ (Æ½ĞĞÓÚ Y Öá)
-    EdgeDefs.Add({ 0, 2, FVector(0,1,0), FVector(0,0,-1), FVector(-1,0,0) }); // -X/-Z ±ßÔµ
-    EdgeDefs.Add({ 1, 3, FVector(0,1,0), FVector(1,0,0), FVector(0,0,-1) });  // +X/-Z ±ßÔµ
-    EdgeDefs.Add({ 4, 6, FVector(0,1,0), FVector(-1,0,0), FVector(0,0,1) });  // -X/+Z ±ßÔµ
-    EdgeDefs.Add({ 5, 7, FVector(0,1,0), FVector(0,0,1), FVector(1,0,0) });   // +X/+Z ±ßÔµ
+    // +Y æ–¹å‘çš„è¾¹ç¼˜ (å¹³è¡Œäº Y è½´)
+    EdgeDefs.Add({ 0, 2, FVector(0,1,0), FVector(0,0,-1), FVector(-1,0,0) }); // -X/-Z è¾¹ç¼˜
+    EdgeDefs.Add({ 1, 3, FVector(0,1,0), FVector(1,0,0), FVector(0,0,-1) });  // +X/-Z è¾¹ç¼˜
+    EdgeDefs.Add({ 4, 6, FVector(0,1,0), FVector(-1,0,0), FVector(0,0,1) });  // -X/+Z è¾¹ç¼˜
+    EdgeDefs.Add({ 5, 7, FVector(0,1,0), FVector(0,0,1), FVector(1,0,0) });   // +X/+Z è¾¹ç¼˜
 
-    // +Z ·½ÏòµÄ±ßÔµ (Æ½ĞĞÓÚ Z Öá)
-    EdgeDefs.Add({ 0, 4, FVector(0,0,1), FVector(-1,0,0), FVector(0,-1,0) }); // -X/-Y ±ßÔµ
-    EdgeDefs.Add({ 1, 5, FVector(0,0,1), FVector(0,-1,0), FVector(1,0,0) });  // +X/-Y ±ßÔµ
-    EdgeDefs.Add({ 2, 6, FVector(0,0,1), FVector(0,1,0), FVector(-1,0,0) });  // -X/+Y ±ßÔµ
-    EdgeDefs.Add({ 3, 7, FVector(0,0,1), FVector(1,0,0), FVector(0,1,0) });   // +X/+Y ±ßÔµ
+    // +Z æ–¹å‘çš„è¾¹ç¼˜ (å¹³è¡Œäº Z è½´)
+    EdgeDefs.Add({ 0, 4, FVector(0,0,1), FVector(-1,0,0), FVector(0,-1,0) }); // -X/-Y è¾¹ç¼˜
+    EdgeDefs.Add({ 1, 5, FVector(0,0,1), FVector(0,-1,0), FVector(1,0,0) });  // +X/-Y è¾¹ç¼˜
+    EdgeDefs.Add({ 2, 6, FVector(0,0,1), FVector(0,1,0), FVector(-1,0,0) });  // -X/+Y è¾¹ç¼˜
+    EdgeDefs.Add({ 3, 7, FVector(0,0,1), FVector(1,0,0), FVector(0,1,0) });   // +X/+Y è¾¹ç¼˜
 
-    // ÎªÃ¿Ìõ±ßÉú³Éµ¹½Ç
+    // ä¸ºæ¯æ¡è¾¹ç”Ÿæˆå€’è§’
     for (const FEdgeChamferDef& EdgeDef : EdgeDefs)
     {
-        TArray<int32> PrevStripStartIndices; // ´æ´¢ÉÏÒ»¶Î»¡ÏßÆğµãµÄ¶¥µãË÷Òı
-        TArray<int32> PrevStripEndIndices;   // ´æ´¢ÉÏÒ»¶Î»¡ÏßÖÕµãµÄ¶¥µãË÷Òı
+        TArray<int32> PrevStripStartIndices; // å­˜å‚¨ä¸Šä¸€æ®µå¼§çº¿èµ·ç‚¹çš„é¡¶ç‚¹ç´¢å¼•
+        TArray<int32> PrevStripEndIndices;   // å­˜å‚¨ä¸Šä¸€æ®µå¼§çº¿ç»ˆç‚¹çš„é¡¶ç‚¹ç´¢å¼•
 
-        // ÑØ±ßÔµ·Ö¶ÎÉú³É¶¥µãºÍÈı½ÇĞÎ
+        // æ²¿è¾¹ç¼˜åˆ†æ®µç”Ÿæˆé¡¶ç‚¹å’Œä¸‰è§’å½¢
         for (int32 s = 0; s <= Sections; ++s)
         {
-            const float Alpha = static_cast<float>(s) / Sections; // µ±Ç°·Ö¶ÎÎ»ÖÃ±ÈÀı
+            const float Alpha = static_cast<float>(s) / Sections; // å½“å‰åˆ†æ®µä½ç½®æ¯”ä¾‹
 
-            // ²åÖµ¼ÆËãµ±Ç°·¨Ïß
+            // æ’å€¼è®¡ç®—å½“å‰æ³•çº¿
             FVector CurrentNormal = FMath::Lerp(EdgeDef.Normal1, EdgeDef.Normal2, Alpha).GetSafeNormal();
 
-            // ¼ÆËãµ±Ç°·Ö¶ÎµÄÎ»ÖÃ
+            // è®¡ç®—å½“å‰åˆ†æ®µçš„ä½ç½®
             FVector PosStart = CorePoints[EdgeDef.Core1Idx] + CurrentNormal * ChamferSize;
             FVector PosEnd = CorePoints[EdgeDef.Core2Idx] + CurrentNormal * ChamferSize;
 
-            // ÉèÖÃUV×ø±ê
-            FVector2D UV1(Alpha, 0.0f); // ÆğµãUV
-            FVector2D UV2(Alpha, 1.0f); // ÖÕµãUV
+            // è®¾ç½®UVåæ ‡
+            FVector2D UV1(Alpha, 0.0f); // èµ·ç‚¹UV
+            FVector2D UV2(Alpha, 1.0f); // ç»ˆç‚¹UV
 
-            // Ìí¼Ó»ò»ñÈ¡¶¥µã
+            // æ·»åŠ æˆ–è·å–é¡¶ç‚¹
             int32 VtxStart = GetOrAddVertex(
                 UniqueVerticesMap,
                 Vertices, Normals, UV0, VertexColors, Tangents,
@@ -248,14 +250,14 @@ void AChamferCube::GenerateEdgeChamfers(TMap<FVector, int32>& UniqueVerticesMap,
                 PosEnd, CurrentNormal, UV2
             );
 
-            // ´ÓµÚ¶ş¶Î¿ªÊ¼Éú³ÉËÄ±ßĞÎ
+            // ä»ç¬¬äºŒæ®µå¼€å§‹ç”Ÿæˆå››è¾¹å½¢
             if (s > 0)
             {
-                // È·±£ÓĞ×ã¹»µÄ¶¥µãĞÎ³ÉËÄ±ßĞÎ
+                // ç¡®ä¿æœ‰è¶³å¤Ÿçš„é¡¶ç‚¹å½¢æˆå››è¾¹å½¢
                 if (PrevStripStartIndices.Num() > 0 && PrevStripEndIndices.Num() > 0)
                 {
-                    // Ìí¼ÓËÄ±ßĞÎ£¨Á½¸öÈı½ÇĞÎ£©
-                    // ¶¥µãË³Ğò£ºÉÏÒ»¸öÆğµã -> ÉÏÒ»¸öÖÕµã -> µ±Ç°ÖÕµã -> µ±Ç°Æğµã
+                    // æ·»åŠ å››è¾¹å½¢ï¼ˆä¸¤ä¸ªä¸‰è§’å½¢ï¼‰
+                    // é¡¶ç‚¹é¡ºåºï¼šä¸Šä¸€ä¸ªèµ·ç‚¹ -> ä¸Šä¸€ä¸ªç»ˆç‚¹ -> å½“å‰ç»ˆç‚¹ -> å½“å‰èµ·ç‚¹
                     AddQuadInternal(
                         Triangles,
                         PrevStripStartIndices[0],
@@ -266,7 +268,7 @@ void AChamferCube::GenerateEdgeChamfers(TMap<FVector, int32>& UniqueVerticesMap,
                 }
             }
 
-            // ±£´æµ±Ç°·Ö¶ÎµÄ¶¥µã¹©ÏÂÒ»·Ö¶ÎÊ¹ÓÃ
+            // ä¿å­˜å½“å‰åˆ†æ®µçš„é¡¶ç‚¹ä¾›ä¸‹ä¸€åˆ†æ®µä½¿ç”¨
             PrevStripStartIndices = { VtxStart };
             PrevStripEndIndices = { VtxEnd };
         }
@@ -274,42 +276,43 @@ void AChamferCube::GenerateEdgeChamfers(TMap<FVector, int32>& UniqueVerticesMap,
 }
 void AChamferCube::GenerateCornerChamfers(TMap<FVector, int32>& UniqueVerticesMap, TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, TArray<int32>& Triangles, const TArray<FVector>& CorePoints, float ChamferSize, int32 Sections)
 {
-    // È·±£ºËĞÄµãÊıÁ¿ÕıÈ·
+    // ç¡®ä¿æ ¸å¿ƒç‚¹æ•°é‡æ­£ç¡®
+    // ç¡¬ç¼–ç äº†
     if (CorePoints.Num() < 8)
     {
         UE_LOG(LogTemp, Error, TEXT("Invalid CorePoints array size. Expected 8 elements."));
         return;
     }
 
-    // ´¦ÀíÃ¿¸ö½ÇÂä£¨8¸ö£©
+    // å¤„ç†æ¯ä¸ªè§’è½ï¼ˆ8ä¸ªï¼‰
     for (int32 CornerIndex = 0; CornerIndex < 8; ++CornerIndex)
     {
         const FVector& CurrentCorePoint = CorePoints[CornerIndex];
 
-        // È·¶¨´Ë½ÇÂäÊÇ·ñĞèÒªÌØÊâÈı½ÇĞÎ²øÈÆË³Ğò
-        // Ô­Ê¼´úÂëÖĞÖ¸¶¨Ë÷ÒıÎª4,7,2,1µÄ½ÇÂäĞèÒªÌØÊâ´¦Àí
+        // ç¡®å®šæ­¤è§’è½æ˜¯å¦éœ€è¦ç‰¹æ®Šä¸‰è§’å½¢ç¼ ç»•é¡ºåº
+        // åŸå§‹ä»£ç ä¸­æŒ‡å®šç´¢å¼•ä¸º4,7,2,1çš„è§’è½éœ€è¦ç‰¹æ®Šå¤„ç†
         bool bSpecialCornerRenderingOrder = (CornerIndex == 4 || CornerIndex == 7 || CornerIndex == 2 || CornerIndex == 1);
 
-        // ¸ù¾İ½ÇÂäÎ»ÖÃÈ·¶¨Èı¸öÖá·½Ïò£¨»ùÓÚ×ø±ê·ûºÅ£©
+        // æ ¹æ®è§’è½ä½ç½®ç¡®å®šä¸‰ä¸ªè½´æ–¹å‘ï¼ˆåŸºäºåæ ‡ç¬¦å·ï¼‰
         const float SignX = FMath::Sign(CurrentCorePoint.X);
         const float SignY = FMath::Sign(CurrentCorePoint.Y);
         const float SignZ = FMath::Sign(CurrentCorePoint.Z);
 
-        const FVector AxisX(SignX, 0.0f, 0.0f); // XÖá·½Ïò
-        const FVector AxisY(0.0f, SignY, 0.0f); // YÖá·½Ïò
-        const FVector AxisZ(0.0f, 0.0f, SignZ); // ZÖá·½Ïò
+        const FVector AxisX(SignX, 0.0f, 0.0f); // Xè½´æ–¹å‘
+        const FVector AxisY(0.0f, SignY, 0.0f); // Yè½´æ–¹å‘
+        const FVector AxisZ(0.0f, 0.0f, SignZ); // Zè½´æ–¹å‘
 
-        // ´´½¨¶¥µãÍø¸ñ£¨×¶ĞÎ½á¹¹£©
+        // åˆ›å»ºé¡¶ç‚¹ç½‘æ ¼ï¼ˆé”¥å½¢ç»“æ„ï¼‰
         TArray<TArray<int32>> CornerVerticesGrid;
         CornerVerticesGrid.SetNum(Sections + 1);
 
-        // ³õÊ¼»¯Íø¸ñ½á¹¹£¨Ã¿ĞĞ¶¥µãÊıµİ¼õ£©
+        // åˆå§‹åŒ–ç½‘æ ¼ç»“æ„ï¼ˆæ¯è¡Œé¡¶ç‚¹æ•°é€’å‡ï¼‰
         for (int32 Lat = 0; Lat <= Sections; ++Lat)
         {
             CornerVerticesGrid[Lat].SetNum(Sections + 1 - Lat);
         }
 
-        // Éú³ÉËÄ·ÖÖ®Ò»ÇòÌåµÄ¶¥µã
+        // ç”Ÿæˆå››åˆ†ä¹‹ä¸€çƒä½“çš„é¡¶ç‚¹
         for (int32 Lat = 0; Lat <= Sections; ++Lat)
         {
             const float LatAlpha = static_cast<float>(Lat) / Sections;
@@ -318,28 +321,28 @@ void AChamferCube::GenerateCornerChamfers(TMap<FVector, int32>& UniqueVerticesMa
             {
                 const float LonAlpha = static_cast<float>(Lon) / Sections;
 
-                // ¼ÆËãµ±Ç°·¨Ïß·½Ïò£¨ÈıÖá²åÖµ£©
+                // è®¡ç®—å½“å‰æ³•çº¿æ–¹å‘ï¼ˆä¸‰è½´æ’å€¼ï¼‰
                 FVector CurrentNormal = (AxisX * (1.0f - LatAlpha - LonAlpha) +
                     AxisY * LatAlpha +
                     AxisZ * LonAlpha);
                 CurrentNormal.Normalize();
 
-                // ¼ÆËã¶¥µãÎ»ÖÃ£¨´ÓºËĞÄµãÑØ·¨Ïß·½ÏòÆ«ÒÆ£©
+                // è®¡ç®—é¡¶ç‚¹ä½ç½®ï¼ˆä»æ ¸å¿ƒç‚¹æ²¿æ³•çº¿æ–¹å‘åç§»ï¼‰
                 FVector CurrentPos = CurrentCorePoint + CurrentNormal * ChamferSize;
 
-                // ÉèÖÃUV×ø±ê
+                // è®¾ç½®UVåæ ‡
                 FVector2D UV(LonAlpha, LatAlpha);
 
-                // ÌØÊâ½ÇÂäµÄUVµ÷Õû£¨Èç¹ûĞèÒª£©
-                // Ô­Ê¼´úÂëÖĞÓĞ×¢ÊÍ£¬µ«Î´Êµ¼ÊÊ¹ÓÃ
+                // ç‰¹æ®Šè§’è½çš„UVè°ƒæ•´ï¼ˆå¦‚æœéœ€è¦ï¼‰
+                // åŸå§‹ä»£ç ä¸­æœ‰æ³¨é‡Šï¼Œä½†æœªå®é™…ä½¿ç”¨
                 /*
                 if (bSpecialCornerRenderingOrder)
                 {
-                    UV.X = 1.0f - UV.X; // ·­×ªU×ø±ê
+                    UV.X = 1.0f - UV.X; // ç¿»è½¬Uåæ ‡
                 }
                 */
 
-                // Ìí¼Ó¶¥µã²¢´æ´¢Ë÷Òı
+                // æ·»åŠ é¡¶ç‚¹å¹¶å­˜å‚¨ç´¢å¼•
                 CornerVerticesGrid[Lat][Lon] = GetOrAddVertex(
                     UniqueVerticesMap,
                     Vertices, Normals, UV0, VertexColors, Tangents,
@@ -348,47 +351,47 @@ void AChamferCube::GenerateCornerChamfers(TMap<FVector, int32>& UniqueVerticesMa
             }
         }
 
-        // Éú³ÉËÄ·ÖÖ®Ò»ÇòÌåµÄÈı½ÇĞÎ
+        // ç”Ÿæˆå››åˆ†ä¹‹ä¸€çƒä½“çš„ä¸‰è§’å½¢
         for (int32 Lat = 0; Lat < Sections; ++Lat)
         {
             for (int32 Lon = 0; Lon < Sections - Lat; ++Lon)
             {
-                // »ñÈ¡µ±Ç°Íø¸ñµ¥ÔªµÄËÄ¸ö¶¥µã
-                const int32 V00 = CornerVerticesGrid[Lat][Lon];      // µ±Ç°µã
-                const int32 V10 = CornerVerticesGrid[Lat + 1][Lon];  // ÏÂ·½µã
-                const int32 V01 = CornerVerticesGrid[Lat][Lon + 1];  // ÓÒ²àµã
+                // è·å–å½“å‰ç½‘æ ¼å•å…ƒçš„å››ä¸ªé¡¶ç‚¹
+                const int32 V00 = CornerVerticesGrid[Lat][Lon];      // å½“å‰ç‚¹
+                const int32 V10 = CornerVerticesGrid[Lat + 1][Lon];  // ä¸‹æ–¹ç‚¹
+                const int32 V01 = CornerVerticesGrid[Lat][Lon + 1];  // å³ä¾§ç‚¹
 
-                // Ìí¼ÓµÚÒ»¸öÈı½ÇĞÎ
+                // æ·»åŠ ç¬¬ä¸€ä¸ªä¸‰è§’å½¢
                 if (bSpecialCornerRenderingOrder)
                 {
-                    // ÌØÊâ½ÇÂä£ºV00 -> V01 -> V10
+                    // ç‰¹æ®Šè§’è½ï¼šV00 -> V01 -> V10
                     Triangles.Add(V00);
                     Triangles.Add(V01);
                     Triangles.Add(V10);
                 }
                 else
                 {
-                    // ±ê×¼½ÇÂä£ºV00 -> V10 -> V01
+                    // æ ‡å‡†è§’è½ï¼šV00 -> V10 -> V01
                     Triangles.Add(V00);
                     Triangles.Add(V10);
                     Triangles.Add(V01);
                 }
 
-                // ¼ì²éÊÇ·ñ¿ÉÒÔÌí¼ÓµÚ¶ş¸öÈı½ÇĞÎ£¨ĞÎ³ÉËÄ±ßĞÎ£©
+                // æ£€æŸ¥æ˜¯å¦å¯ä»¥æ·»åŠ ç¬¬äºŒä¸ªä¸‰è§’å½¢ï¼ˆå½¢æˆå››è¾¹å½¢ï¼‰
                 if (Lon + 1 < CornerVerticesGrid[Lat + 1].Num())
                 {
-                    const int32 V11 = CornerVerticesGrid[Lat + 1][Lon + 1]; // ÓÒÏÂµã
+                    const int32 V11 = CornerVerticesGrid[Lat + 1][Lon + 1]; // å³ä¸‹ç‚¹
 
                     if (bSpecialCornerRenderingOrder)
                     {
-                        // ÌØÊâ½ÇÂä£ºV10 -> V01 -> V11
+                        // ç‰¹æ®Šè§’è½ï¼šV10 -> V01 -> V11
                         Triangles.Add(V10);
                         Triangles.Add(V01);
                         Triangles.Add(V11);
                     }
                     else
                     {
-                        // ±ê×¼½ÇÂä£ºV10 -> V11 -> V01
+                        // æ ‡å‡†è§’è½ï¼šV10 -> V11 -> V01
                         Triangles.Add(V10);
                         Triangles.Add(V11);
                         Triangles.Add(V01);
@@ -401,7 +404,7 @@ void AChamferCube::GenerateCornerChamfers(TMap<FVector, int32>& UniqueVerticesMa
 }
 
 
-// Ö÷ÒªµÄÍø¸ñÉú³Éº¯Êı
+// ä¸»è¦çš„ç½‘æ ¼ç”Ÿæˆå‡½æ•°
 void AChamferCube::GenerateChamferedCube(float Size, float ChamferSize, int32 Sections)
 {
     if (!ProceduralMesh)
@@ -410,42 +413,42 @@ void AChamferCube::GenerateChamferedCube(float Size, float ChamferSize, int32 Se
         return;
     }
 
-    // Çå³ıÖ®Ç°¿ÉÄÜ´æÔÚµÄÍø¸ñÊı¾İ
+    // æ¸…é™¤ä¹‹å‰å¯èƒ½å­˜åœ¨çš„ç½‘æ ¼æ•°æ®
     ProceduralMesh->ClearAllMeshSections();
 
-    // ³õÊ¼»¯Íø¸ñÊı¾İÊı×é£¬ÕâĞ©ÊÇºóÃæ ProceduralMesh->CreateMeshSection_LinearColor() ËùĞèÒªµÄ²ÎÊı
-    TArray<FVector> Vertices;       // ¶¥µãÎ»ÖÃ
-    TArray<int32> Triangles;        // Èı½ÇĞÎË÷Òı
-    TArray<FVector> Normals;        // ¶¥µã·¨Ïß
-    TArray<FVector2D> UV0;          // ¶¥µãUV×ø±ê
-    TArray<FLinearColor> VertexColors; // ¶¥µãÑÕÉ«
-    TArray<FProcMeshTangent> Tangents; // ¶¥µãÇĞÏß
+    // åˆå§‹åŒ–ç½‘æ ¼æ•°æ®æ•°ç»„ï¼Œè¿™äº›æ˜¯åé¢ ProceduralMesh->CreateMeshSection_LinearColor() æ‰€éœ€è¦çš„å‚æ•°
+    TArray<FVector> Vertices;      
+    TArray<int32> Triangles;       
+    TArray<FVector> Normals;      
+    TArray<FVector2D> UV0;       
+    TArray<FLinearColor> VertexColors;
+    TArray<FProcMeshTangent> Tangents;
 
-    // ÏŞÖÆµ¹½Ç´óĞ¡£¬·ÀÖ¹Æä¹ı´óµ¼ÖÂ¼¸ºÎÌå×ÔÏà½»»òÎŞĞ§
-    // µ¹½Ç´óĞ¡±ØĞëĞ¡ÓÚÁ¢·½Ìå±ß³¤µÄÒ»°ë£¬²¢ÁôÒ»¸öºÜĞ¡µÄÓàÁ¿ KINDA_SMALL_NUMBER
+    // é™åˆ¶å€’è§’å¤§å°ï¼Œé˜²æ­¢å…¶è¿‡å¤§å¯¼è‡´å‡ ä½•ä½“è‡ªç›¸äº¤æˆ–æ— æ•ˆ
+    // å€’è§’å¤§å°å¿…é¡»å°äºç«‹æ–¹ä½“è¾¹é•¿çš„ä¸€åŠï¼Œå¹¶ç•™ä¸€ä¸ªå¾ˆå°çš„ä½™é‡ KINDA_SMALL_NUMBER
     ChamferSize = FMath::Clamp(ChamferSize, 0.0f, (Size / 2.0f) - KINDA_SMALL_NUMBER);
-    Sections = FMath::Max(1, Sections); // È·±£ÖÁÉÙÓĞÒ»¸ö·Ö¶Î£¬±ÜÃâ³ıÁã»ò¿Õ¼¸ºÎÌå
+	// ç¡®ä¿è‡³å°‘æœ‰ä¸€ä¸ªåˆ†æ®µï¼Œé¿å…é™¤é›¶æˆ–ç©ºå‡ ä½•ä½“
+    Sections = FMath::Max(1, Sections);
 
-
-    float HalfSize = Size / 2.0f; // Á¢·½Ìå°ë³¤
-    // InnerOffset ÊÇ´ÓÖĞĞÄµ½ÃæÄÚ²¿£¨µ¹½Ç¿ªÊ¼´¦£©µÄ¾àÀë
+	// ç«‹æ–¹ä½“åŠé•¿
+    float HalfSize = Size / 2.0f; 
+    // InnerOffset æ˜¯ä»ä¸­å¿ƒåˆ°é¢å†…éƒ¨ï¼ˆå€’è§’å¼€å§‹å¤„ï¼‰çš„è·ç¦»
     float InnerOffset = HalfSize - ChamferSize;
 
-    // Ê¹ÓÃ TMap ´æ´¢Î¨Ò»µÄ¶¥µã¼°ÆäË÷Òı¡£
-    // ÔÚ¸´ÔÓ³¡¾°ÖĞ£¬¿ÉÄÜĞèÒª×Ô¶¨Òå FVector µÄ¹şÏ£º¯Êı»ò¶ÔÎ»ÖÃ½øĞĞËÄÉáÎåÈë¡£
+    // ä½¿ç”¨ TMap å­˜å‚¨å”¯ä¸€çš„é¡¶ç‚¹åŠå…¶ç´¢å¼•ã€‚
+    // åœ¨å¤æ‚åœºæ™¯ä¸­ï¼Œå¯èƒ½éœ€è¦è‡ªå®šä¹‰ FVector çš„å“ˆå¸Œå‡½æ•°æˆ–å¯¹ä½ç½®è¿›è¡Œå››èˆäº”å…¥ã€‚
     TMap<FVector, int32> UniqueVerticesMap;
 
-    // ¶¨Òå8¸ö½ÇÂäµÄ¡°ºËĞÄµã¡±£¨ÇòĞÎµ¹½ÇµÄÖĞĞÄ£©
-    // ÕâĞ©µã¶¨ÒåÁËµ¹½ÇÁ¢·½ÌåµÄÄÚ²¿±ß½ç¡£
+    // å®šä¹‰8ä¸ªè§’è½çš„â€œæ ¸å¿ƒç‚¹â€ï¼ˆçƒå½¢å€’è§’çš„ä¸­å¿ƒï¼‰
     TArray<FVector> CorePoints;
-    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, -InnerOffset)); // --- (-X, -Y, -Z)
-    CorePoints.Add(FVector(InnerOffset, -InnerOffset, -InnerOffset));  // +-- (+X, -Y, -Z)
-    CorePoints.Add(FVector(-InnerOffset, InnerOffset, -InnerOffset));  // -+- (-X, +Y, -Z)
-    CorePoints.Add(FVector(InnerOffset, InnerOffset, -InnerOffset));   // ++- (+X, +Y, -Z)
-    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, InnerOffset));  // --+ (-X, -Y, +Z)
-    CorePoints.Add(FVector(InnerOffset, -InnerOffset, InnerOffset));   // +-+ (+X, -Y, +Z)
-    CorePoints.Add(FVector(-InnerOffset, InnerOffset, InnerOffset));   // -++ (-X, +Y, +Z)
-    CorePoints.Add(FVector(InnerOffset, InnerOffset, InnerOffset));    // +++ (+X, +Y, +Z)
+    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, -InnerOffset)); 
+    CorePoints.Add(FVector(InnerOffset, -InnerOffset, -InnerOffset)); 
+    CorePoints.Add(FVector(-InnerOffset, InnerOffset, -InnerOffset));
+    CorePoints.Add(FVector(InnerOffset, InnerOffset, -InnerOffset));
+    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, InnerOffset));
+    CorePoints.Add(FVector(InnerOffset, -InnerOffset, InnerOffset));
+    CorePoints.Add(FVector(-InnerOffset, InnerOffset, InnerOffset));
+    CorePoints.Add(FVector(InnerOffset, InnerOffset, InnerOffset));
 
     GenerateMainFaces( UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents, Triangles, HalfSize, InnerOffset );
 
