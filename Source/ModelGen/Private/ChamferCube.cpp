@@ -1,20 +1,34 @@
 #include "ChamferCube.h"
 #include "ProceduralMeshComponent.h"
+#include "Materials/Material.h"
 #include "UObject/ConstructorHelpers.h" 
 
 AChamferCube::AChamferCube()
 {
-    PrimaryActorTick.bCanEverTick = false; // 关闭 Tick 函数，因为网格是静态生成的
+    PrimaryActorTick.bCanEverTick = false;
 
-    ProceduralMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("GeneratedMesh")); // 创建一个程序化网格组件
-    RootComponent = ProceduralMesh; // 设置为根组件
+    ProceduralMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("GeneratedMesh"));
+    RootComponent = ProceduralMesh;
 
-    ProceduralMesh->bUseAsyncCooking = true; // 启用异步碰撞网格生成，提高性能
-    ProceduralMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics); // 启用碰撞查询和物理
-    ProceduralMesh->SetSimulatePhysics(false); // 默认不模拟物理
+    // 启用异步碰撞网格生成，提高性能
+    ProceduralMesh->bUseAsyncCooking = true; 
+    // 启用碰撞查询和物理
+    ProceduralMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    // 默认不模拟物理
+    ProceduralMesh->SetSimulatePhysics(false);
 
-    // 调用生成倒角立方体的函数
     GenerateChamferedCube(CubeSize, CubeChamferSize, ChamferSections);
+
+    // 设置材质
+    static ConstructorHelpers::FObjectFinder<UMaterial> MaterialFinder(TEXT("Material'/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall'"));
+    if (MaterialFinder.Succeeded())
+    {
+        ProceduralMesh->SetMaterial(0, MaterialFinder.Object);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Failed to find material. Make sure StarterContent is enabled or provide a valid path."));
+    }
 }
 
 void AChamferCube::BeginPlay()
@@ -22,6 +36,7 @@ void AChamferCube::BeginPlay()
     Super::BeginPlay();
 
     GenerateChamferedCube(CubeSize, CubeChamferSize, ChamferSections);
+
 }
 
 void AChamferCube::Tick(float DeltaTime)
@@ -42,9 +57,9 @@ void AChamferCube::Tick(float DeltaTime)
 int32 AChamferCube::AddVertexInternal(TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents,
     const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
-    Vertices.Add(Pos);         // 添加顶点位置
-    Normals.Add(Normal);       // 添加顶点法线
-    UV0.Add(UV);               // 添加顶点UV
+    Vertices.Add(Pos);
+    Normals.Add(Normal);
+    UV0.Add(UV);
     VertexColors.Add(FLinearColor::White); // 添加顶点颜色，默认为白色
 
     // 计算切线：通常切线垂直于法线和UpVector。
@@ -72,6 +87,317 @@ void AChamferCube::AddQuadInternal(TArray<int32>& Triangles, int32 V1, int32 V2,
     Triangles.Add(V1); Triangles.Add(V2); Triangles.Add(V3);
     // 三角形2：V1 -> V3 -> V4 (逆时针缠绕，用于外向面)
     Triangles.Add(V1); Triangles.Add(V3); Triangles.Add(V4);
+}
+
+int32 AChamferCube::GetOrAddVertex(TMap<FVector, int32>& UniqueVerticesMap, TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, const FVector& Pos, const FVector& Normal, const FVector2D& UV)
+{
+	// 尝试在 UniqueVerticesMap 中查找当前位置的顶点
+	int32* FoundIndex = UniqueVerticesMap.Find(Pos);
+	if (FoundIndex)
+	{
+		return *FoundIndex; 
+	}
+
+	// 如果未找到，则添加新顶点
+	int32 NewIndex = AddVertexInternal(Vertices, Normals, UV0, VertexColors, Tangents, Pos, Normal, UV);
+	UniqueVerticesMap.Add(Pos, NewIndex); 
+	return NewIndex; 
+}
+
+void AChamferCube::GenerateMainFaces(TMap<FVector, int32>& UniqueVerticesMap, TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, TArray<int32>& Triangles, float HalfSize, float InnerOffset)
+{
+    // --- 1. 生成主面（6个）的顶点和三角形 ---
+    // 这些是立方体的大平面表面。它们的顶点是倒角开始的地方。
+    // 每个主面由4个顶点定义，这些顶点位于主平面和倒角半径的交点处。
+
+    // +X 面 (法线: (1,0,0))
+    // 这些顶点定义了 +X 面在倒角起点处的四个角点
+    int32 PxPyPz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(HalfSize, InnerOffset, InnerOffset), FVector(1, 0, 0), FVector2D(0, 1));
+    int32 PxPyNz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(HalfSize, InnerOffset, -InnerOffset), FVector(1, 0, 0), FVector2D(0, 0));
+    int32 PxNyNz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(HalfSize, -InnerOffset, -InnerOffset), FVector(1, 0, 0), FVector2D(1, 0));
+    int32 PxNyPz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(HalfSize, -InnerOffset, InnerOffset), FVector(1, 0, 0), FVector2D(1, 1));
+    AddQuadInternal(Triangles, PxNyNz, PxNyPz, PxPyPz, PxPyNz);
+
+
+    // -X 面 (法线: (-1,0,0))
+    int32 NxPyPz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(-HalfSize, InnerOffset, InnerOffset), FVector(-1, 0, 0), FVector2D(1, 1));
+    int32 NxPyNz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(-HalfSize, InnerOffset, -InnerOffset), FVector(-1, 0, 0), FVector2D(1, 0));
+    int32 NxNyNz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(-HalfSize, -InnerOffset, -InnerOffset), FVector(-1, 0, 0), FVector2D(0, 0));
+    int32 NxNyPz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(-HalfSize, -InnerOffset, InnerOffset), FVector(-1, 0, 0), FVector2D(0, 1));
+    AddQuadInternal(Triangles, NxNyNz, NxPyNz, NxPyPz, NxNyPz);
+
+    // +Y 面 (法线: (0,1,0))
+    int32 PyPxPz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(InnerOffset, HalfSize, InnerOffset), FVector(0, 1, 0), FVector2D(0, 1));
+    int32 PyPxNz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(InnerOffset, HalfSize, -InnerOffset), FVector(0, 1, 0), FVector2D(0, 0));
+    int32 PyNxNz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(-InnerOffset, HalfSize, -InnerOffset), FVector(0, 1, 0), FVector2D(1, 0));
+    int32 PyNxPz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(-InnerOffset, HalfSize, InnerOffset), FVector(0, 1, 0), FVector2D(1, 1));
+    AddQuadInternal(Triangles, PyNxNz, PyPxNz, PyPxPz, PyNxPz);
+
+    // -Y 面 (法线: (0,-1,0))
+    int32 NyPxPz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(InnerOffset, -HalfSize, InnerOffset), FVector(0, -1, 0), FVector2D(1, 1));
+    int32 NyPxNz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(InnerOffset, -HalfSize, -InnerOffset), FVector(0, -1, 0), FVector2D(1, 0));
+    int32 NyNxNz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(-InnerOffset, -HalfSize, -InnerOffset), FVector(0, -1, 0), FVector2D(0, 0));
+    int32 NyNxPz = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(-InnerOffset, -HalfSize, InnerOffset), FVector(0, -1, 0), FVector2D(0, 1));
+    AddQuadInternal(Triangles, NyNxNz, NyNxPz, NyPxPz, NyPxNz);
+
+    // +Z 面 (法线: (0,0,1))
+    int32 PzPxPy = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(InnerOffset, InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(1, 1));
+    int32 PzNxPy = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(-InnerOffset, InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(0, 1));
+    int32 PzNxNy = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(-InnerOffset, -InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(0, 0));
+    int32 PzPxNy = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(InnerOffset, -InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(1, 0));
+    AddQuadInternal(Triangles, PzNxNy, PzNxPy, PzPxPy, PzPxNy);
+
+    // -Z 面 (法线: (0,0,-1))
+    int32 NzPxPy = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(InnerOffset, InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(1, 0));
+    int32 NzNxPy = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(-InnerOffset, InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(0, 0));
+    int32 NzNxNy = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(-InnerOffset, -InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(0, 1));
+    int32 NzPxNy = GetOrAddVertex(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents,
+        FVector(InnerOffset, -InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(1, 1));
+    AddQuadInternal(Triangles, NzNxNy, NzPxNy, NzPxPy, NzNxPy);
+
+}
+
+void AChamferCube::GenerateEdgeChamfers(TMap<FVector, int32>& UniqueVerticesMap, TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, TArray<int32>& Triangles, const TArray<FVector>& CorePoints, float ChamferSize, int32 Sections)
+{
+    // 定义边缘倒角数据结构
+    struct FEdgeChamferDef
+    {
+        int32 Core1Idx;         // 第一个 CorePoint 的索引
+        int32 Core2Idx;         // 第二个 CorePoint 的索引
+        FVector AxisDirection;  // 边缘的方向
+        FVector Normal1;        // 起始法线
+        FVector Normal2;        // 结束法线
+    };
+
+    TArray<FEdgeChamferDef> EdgeDefs;
+
+    // 填充所有12条边的定义
+    // +X 方向的边缘 (平行于 X 轴)
+    EdgeDefs.Add({ 0, 1, FVector(1,0,0), FVector(0,-1,0), FVector(0,0,-1) }); // -Y/-Z 边缘
+    EdgeDefs.Add({ 2, 3, FVector(1,0,0), FVector(0,0,-1), FVector(0,1,0) });  // +Y/-Z 边缘
+    EdgeDefs.Add({ 4, 5, FVector(1,0,0), FVector(0,0,1), FVector(0,-1,0) });  // -Y/+Z 边缘
+    EdgeDefs.Add({ 6, 7, FVector(1,0,0), FVector(0,1,0), FVector(0,0,1) });   // +Y/+Z 边缘
+
+    // +Y 方向的边缘 (平行于 Y 轴)
+    EdgeDefs.Add({ 0, 2, FVector(0,1,0), FVector(0,0,-1), FVector(-1,0,0) }); // -X/-Z 边缘
+    EdgeDefs.Add({ 1, 3, FVector(0,1,0), FVector(1,0,0), FVector(0,0,-1) });  // +X/-Z 边缘
+    EdgeDefs.Add({ 4, 6, FVector(0,1,0), FVector(-1,0,0), FVector(0,0,1) });  // -X/+Z 边缘
+    EdgeDefs.Add({ 5, 7, FVector(0,1,0), FVector(0,0,1), FVector(1,0,0) });   // +X/+Z 边缘
+
+    // +Z 方向的边缘 (平行于 Z 轴)
+    EdgeDefs.Add({ 0, 4, FVector(0,0,1), FVector(-1,0,0), FVector(0,-1,0) }); // -X/-Y 边缘
+    EdgeDefs.Add({ 1, 5, FVector(0,0,1), FVector(0,-1,0), FVector(1,0,0) });  // +X/-Y 边缘
+    EdgeDefs.Add({ 2, 6, FVector(0,0,1), FVector(0,1,0), FVector(-1,0,0) });  // -X/+Y 边缘
+    EdgeDefs.Add({ 3, 7, FVector(0,0,1), FVector(1,0,0), FVector(0,1,0) });   // +X/+Y 边缘
+
+    // 为每条边生成倒角
+    for (const FEdgeChamferDef& EdgeDef : EdgeDefs)
+    {
+        TArray<int32> PrevStripStartIndices; // 存储上一段弧线起点的顶点索引
+        TArray<int32> PrevStripEndIndices;   // 存储上一段弧线终点的顶点索引
+
+        // 沿边缘分段生成顶点和三角形
+        for (int32 s = 0; s <= Sections; ++s)
+        {
+            const float Alpha = static_cast<float>(s) / Sections; // 当前分段位置比例
+
+            // 插值计算当前法线
+            FVector CurrentNormal = FMath::Lerp(EdgeDef.Normal1, EdgeDef.Normal2, Alpha).GetSafeNormal();
+
+            // 计算当前分段的位置
+            FVector PosStart = CorePoints[EdgeDef.Core1Idx] + CurrentNormal * ChamferSize;
+            FVector PosEnd = CorePoints[EdgeDef.Core2Idx] + CurrentNormal * ChamferSize;
+
+            // 设置UV坐标
+            FVector2D UV1(Alpha, 0.0f); // 起点UV
+            FVector2D UV2(Alpha, 1.0f); // 终点UV
+
+            // 添加或获取顶点
+            int32 VtxStart = GetOrAddVertex(
+                UniqueVerticesMap,
+                Vertices, Normals, UV0, VertexColors, Tangents,
+                PosStart, CurrentNormal, UV1
+            );
+
+            int32 VtxEnd = GetOrAddVertex(
+                UniqueVerticesMap,
+                Vertices, Normals, UV0, VertexColors, Tangents,
+                PosEnd, CurrentNormal, UV2
+            );
+
+            // 从第二段开始生成四边形
+            if (s > 0)
+            {
+                // 确保有足够的顶点形成四边形
+                if (PrevStripStartIndices.Num() > 0 && PrevStripEndIndices.Num() > 0)
+                {
+                    // 添加四边形（两个三角形）
+                    // 顶点顺序：上一个起点 -> 上一个终点 -> 当前终点 -> 当前起点
+                    AddQuadInternal(
+                        Triangles,
+                        PrevStripStartIndices[0],
+                        PrevStripEndIndices[0],
+                        VtxEnd,
+                        VtxStart
+                    );
+                }
+            }
+
+            // 保存当前分段的顶点供下一分段使用
+            PrevStripStartIndices = { VtxStart };
+            PrevStripEndIndices = { VtxEnd };
+        }
+    }
+}
+void AChamferCube::GenerateCornerChamfers(TMap<FVector, int32>& UniqueVerticesMap, TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, TArray<int32>& Triangles, const TArray<FVector>& CorePoints, float ChamferSize, int32 Sections)
+{
+    // 确保核心点数量正确
+    if (CorePoints.Num() < 8)
+    {
+        UE_LOG(LogTemp, Error, TEXT("Invalid CorePoints array size. Expected 8 elements."));
+        return;
+    }
+
+    // 处理每个角落（8个）
+    for (int32 CornerIndex = 0; CornerIndex < 8; ++CornerIndex)
+    {
+        const FVector& CurrentCorePoint = CorePoints[CornerIndex];
+
+        // 确定此角落是否需要特殊三角形缠绕顺序
+        // 原始代码中指定索引为4,7,2,1的角落需要特殊处理
+        bool bSpecialCornerRenderingOrder = (CornerIndex == 4 || CornerIndex == 7 || CornerIndex == 2 || CornerIndex == 1);
+
+        // 根据角落位置确定三个轴方向（基于坐标符号）
+        const float SignX = FMath::Sign(CurrentCorePoint.X);
+        const float SignY = FMath::Sign(CurrentCorePoint.Y);
+        const float SignZ = FMath::Sign(CurrentCorePoint.Z);
+
+        const FVector AxisX(SignX, 0.0f, 0.0f); // X轴方向
+        const FVector AxisY(0.0f, SignY, 0.0f); // Y轴方向
+        const FVector AxisZ(0.0f, 0.0f, SignZ); // Z轴方向
+
+        // 创建顶点网格（锥形结构）
+        TArray<TArray<int32>> CornerVerticesGrid;
+        CornerVerticesGrid.SetNum(Sections + 1);
+
+        // 初始化网格结构（每行顶点数递减）
+        for (int32 Lat = 0; Lat <= Sections; ++Lat)
+        {
+            CornerVerticesGrid[Lat].SetNum(Sections + 1 - Lat);
+        }
+
+        // 生成四分之一球体的顶点
+        for (int32 Lat = 0; Lat <= Sections; ++Lat)
+        {
+            const float LatAlpha = static_cast<float>(Lat) / Sections;
+
+            for (int32 Lon = 0; Lon <= Sections - Lat; ++Lon)
+            {
+                const float LonAlpha = static_cast<float>(Lon) / Sections;
+
+                // 计算当前法线方向（三轴插值）
+                FVector CurrentNormal = (AxisX * (1.0f - LatAlpha - LonAlpha) +
+                    AxisY * LatAlpha +
+                    AxisZ * LonAlpha);
+                CurrentNormal.Normalize();
+
+                // 计算顶点位置（从核心点沿法线方向偏移）
+                FVector CurrentPos = CurrentCorePoint + CurrentNormal * ChamferSize;
+
+                // 设置UV坐标
+                FVector2D UV(LonAlpha, LatAlpha);
+
+                // 特殊角落的UV调整（如果需要）
+                // 原始代码中有注释，但未实际使用
+                /*
+                if (bSpecialCornerRenderingOrder)
+                {
+                    UV.X = 1.0f - UV.X; // 翻转U坐标
+                }
+                */
+
+                // 添加顶点并存储索引
+                CornerVerticesGrid[Lat][Lon] = GetOrAddVertex(
+                    UniqueVerticesMap,
+                    Vertices, Normals, UV0, VertexColors, Tangents,
+                    CurrentPos, CurrentNormal, UV
+                );
+            }
+        }
+
+        // 生成四分之一球体的三角形
+        for (int32 Lat = 0; Lat < Sections; ++Lat)
+        {
+            for (int32 Lon = 0; Lon < Sections - Lat; ++Lon)
+            {
+                // 获取当前网格单元的四个顶点
+                const int32 V00 = CornerVerticesGrid[Lat][Lon];      // 当前点
+                const int32 V10 = CornerVerticesGrid[Lat + 1][Lon];  // 下方点
+                const int32 V01 = CornerVerticesGrid[Lat][Lon + 1];  // 右侧点
+
+                // 添加第一个三角形
+                if (bSpecialCornerRenderingOrder)
+                {
+                    // 特殊角落：V00 -> V01 -> V10
+                    Triangles.Add(V00);
+                    Triangles.Add(V01);
+                    Triangles.Add(V10);
+                }
+                else
+                {
+                    // 标准角落：V00 -> V10 -> V01
+                    Triangles.Add(V00);
+                    Triangles.Add(V10);
+                    Triangles.Add(V01);
+                }
+
+                // 检查是否可以添加第二个三角形（形成四边形）
+                if (Lon + 1 < CornerVerticesGrid[Lat + 1].Num())
+                {
+                    const int32 V11 = CornerVerticesGrid[Lat + 1][Lon + 1]; // 右下点
+
+                    if (bSpecialCornerRenderingOrder)
+                    {
+                        // 特殊角落：V10 -> V01 -> V11
+                        Triangles.Add(V10);
+                        Triangles.Add(V01);
+                        Triangles.Add(V11);
+                    }
+                    else
+                    {
+                        // 标准角落：V10 -> V11 -> V01
+                        Triangles.Add(V10);
+                        Triangles.Add(V11);
+                        Triangles.Add(V01);
+                    }
+                }
+            }
+        }
+    }
+
 }
 
 
@@ -103,319 +429,29 @@ void AChamferCube::GenerateChamferedCube(float Size, float ChamferSize, int32 Se
 
     float HalfSize = Size / 2.0f; // 立方体半长
     // InnerOffset 是从中心到面内部（倒角开始处）的距离
-    // 如果 ChamferSize 为 0，则 InnerOffset 等于 HalfSize，形成一个锐角立方体
-    // 如果 ChamferSize 接近 HalfSize，则 InnerOffset 接近 0，形成一个球体
     float InnerOffset = HalfSize - ChamferSize;
 
     // 使用 TMap 存储唯一的顶点及其索引。
-    // 这对于确保网格各个部分之间平滑连接至关重要，避免重复顶点。
-    // 注意：将 FVector 直接用作 TMap 的键可能会因浮点精度问题而导致查找失败，
     // 在复杂场景中，可能需要自定义 FVector 的哈希函数或对位置进行四舍五入。
     TMap<FVector, int32> UniqueVerticesMap;
 
-    // Lambda 表达式：获取现有顶点索引或添加新顶点
-    // 检查给定位置的顶点是否已存在。如果存在，返回其索引；否则，添加新顶点并返回其索引。
-    auto GetOrAddVertex = [&](const FVector& Pos, const FVector& Normal, const FVector2D& UV) -> int32
-    {
-        // 尝试在 UniqueVerticesMap 中查找当前位置的顶点
-        int32* FoundIndex = UniqueVerticesMap.Find(Pos);
-        if (FoundIndex)
-        {
-            return *FoundIndex; 
-        }
-
-        // 如果未找到，则添加新顶点
-        int32 NewIndex = AddVertexInternal(Vertices, Normals, UV0, VertexColors, Tangents, Pos, Normal, UV);
-        UniqueVerticesMap.Add(Pos, NewIndex); 
-        return NewIndex; 
-    };
-
-
     // 定义8个角落的“核心点”（球形倒角的中心）
     // 这些点定义了倒角立方体的内部边界。
-    FVector CorePoints[8];
-    CorePoints[0] = FVector(-InnerOffset, -InnerOffset, -InnerOffset); // --- (-X, -Y, -Z)
-    CorePoints[1] = FVector(InnerOffset, -InnerOffset, -InnerOffset);  // +-- (+X, -Y, -Z)
-    CorePoints[2] = FVector(-InnerOffset, InnerOffset, -InnerOffset);  // -+- (-X, +Y, -Z)
-    CorePoints[3] = FVector(InnerOffset, InnerOffset, -InnerOffset);   // ++- (+X, +Y, -Z)
-    CorePoints[4] = FVector(-InnerOffset, -InnerOffset, InnerOffset);  // --+ (-X, -Y, +Z)
-    CorePoints[5] = FVector(InnerOffset, -InnerOffset, InnerOffset);   // +-+ (+X, -Y, +Z)
-    CorePoints[6] = FVector(-InnerOffset, InnerOffset, InnerOffset);   // -++ (-X, +Y, +Z)
-    CorePoints[7] = FVector(InnerOffset, InnerOffset, InnerOffset);    // +++ (+X, +Y, +Z)
+    TArray<FVector> CorePoints;
+    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, -InnerOffset)); // --- (-X, -Y, -Z)
+    CorePoints.Add(FVector(InnerOffset, -InnerOffset, -InnerOffset));  // +-- (+X, -Y, -Z)
+    CorePoints.Add(FVector(-InnerOffset, InnerOffset, -InnerOffset));  // -+- (-X, +Y, -Z)
+    CorePoints.Add(FVector(InnerOffset, InnerOffset, -InnerOffset));   // ++- (+X, +Y, -Z)
+    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, InnerOffset));  // --+ (-X, -Y, +Z)
+    CorePoints.Add(FVector(InnerOffset, -InnerOffset, InnerOffset));   // +-+ (+X, -Y, +Z)
+    CorePoints.Add(FVector(-InnerOffset, InnerOffset, InnerOffset));   // -++ (-X, +Y, +Z)
+    CorePoints.Add(FVector(InnerOffset, InnerOffset, InnerOffset));    // +++ (+X, +Y, +Z)
 
+    GenerateMainFaces( UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents, Triangles, HalfSize, InnerOffset );
 
-    // --- 1. 生成主面（6个）的顶点和三角形 ---
-    // 这些是立方体的大平面表面。它们的顶点是倒角开始的地方。
-    // 每个主面由4个顶点定义，这些顶点位于主平面和倒角半径的交点处。
+    GenerateEdgeChamfers( UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents, Triangles, CorePoints, ChamferSize, Sections );
 
-    // +X 面 (法线: (1,0,0))
-    // 这些顶点定义了 +X 面在倒角起点处的四个角点
-    int32 VxPyPz = GetOrAddVertex(FVector(HalfSize, InnerOffset, InnerOffset), FVector(1, 0, 0), FVector2D(0, 1));
-    int32 VxPyNz = GetOrAddVertex(FVector(HalfSize, InnerOffset, -InnerOffset), FVector(1, 0, 0), FVector2D(0, 0));
-    int32 VxNyNz = GetOrAddVertex(FVector(HalfSize, -InnerOffset, -InnerOffset), FVector(1, 0, 0), FVector2D(1, 0));
-    int32 VxNyPz = GetOrAddVertex(FVector(HalfSize, -InnerOffset, InnerOffset), FVector(1, 0, 0), FVector2D(1, 1));
-    AddQuadInternal(Triangles, VxNyNz, VxNyPz, VxPyPz, VxPyNz);
+    GenerateCornerChamfers(UniqueVerticesMap, Vertices, Normals, UV0, VertexColors, Tangents, Triangles, CorePoints, ChamferSize, Sections);
 
-    // -X 面 (法线: (-1,0,0))
-    int32 NxPyPz = GetOrAddVertex(FVector(-HalfSize, InnerOffset, InnerOffset), FVector(-1, 0, 0), FVector2D(1, 1));
-    int32 NxPyNz = GetOrAddVertex(FVector(-HalfSize, InnerOffset, -InnerOffset), FVector(-1, 0, 0), FVector2D(1, 0));
-    int32 NxNyNz = GetOrAddVertex(FVector(-HalfSize, -InnerOffset, -InnerOffset), FVector(-1, 0, 0), FVector2D(0, 0));
-    int32 NxNyPz = GetOrAddVertex(FVector(-HalfSize, -InnerOffset, InnerOffset), FVector(-1, 0, 0), FVector2D(0, 1));
-    AddQuadInternal(Triangles, NxNyNz, NxPyNz, NxPyPz, NxNyPz);
-
-    // +Y 面 (法线: (0,1,0))
-    int32 PyPxPz = GetOrAddVertex(FVector(InnerOffset, HalfSize, InnerOffset), FVector(0, 1, 0), FVector2D(0, 1));
-    int32 PyPxNz = GetOrAddVertex(FVector(InnerOffset, HalfSize, -InnerOffset), FVector(0, 1, 0), FVector2D(0, 0));
-    int32 PyNxNz = GetOrAddVertex(FVector(-InnerOffset, HalfSize, -InnerOffset), FVector(0, 1, 0), FVector2D(1, 0));
-    int32 PyNxPz = GetOrAddVertex(FVector(-InnerOffset, HalfSize, InnerOffset), FVector(0, 1, 0), FVector2D(1, 1));
-    AddQuadInternal(Triangles, PyNxNz, PyPxNz, PyPxPz, PyNxPz);
-
-    // -Y 面 (法线: (0,-1,0))
-    int32 NyPxPz = GetOrAddVertex(FVector(InnerOffset, -HalfSize, InnerOffset), FVector(0, -1, 0), FVector2D(1, 1));
-    int32 NyPxNz = GetOrAddVertex(FVector(InnerOffset, -HalfSize, -InnerOffset), FVector(0, -1, 0), FVector2D(1, 0));
-    int32 NyNxNz = GetOrAddVertex(FVector(-InnerOffset, -HalfSize, -InnerOffset), FVector(0, -1, 0), FVector2D(0, 0));
-    int32 NyNxPz = GetOrAddVertex(FVector(-InnerOffset, -HalfSize, InnerOffset), FVector(0, -1, 0), FVector2D(0, 1));
-    AddQuadInternal(Triangles, NyNxNz, NyNxPz, NyPxPz, NyPxNz);
-
-    // +Z 面 (法线: (0,0,1))
-    int32 PzPxPy = GetOrAddVertex(FVector(InnerOffset, InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(1, 1));
-    int32 PzNxPy = GetOrAddVertex(FVector(-InnerOffset, InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(0, 1));
-    int32 PzNxNy = GetOrAddVertex(FVector(-InnerOffset, -InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(0, 0));
-    int32 PzPxNy = GetOrAddVertex(FVector(InnerOffset, -InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(1, 0));
-    AddQuadInternal(Triangles, PzNxNy, PzNxPy, PzPxPy, PzPxNy);
-
-    // -Z 面 (法线: (0,0,-1))
-    int32 NzPxPy = GetOrAddVertex(FVector(InnerOffset, InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(1, 0));
-    int32 NzNxPy = GetOrAddVertex(FVector(-InnerOffset, InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(0, 0));
-    int32 NzNxNy = GetOrAddVertex(FVector(-InnerOffset, -InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(0, 1));
-    int32 NzPxNy = GetOrAddVertex(FVector(InnerOffset, -InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(1, 1));
-    AddQuadInternal(Triangles, NzNxNy, NzPxNy, NzPxPy, NzNxPy);
-
-
-    // --- 2. 生成边缘倒角（12个） ---
-    // 这些是圆柱形分段，连接两个主面。
-    // 每条边缘倒角都在两个 CorePoints 之间延伸，并连接主面上的相应顶点。
-
-    // 定义边缘倒角的数据结构
-    struct FEdgeChamferDef
-    {
-        int32 Core1Idx;         // 第一个 CorePoint 的索引
-        int32 Core2Idx;         // 第二个 CorePoint 的索引
-        FVector AxisDirection;  // 边缘的方向（例如，对于平行于X轴的边缘，方向是(1,0,0)）
-        FVector Normal1;        // 第一个相邻面的法线（弧线的起始法线）
-        FVector Normal2;        // 第二个相邻面的法线（弧线的结束法线）
-    };
-
-    TArray<FEdgeChamferDef> EdgeDefs; // 存储所有边缘倒角的定义
-
-    // +X 方向的边缘 (平行于 X 轴的边缘)
-    // Core1Idx, Core2Idx, 轴向, Normal1 (弧线起点法线), Normal2 (弧线终点法线)
-    EdgeDefs.Add({ 0, 1, FVector(1,0,0), FVector(0,-1,0), FVector(0,0,-1) }); // -Y/-Z 边缘 (从 (-X,-Y,-Z) 到 (+X,-Y,-Z))
-    EdgeDefs.Add({ 2, 3, FVector(1,0,0), FVector(0,0,-1), FVector(0,1,0) }); // +Y/-Z 边缘 (从 (-X,+Y,-Z) 到 (+X,+Y,-Z)) - 法线顺序交换，以改变弧线方向
-    EdgeDefs.Add({ 4, 5, FVector(1,0,0), FVector(0,0,1), FVector(0,-1,0) }); // -Y/+Z 边缘 (从 (-X,-Y,+Z) 到 (+X,-Y,+Z)) - 法线顺序交换
-    EdgeDefs.Add({ 6, 7, FVector(1,0,0), FVector(0,1,0), FVector(0,0,1) }); // +Y/+Z 边缘 (从 (-X,+Y,+Z) 到 (+X,+Y,+Z))
-
-    // +Y 方向的边缘 (平行于 Y 轴的边缘)
-    EdgeDefs.Add({ 0, 2, FVector(0,1,0), FVector(0,0,-1), FVector(-1,0,0) }); // -X/-Z 边缘 (从 (-X,-Y,-Z) 到 (-X,+Y,-Z)) - 法线顺序交换
-    EdgeDefs.Add({ 1, 3, FVector(0,1,0), FVector(1,0,0), FVector(0,0,-1) }); // +X/-Z 边缘 (从 (+X,-Y,-Z) 到 (+X,+Y,-Z))
-    EdgeDefs.Add({ 4, 6, FVector(0,1,0), FVector(-1,0,0), FVector(0,0,1) }); // -X/+Z 边缘 (从 (-X,-Y,+Z) 到 (-X,+Y,+Z))
-    EdgeDefs.Add({ 5, 7, FVector(0,1,0), FVector(0,0,1), FVector(1,0,0) }); // +X/+Z 边缘 (从 (+X,-Y,+Z) 到 (+X,+Y,+Z)) - 法线顺序交换
-
-    // +Z 方向的边缘 (平行于 Z 轴的边缘)
-    EdgeDefs.Add({ 0, 4, FVector(0,0,1), FVector(-1,0,0), FVector(0,-1,0) }); // -X/-Y 边缘 (从 (-X,-Y,-Z) 到 (-X,-Y,+Z))
-    EdgeDefs.Add({ 1, 5, FVector(0,0,1), FVector(0,-1,0), FVector(1,0,0) }); // +X/-Y 边缘 (从 (+X,-Y,-Z) 到 (+X,-Y,+Z)) - 法线顺序交换
-    EdgeDefs.Add({ 2, 6, FVector(0,0,1), FVector(0,1,0), FVector(-1,0,0) }); // -X/+Y 边缘 (从 (-X,+Y,-Z) 到 (-X,+Y,+Z)) - 法线顺序交换
-    EdgeDefs.Add({ 3, 7, FVector(0,0,1), FVector(1,0,0), FVector(0,1,0) }); // +X/+Y 边缘 (从 (+X,+Y,-Z) 到 (+X,+Y,+Z))
-
-
-    for (const FEdgeChamferDef& EdgeDef : EdgeDefs)
-    {
-        TArray<int32> PrevStripStartIndices; // 存储上一段弧线“开始”端的顶点索引
-        TArray<int32> PrevStripEndIndices;   // 存储上一段弧线“结束”端的顶点索引
-
-        // 迭代分段，创建圆柱形（弧形）分段
-        for (int32 s = 0; s <= Sections; ++s)
-        {
-            float Alpha = (float)s / Sections; // 插值因子，从0到1，用于控制沿弧线的进度
-
-            // 关键计算：根据 Normal1 和 Normal2 插值得到当前分段的法线。
-            // GetSafeNormal() 确保法线向量是单位向量。
-            // 这决定了圆柱形弧线的弯曲方向和光照。
-            FVector CurrentNormal = FMath::Lerp(EdgeDef.Normal1, EdgeDef.Normal2, Alpha).GetSafeNormal();
-
-            // 计算当前分段边缘的起点和终点位置。
-            // 这些点沿着 CurrentNormal 方向，从 CorePoints 偏移 ChamferSize。
-            FVector PosStart = CorePoints[EdgeDef.Core1Idx] + CurrentNormal * ChamferSize;
-            FVector PosEnd = CorePoints[EdgeDef.Core2Idx] + CurrentNormal * ChamferSize;
-
-            // UV 映射：U 坐标沿着弧线变化 (Alpha)，V 坐标沿着边缘长度变化。
-            FVector2D UV1 = FVector2D(Alpha, 0.0f); // 起点 UV
-            FVector2D UV2 = FVector2D(Alpha, 1.0f); // 终点 UV
-
-            int32 VtxStart = GetOrAddVertex(PosStart, CurrentNormal, UV1);
-            int32 VtxEnd = GetOrAddVertex(PosEnd, CurrentNormal, UV2);
-
-            if (s > 0) // 从第二个分段开始，可以形成四边形（两个三角形）
-            {
-                // 创建连接当前分段与上一个分段的四边形。
-                // AddQuadInternal 的顶点顺序 (PrevStripStart, PrevStripEnd, CurrentStripEnd, CurrentStripStart)
-                // 确保了标准的（外向的）逆时针缠绕顺序。
-                //
-                //   PrevStripStart  --  PrevStripEnd
-                //          |                |
-                //          |                |
-                //   CurrentStripStart -- CurrentStripEnd
-                AddQuadInternal(Triangles,
-                    PrevStripStartIndices[0],   // V1
-                    PrevStripEndIndices[0],     // V2
-                    VtxEnd,                     // V3 (CurrentStripEnd)
-                    VtxStart                    // V4 (CurrentStripStart)
-                );
-            }
-
-            // 将当前分段的顶点作为下一次迭代的“上一个”顶点
-            PrevStripStartIndices.Empty(); // 清空，然后添加
-            PrevStripStartIndices.Add(VtxStart);
-            PrevStripEndIndices.Empty(); // 清空，然后添加
-            PrevStripEndIndices.Add(VtxEnd);
-        }
-    }
-
-
-    // --- 3. 生成角落倒角（8个） ---
-    // 这些是球形分段，连接三个主面和三个边缘倒角。
-    // 每个角落都以一个 CorePoint 为中心。
-
-    for (int32 i = 0; i < 8; ++i)
-    {
-        FVector CurrentCorePoint = CorePoints[i]; // 当前处理的 CorePoint
-
-        // 此标志控制这四个特定角落的三角形缠绕顺序是否不同于其他角落。
-        // 注意：顶点法线本身仍将指向外部。
-        bool bSpecialCornerRenderingOrder = false;
-        if (i == 4 || i == 7 || i == 2 || i == 1) // 对应的角落 CorePoints 索引: -x-y+z, +x+y+z, -x+y-z, +x-y-z
-        {
-            bSpecialCornerRenderingOrder = true;
-        }
-
-        // 定义四分之一球体的三个轴方向的法线。
-        // 这些方向基于当前 CorePoint 的坐标符号。
-        FVector AxisX = FVector(FMath::Sign(CurrentCorePoint.X), 0, 0); // X轴方向
-        FVector AxisY = FVector(0, FMath::Sign(CurrentCorePoint.Y), 0); // Y轴方向
-        FVector AxisZ = FVector(0, 0, FMath::Sign(CurrentCorePoint.Z)); // Z轴方向
-
-        // 用于存储球形补丁顶点的网格。
-        TArray<TArray<int32>> CornerVerticesGrid;
-        CornerVerticesGrid.SetNum(Sections + 1);
-        for (int32 Lat = 0; Lat <= Sections; ++Lat)
-        {
-            // Tapering grid for a sphere: 每一圈的经度分段数会逐渐减少，直到顶点。
-            CornerVerticesGrid[Lat].SetNum(Sections + 1 - Lat);
-        }
-
-        // 生成四分之一球体的顶点
-        for (int32 Lat = 0; Lat <= Sections; ++Lat) // 类似于纬度分段
-        {
-            float LatAlpha = (float)Lat / Sections; // 沿“纬度”的插值因子 (0到1)
-            for (int32 Lon = 0; Lon <= Sections - Lat; ++Lon) // 类似于经度分段
-            {
-                float LonAlpha = (float)Lon / Sections; // 沿“经度”的插值因子 (0到1)
-
-                // 关键计算：计算球体上当前点的法线向量。
-                // 这是一个三线性插值，将三个轴方向的法线根据 LatAlpha 和 LonAlpha 加权平均。
-                // 1.0f - LatAlpha - LonAlpha 确保当 LatAlpha 或 LonAlpha 增加时，AxisX 的权重减少。
-                // 这使得法线从一个轴（例如，对于+++角从X轴）逐渐过渡到其他轴。
-                FVector CurrentNormal = (AxisX * (1.0f - LatAlpha - LonAlpha) + AxisY * LatAlpha + AxisZ * LonAlpha);
-                CurrentNormal.Normalize(); // 归一化，确保法线是单位向量
-
-                // 顶点位置：从 CorePoint 沿着 CurrentNormal 方向偏移 ChamferSize。
-                FVector CurrentPos = CurrentCorePoint + CurrentNormal * ChamferSize;
-
-                // UV 坐标映射：直接使用经纬度插值因子作为 UV 坐标。
-                FVector2D UV = FVector2D(LonAlpha, LatAlpha);
-
-                // 如果需要，可以在这里根据 bSpecialCornerRenderingOrder 调整 UV 映射
-                // 例如，如果视觉上“翻转”了角，可能需要翻转 UV 以保持纹理一致性。
-                // if (bSpecialCornerRenderingOrder)
-                // {
-                //     UV = FVector2D(1.0f - LonAlpha, LatAlpha); // 示例：仅反转U轴，产生镜像纹理
-                // }
-
-                CornerVerticesGrid[Lat][Lon] = GetOrAddVertex(CurrentPos, CurrentNormal, UV);
-            }
-        }
-
-        // 生成四分之一球体的三角形
-        for (int32 Lat = 0; Lat < Sections; ++Lat)
-        {
-            for (int32 Lon = 0; Lon < Sections - Lat; ++Lon)
-            {
-                // 获取网格上当前四边形段的四个角点顶点索引
-                int32 V00 = CornerVerticesGrid[Lat][Lon];
-                int32 V10 = CornerVerticesGrid[Lat + 1][Lon];
-                int32 V01 = CornerVerticesGrid[Lat][Lon + 1];
-
-                // 关键算处：根据 bSpecialCornerRenderingOrder 有条件地调整三角形缠绕顺序。
-                // 这会改变渲染引擎如何识别面的“正面”。
-                if (bSpecialCornerRenderingOrder)
-                {
-                    // 对于这些特殊角落，使用不同的缠绕顺序。
-                    // 标准（外向）缠绕： V00, V01, V10
-                    // 此处反转为： V00, V10, V01。这将导致面被视为“背面”，如果材质是单面渲染，则在外部不可见。
-                    Triangles.Add(V00); Triangles.Add(V01); Triangles.Add(V10);
-                }
-                else
-                {
-                    // 对于其他角落，使用标准的（外向的）缠绕顺序。
-                    Triangles.Add(V00); Triangles.Add(V10); Triangles.Add(V01);
-                }
-
-                // 检查是否存在第二个三角形以形成完整的四边形（不是补丁的最边缘）
-                if (Lon + 1 < CornerVerticesGrid[Lat + 1].Num())
-                {
-                    int32 V11 = CornerVerticesGrid[Lat + 1][Lon + 1];
-                    if (bSpecialCornerRenderingOrder)
-                    {
-                        // 对于这些特殊角落，反转第二个三角形的缠绕顺序。
-                        // 标准（外向）缠绕： V10, V11, V01
-                        // 此处反转为： V10, V01, V11。
-                        Triangles.Add(V10); Triangles.Add(V01); Triangles.Add(V11);
-                    }
-                    else
-                    {
-                        // 对于其他角落，使用标准的（外向的）缠绕顺序。
-                        Triangles.Add(V10); Triangles.Add(V11); Triangles.Add(V01);
-                    }
-                }
-            }
-        }
-    }
-
-    // 最后，使用生成的数据创建网格节
-    ProceduralMesh->CreateMeshSection_LinearColor(
-        0,                   // 网格节索引（此处只有一个节）
-        Vertices,            // 顶点位置
-        Triangles,           // 三角形索引
-        Normals,             // 顶点法线
-        UV0,                 // UV 坐标 (TexCoord0)
-        VertexColors,        // 顶点颜色
-        Tangents,            // 顶点切线
-        true                 // 为此节创建碰撞（设置为 true 可进行物理模拟和碰撞检测）
-    );
-
-
-	ProceduralMesh->SetMaterial(0, DynamicMaterial); // 设置第一个网格节的材质
-    // 可选：为生成的网格设置材质
-    // 尝试查找 StarterContent 中的 M_Basic_Wall 材质
-    /*
-    static ConstructorHelpers::FObjectFinder<UMaterialInstanceDynamic> MaterialFinder(TEXT("Material'/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall'"));
-    if (MaterialFinder.Succeeded())
-    {
-        ProceduralMesh->SetMaterial(0, DynamicMaterial); // 设置第一个网格节的材质
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("Failed to find material. Make sure StarterContent is enabled or provide a valid path."));
-    }
-    */
+    ProceduralMesh->CreateMeshSection_LinearColor( 0, Vertices, Triangles,Normals, UV0, VertexColors, Tangents, true);
 }

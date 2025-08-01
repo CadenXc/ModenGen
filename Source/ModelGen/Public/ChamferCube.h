@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ProceduralMeshComponent.h" 
-#include "Materials/MaterialInstanceDynamic.h"
 #include "ChamferCube.generated.h"
 
 UCLASS()
@@ -22,9 +21,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ChamferCube Parameters")
 		int32 ChamferSections = 1; // 倒角分段数
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Material")
-		UMaterialInstanceDynamic* DynamicMaterial;
 
 	UFUNCTION(BlueprintCallable, Category = "ChamferCube")
 		void GenerateChamferedCube(float Size, float ChamferSize, int32 Sections);
@@ -48,17 +44,22 @@ private:
 	// Helper function to add a quad (two triangles)
 	void AddQuadInternal(TArray<int32>& Triangles, int32 V1, int32 V2, int32 V3, int32 V4);
 
+    // 提取的顶点管理函数
+    int32 GetOrAddVertex(
+        TMap<FVector, int32>& UniqueVerticesMap, TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors,
+        TArray<FProcMeshTangent>& Tangents, const FVector& Pos, const FVector& Normal, const FVector2D& UV );
 
-	// New functions for specific geometry generation parts
-	void GenerateMainFaces(float InnerSize,
-		TArray<FVector>& Vertices, TArray<int32>& Triangles, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents,
-		const FVector InnerCorner[8]);
+    // 拆分的生成逻辑
+    void GenerateMainFaces(
+        TMap<FVector, int32>& UniqueVerticesMap, TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors,
+        TArray<FProcMeshTangent>& Tangents, TArray<int32>& Triangles, float HalfSize, float InnerOffset );
 
-	void GenerateEdgeChamfers(float Size, float ChamferSize, int32 Sections,
-		TArray<FVector>& Vertices, TArray<int32>& Triangles, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents,
-		const FVector InnerCorner[8]);
+    void GenerateEdgeChamfers(
+        TMap<FVector, int32>& UniqueVerticesMap, TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors,
+        TArray<FProcMeshTangent>& Tangents, TArray<int32>& Triangles, const TArray<FVector>& CorePoints, float ChamferSize, int32 Sections );
 
-	void GenerateCornerChamfers(float ChamferSize, int32 Sections,
-		TArray<FVector>& Vertices, TArray<int32>& Triangles, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents,
-		const FVector InnerCorner[8]);
+    void GenerateCornerChamfers(
+        TMap<FVector, int32>& UniqueVerticesMap, TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors,
+        TArray<FProcMeshTangent>& Tangents, TArray<int32>& Triangles, const TArray<FVector>& CorePoints, float ChamferSize, int32 Sections
+    );
 };
