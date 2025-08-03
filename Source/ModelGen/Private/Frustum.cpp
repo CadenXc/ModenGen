@@ -4,33 +4,35 @@
 #include "ProceduralMeshComponent.h"
 #include "Materials/Material.h"
 #include "UObject/ConstructorHelpers.h"
-#include "Kismet/KismetMathLibrary.h" // For FMath::DegreesToRadians, etc.
+#include "Kismet/KismetMathLibrary.h"
 
-// Sets default values
 AFrustum::AFrustum()
 {
-    PrimaryActorTick.bCanEverTick = false;
+    PrimaryActorTick.bCanEverTick = true;
 
-    ProceduralMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("GeneratedMesh"));
-    RootComponent = ProceduralMesh;
+    // 创建网格组件
+    MeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("FrustumMesh"));
+    RootComponent = MeshComponent;
 
-    ProceduralMesh->bUseAsyncCooking = true;
-    ProceduralMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-    ProceduralMesh->SetSimulatePhysics(false);
+    // 配置网格属性
+    MeshComponent->bUseAsyncCooking = true;
+    MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    MeshComponent->SetSimulatePhysics(false);
 
-    GenerateFrustum(); // Generate on construction
+    // 初始生成
+    GenerateGeometry();
 }
 
 void AFrustum::BeginPlay()
 {
     Super::BeginPlay();
-    GenerateFrustum(); // Generate on play (for runtime updates if parameters change)
+    GenerateGeometry();
 }
 
 void AFrustum::PostLoad()
 {
     Super::PostLoad();
-    GenerateFrustum(); // Generate after loading (for editor data)
+    GenerateGeometry();
 }
 
 #if WITH_EDITOR
@@ -38,23 +40,19 @@ void AFrustum::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 {
     Super::PostEditChangeProperty(PropertyChangedEvent);
 
-    if (PropertyChangedEvent.Property != nullptr)
+    const FName PropertyName = PropertyChangedEvent.GetPropertyName();
+    static const TArray<FName> RelevantProperties = {
+        "TopRadius", "BottomRadius", "Height",
+        "TopSides", "BottomSides", "HeightSegments",
+        "ChamferRadius", "ChamferSections",
+        "BendAmount", "MinBendRadius", "ArcAngle",
+        "CapThickness"
+    };
+
+    if (RelevantProperties.Contains(PropertyName))
     {
-        FName PropertyName = PropertyChangedEvent.Property->GetFName();
-        if (PropertyName == GET_MEMBER_NAME_CHECKED(FFrustumParameters, TopRadius) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(FFrustumParameters, BottomRadius) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(FFrustumParameters, Height) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(FFrustumParameters, TopSides) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(FFrustumParameters, BottomSides) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(FFrustumParameters, ChamferRadius) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(FFrustumParameters, ChamferSections) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(FFrustumParameters, ArcSegments) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(FFrustumParameters, BendDegree) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(FFrustumParameters, MinBendRadius) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(FFrustumParameters, FrustumAngle))
-        {
-            GenerateFrustum();
-        }
+        bGeometryDirty = true;
+		GenerateGeometry();
     }
 }
 #endif
@@ -62,381 +60,492 @@ void AFrustum::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 void AFrustum::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
-}
 
-int32 AFrustum::AddVertexInternal(FMeshData& MeshData, const FVector& Pos, const FVector& Normal, const FVector2D& UV)
-{
-    MeshData.Vertices.Add(Pos);
-    MeshData.Normals.Add(Normal);
-    MeshData.UV0.Add(UV);
-    MeshData.VertexColors.Add(FLinearColor::White);
-
-    // Calculate tangent - simplified for now, often needs more sophisticated calculation
-    FVector TangentDirection = FVector::CrossProduct(Normal, FVector::UpVector);
-    if (TangentDirection.IsNearlyZero())
+    if (bGeometryDirty)
     {
-        TangentDirection = FVector::CrossProduct(Normal, FVector::RightVector);
+        GenerateGeometry();
+        bGeometryDirty = false;
     }
-    TangentDirection.Normalize();
-    MeshData.Tangents.Add(FProcMeshTangent(TangentDirection, false));
-
-    return MeshData.Vertices.Num() - 1;
 }
 
-void AFrustum::AddQuadInternal(TArray<int32>& Triangles, int32 V1, int32 V2, int32 V3, int32 V4)
+void AFrustum::Regenerate()
 {
-    Triangles.Add(V1); Triangles.Add(V2); Triangles.Add(V3); // Triangle 1
-    Triangles.Add(V1); Triangles.Add(V3); Triangles.Add(V4); // Triangle 2
+    GenerateGeometry();
 }
 
-void AFrustum::AddTriangleInternal(TArray<int32>& Triangles, int32 V1, int32 V2, int32 V3)
+void AFrustum::GenerateGeometry()
 {
-    Triangles.Add(V1); Triangles.Add(V2); Triangles.Add(V3);
-}
-
-void AFrustum::GenerateFrustum()
-{
-    if (!ProceduralMesh)
+    if (!MeshComponent)
     {
-        UE_LOG(LogTemp, Error, TEXT("ProceduralMeshComponent is null!"));
+        UE_LOG(LogTemp, Error, TEXT("Mesh component is missing!"));
         return;
     }
 
-    ProceduralMesh->ClearAllMeshSections();
+    // 清除现有网格
+    MeshComponent->ClearAllMeshSections();
 
-    FMeshData MeshData;
+    // 验证参数
+    Parameters.TopRadius = FMath::Max(0.01f, Parameters.TopRadius);
+    Parameters.BottomRadius = FMath::Max(0.01f, Parameters.BottomRadius);
+    Parameters.Height = FMath::Max(0.01f, Parameters.Height);
+    Parameters.TopSides = FMath::Max(3, Parameters.TopSides);
+    Parameters.BottomSides = FMath::Max(3, Parameters.BottomSides);
+    Parameters.HeightSegments = FMath::Max(1, Parameters.HeightSegments);
+    Parameters.ChamferSections = FMath::Max(1, Parameters.ChamferSections);
+    Parameters.ArcAngle = FMath::Clamp(Parameters.ArcAngle, 0.0f, 360.0f);
+    Parameters.MinBendRadius = FMath::Max(1.0f, Parameters.MinBendRadius);
+    Parameters.CapThickness = FMath::Max(0.0f, Parameters.CapThickness);
 
-    // Clamp and validate parameters
-    FrustumParameters.TopRadius = FMath::Max(0.01f, FrustumParameters.TopRadius);
-    FrustumParameters.BottomRadius = FMath::Max(0.01f, FrustumParameters.BottomRadius);
-    FrustumParameters.Height = FMath::Max(0.01f, FrustumParameters.Height);
-    FrustumParameters.TopSides = FMath::Max(3, FrustumParameters.TopSides);
-    FrustumParameters.BottomSides = FMath::Max(3, FrustumParameters.BottomSides);
-    FrustumParameters.ChamferSections = FMath::Max(1, FrustumParameters.ChamferSections);
-    FrustumParameters.ArcSegments = FMath::Max(1, FrustumParameters.ArcSegments);
-    FrustumParameters.FrustumAngle = FMath::Clamp(FrustumParameters.FrustumAngle, 0.0f, 360.0f);
-    FrustumParameters.MinBendRadius = FMath::Max(1.0f, FrustumParameters.MinBendRadius); // Ensure > 0
+    // 确保顶部边数不超过底部
+    Parameters.TopSides = FMath::Min(Parameters.TopSides, Parameters.BottomSides);
 
-    // Chamfer radius must not be too large
-    FrustumParameters.ChamferRadius = FMath::Clamp(FrustumParameters.ChamferRadius, 0.0f,
-        FMath::Min(FMath::Min(FrustumParameters.TopRadius, FrustumParameters.BottomRadius), FrustumParameters.Height / 2.0f) - KINDA_SMALL_NUMBER);
+    // 创建新网格数据
+    FMeshSection MeshData;
 
-    // Ensure TopSides <= BottomSides as per instruction
-    FrustumParameters.TopSides = FMath::Min(FrustumParameters.TopSides, FrustumParameters.BottomSides);
+    // 预估内存需求
+    const int32 TotalSides = FMath::Max(Parameters.TopSides, Parameters.BottomSides);
+    const int32 VertexCountEstimate =
+        (Parameters.HeightSegments + 1) * (TotalSides + 1) * 4 +
+        Parameters.ChamferSections * TotalSides * 8 +
+        (Parameters.ArcAngle < 360.0f ? Parameters.HeightSegments * 4 : 0);
 
+    const int32 TriangleCountEstimate =
+        Parameters.HeightSegments * TotalSides * 6 +
+        Parameters.ChamferSections * TotalSides * 6 * 2 +
+        (Parameters.ArcAngle < 360.0f ? Parameters.HeightSegments * 6 : 0);
 
-    // Generate main geometry
-    GenerateGeometry(MeshData);
+    MeshData.Reserve(VertexCountEstimate, TriangleCountEstimate);
 
-    // Setup material
-    SetupMaterial();
+    // 生成几何部件
+    CreateSideGeometry(MeshData);
+    CreateTopGeometry(MeshData);
+    CreateBottomGeometry(MeshData);
 
-    // Create mesh section
-    if (MeshData.Vertices.Num() > 0 && MeshData.Triangles.Num() > 0)
+    if (Parameters.ChamferRadius > KINDA_SMALL_NUMBER)
     {
-        ProceduralMesh->CreateMeshSection_LinearColor(
+        CreateChamfers(MeshData);
+    }
+
+    if (Parameters.ArcAngle < 360.0f - KINDA_SMALL_NUMBER)
+    {
+        CreateEndCaps(MeshData);
+    }
+
+    // 提交网格
+    if (MeshData.Vertices.Num() > 0)
+    {
+        MeshComponent->CreateMeshSection_LinearColor(
             0,
             MeshData.Vertices,
             MeshData.Triangles,
             MeshData.Normals,
-            MeshData.UV0,
+            MeshData.UVs,
             MeshData.VertexColors,
             MeshData.Tangents,
-            true // Enable collision
+            true // 启用碰撞
+        );
+
+        ApplyMaterial();
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Generated frustum mesh has no vertices"));
+    }
+}
+
+int32 AFrustum::AddVertex(FMeshSection& Section, const FVector& Position, const FVector& Normal, const FVector2D& UV)
+{
+    const int32 Index = Section.Vertices.Add(Position);
+    Section.Normals.Add(Normal);
+    Section.UVs.Add(UV);
+    Section.VertexColors.Add(FLinearColor::White);
+
+    // 切线计算
+    FVector Tangent = FVector::CrossProduct(Normal, FVector::UpVector);
+    if (Tangent.IsNearlyZero())
+    {
+        Tangent = FVector::CrossProduct(Normal, FVector::RightVector);
+    }
+    Tangent.Normalize();
+
+    Section.Tangents.Add(FProcMeshTangent(Tangent, false));
+
+    return Index;
+}
+
+void AFrustum::AddQuad(FMeshSection& Section, int32 V1, int32 V2, int32 V3, int32 V4)
+{
+    Section.Triangles.Add(V1);
+    Section.Triangles.Add(V2);
+    Section.Triangles.Add(V3);
+
+    Section.Triangles.Add(V1);
+    Section.Triangles.Add(V3);
+    Section.Triangles.Add(V4);
+}
+
+void AFrustum::AddTriangle(FMeshSection& Section, int32 V1, int32 V2, int32 V3)
+{
+    Section.Triangles.Add(V1);
+    Section.Triangles.Add(V2);
+    Section.Triangles.Add(V3);
+}
+
+void AFrustum::CreateSideGeometry(FMeshSection& Section)
+{
+    const float HalfHeight = Parameters.Height / 2.0f;
+    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.BottomSides;
+    const float HeightStep = Parameters.Height / Parameters.HeightSegments;
+
+    // 顶点环缓存 [高度层][边]
+    TArray<TArray<int32>> VertexRings;
+    VertexRings.SetNum(Parameters.HeightSegments + 1);
+
+    // 生成顶点环
+    for (int32 h = 0; h <= Parameters.HeightSegments; ++h)
+    {
+        const float Z = -HalfHeight + h * HeightStep;
+        const float Alpha = static_cast<float>(h) / Parameters.HeightSegments;
+        const float Radius = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha);
+
+        // 弯曲效果
+        const float BendFactor = FMath::Sin(Alpha * PI);
+        const float BentRadius = FMath::Max(
+            Radius + Parameters.BendAmount * BendFactor * Radius,
+            Parameters.MinBendRadius
+        );
+
+        TArray<int32>& Ring = VertexRings[h];
+        Ring.SetNum(Parameters.BottomSides + 1);
+
+        for (int32 s = 0; s <= Parameters.BottomSides; ++s)
+        {
+            const float Angle = s * AngleStep;
+            const float X = BentRadius * FMath::Cos(Angle);
+            const float Y = BentRadius * FMath::Sin(Angle);
+
+            // 法线计算（考虑弯曲）
+            FVector Normal = FVector(X, Y, 0).GetSafeNormal();
+            if (!FMath::IsNearlyZero(Parameters.BendAmount))
+            {
+                const float NormalZ = -Parameters.BendAmount * FMath::Cos(Alpha * PI);
+                Normal = (Normal + FVector(0, 0, NormalZ)).GetSafeNormal();
+            }
+
+            // UV映射
+            const float U = static_cast<float>(s) / Parameters.BottomSides;
+            const float V = Alpha;
+
+            Ring[s] = AddVertex(Section, FVector(X, Y, Z), Normal, FVector2D(U, V));
+        }
+    }
+
+    // 生成侧面四边形
+    for (int32 h = 0; h < Parameters.HeightSegments; ++h)
+    {
+        for (int32 s = 0; s < Parameters.BottomSides; ++s)
+        {
+            const int32 V00 = VertexRings[h][s];
+            const int32 V10 = VertexRings[h + 1][s];
+            const int32 V01 = VertexRings[h][s + 1];
+            const int32 V11 = VertexRings[h + 1][s + 1];
+
+            AddQuad(Section, V00, V10, V11, V01);
+        }
+    }
+}
+
+void AFrustum::CreateTopGeometry(FMeshSection& Section)
+{
+    const float HalfHeight = Parameters.Height / 2.0f;
+    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.TopSides;
+
+    // 中心顶点
+    const int32 CenterVertex = AddVertex(
+        Section,
+        FVector(0, 0, HalfHeight),
+        FVector(0, 0, 1),
+        FVector2D(0.5f, 0.5f)
+    );
+
+    // 顶部顶点环
+    TArray<int32> TopRing;
+    TopRing.SetNum(Parameters.TopSides + 1);
+
+    for (int32 s = 0; s <= Parameters.TopSides; ++s)
+    {
+        const float Angle = s * AngleStep;
+        const float X = Parameters.TopRadius * FMath::Cos(Angle);
+        const float Y = Parameters.TopRadius * FMath::Sin(Angle);
+
+        // UV映射到圆形
+        const float U = 0.5f + 0.5f * FMath::Cos(Angle);
+        const float V = 0.5f + 0.5f * FMath::Sin(Angle);
+
+        TopRing[s] = AddVertex(
+            Section,
+            FVector(X, Y, HalfHeight),
+            FVector(0, 0, 1),
+            FVector2D(U, V)
         );
     }
-    else
+
+    // 创建顶部三角扇
+    for (int32 s = 0; s < Parameters.TopSides; ++s)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Frustum mesh data is empty, cannot create mesh section."));
+        AddTriangle(
+            Section,
+            CenterVertex,
+            TopRing[s + 1],
+            TopRing[s]
+        );
     }
 }
 
-void AFrustum::GenerateGeometry(FMeshData& MeshData)
+void AFrustum::CreateBottomGeometry(FMeshSection& Section)
 {
-    const float HalfHeight = FrustumParameters.Height / 2.0f;
-    const float AngleStepBottom = FMath::DegreesToRadians(FrustumParameters.FrustumAngle) / FrustumParameters.BottomSides;
-    const float AngleStepTop = FMath::DegreesToRadians(FrustumParameters.FrustumAngle) / FrustumParameters.TopSides;
+    const float HalfHeight = Parameters.Height / 2.0f;
+    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.BottomSides;
 
-    // Helper to calculate radial offset based on bend degree
-    auto GetBentRadius = [&](float CurrentRadius, float AlphaZ) -> float
-        {
-            // AlphaZ from -1 (bottom) to 1 (top)
-            float BendFactor = FMath::Sin(AlphaZ * PI * 0.5f); // Smooth bend from -1 to 1 based on height
-            float MaxRadialOffset = CurrentRadius * FrustumParameters.BendDegree;
-            float AdjustedRadius = CurrentRadius + MaxRadialOffset * BendFactor;
+    // 中心顶点
+    const int32 CenterVertex = AddVertex(
+        Section,
+        FVector(0, 0, -HalfHeight),
+        FVector(0, 0, -1),
+        FVector2D(0.5f, 0.5f)
+    );
 
-            // Ensure radius doesn't go below MinBendRadius
-            return FMath::Max(AdjustedRadius, FrustumParameters.MinBendRadius);
-        };
+    // 底部顶点环
+    TArray<int32> BottomRing;
+    BottomRing.SetNum(Parameters.BottomSides + 1);
 
-    TArray<TArray<int32>> SideVerticesGrid; // [ArcSegmentIndex][BottomSideSegmentIndex]
-    SideVerticesGrid.SetNum(FrustumParameters.ArcSegments + 1);
-    for (int32 i_arc = 0; i_arc <= FrustumParameters.ArcSegments; ++i_arc)
+    for (int32 s = 0; s <= Parameters.BottomSides; ++s)
     {
-        SideVerticesGrid[i_arc].SetNum(FrustumParameters.BottomSides);
+        const float Angle = s * AngleStep;
+        const float X = Parameters.BottomRadius * FMath::Cos(Angle);
+        const float Y = Parameters.BottomRadius * FMath::Sin(Angle);
+
+        // UV映射到圆形
+        const float U = 0.5f + 0.5f * FMath::Cos(Angle);
+        const float V = 0.5f + 0.5f * FMath::Sin(Angle);
+
+        BottomRing[s] = AddVertex(
+            Section,
+            FVector(X, Y, -HalfHeight),
+            FVector(0, 0, -1),
+            FVector2D(U, V)
+        );
     }
 
-    // Generate rings of vertices for the side faces (including top and bottom)
-    for (int32 i_arc = 0; i_arc <= FrustumParameters.ArcSegments; ++i_arc)
+    // 创建底部三角扇
+    for (int32 s = 0; s < Parameters.BottomSides; ++s)
     {
-        float AlphaHeight = (float)i_arc / FrustumParameters.ArcSegments; // 0.0 at bottom, 1.0 at top
-        float Z = FMath::Lerp(-HalfHeight, HalfHeight, AlphaHeight);
-        float RadiusLerp = FMath::Lerp(FrustumParameters.BottomRadius, FrustumParameters.TopRadius, AlphaHeight);
-
-        float CurrentFrustumRadius = GetBentRadius(RadiusLerp, FMath::Lerp(-1.0f, 1.0f, AlphaHeight));
-
-        for (int32 j_side = 0; j_side < FrustumParameters.BottomSides; ++j_side)
-        {
-            float Angle = j_side * AngleStepBottom;
-            FVector Pos(CurrentFrustumRadius * FMath::Cos(Angle), CurrentFrustumRadius * FMath::Sin(Angle), Z);
-
-            // Calculate normal for side faces (pointing outwards radially)
-            FVector Normal = FVector(Pos.X, Pos.Y, 0).GetSafeNormal();
-            if (FrustumParameters.BendDegree != 0.0f)
-            {
-                // For bending, the normal also needs a Z component
-                // This is a simplified normal calculation; for true smoothness, it needs to consider the exact curve.
-                float NormalZComponent = -FrustumParameters.BendDegree * FMath::Cos(AlphaHeight * PI);
-                Normal += FVector(0, 0, NormalZComponent);
-                Normal.Normalize();
-            }
-
-            // UV mapping for side faces
-            FVector2D UV((float)j_side / FrustumParameters.BottomSides, AlphaHeight);
-
-            SideVerticesGrid[i_arc][j_side] = AddVertexInternal(MeshData, Pos, Normal, UV);
-        }
-    }
-
-    // Generate Side Faces
-    for (int32 i_arc = 0; i_arc < FrustumParameters.ArcSegments; ++i_arc)
-    {
-        for (int32 j_side = 0; j_side < FrustumParameters.BottomSides; ++j_side)
-        {
-            int32 V00 = SideVerticesGrid[i_arc][j_side];
-            int32 V10 = SideVerticesGrid[i_arc + 1][j_side];
-            int32 V01 = SideVerticesGrid[i_arc][(j_side + 1) % FrustumParameters.BottomSides];
-            int32 V11 = SideVerticesGrid[i_arc + 1][(j_side + 1) % FrustumParameters.BottomSides];
-
-            AddQuadInternal(MeshData.Triangles, V00, V10, V11, V01); // Standard winding order
-        }
-    }
-
-    // Generate Top and Bottom Faces
-    GenerateTopAndBottomFaces(MeshData);
-
-    // Generate Chamfers (edges between top/bottom and sides)
-    GenerateChamfers(MeshData);
-
-    // If FrustumAngle < 360, add the start and end cap faces
-    if (FrustumParameters.FrustumAngle < 360.0f - KINDA_SMALL_NUMBER)
-    {
-        // Start Cap (at Angle = 0)
-        FVector StartCapNormal = FVector(0, -1, 0); // Pointing 'left' from the slice.
-
-        for (int32 i_cap_start = 0; i_cap_start < FrustumParameters.ArcSegments; ++i_cap_start)
-        {
-            int32 OuterVtx_Bottom_Start = SideVerticesGrid[i_cap_start][0];
-            int32 OuterVtx_Top_Start = SideVerticesGrid[i_cap_start + 1][0];
-
-            float Z_Bottom_Start = MeshData.Vertices[OuterVtx_Bottom_Start].Z;
-            float Z_Top_Start = MeshData.Vertices[OuterVtx_Top_Start].Z;
-
-            // These points form the "inner" edge along the Z-axis for the slice
-            FVector InnerPointBottomPos_Start(0, 0, Z_Bottom_Start);
-            FVector InnerPointTopPos_Start(0, 0, Z_Top_Start);
-
-            int32 InnerVtx_Bottom_Start = AddVertexInternal(MeshData, InnerPointBottomPos_Start, StartCapNormal, FVector2D(0.0f, (float)i_cap_start / FrustumParameters.ArcSegments));
-            int32 InnerVtx_Top_Start = AddVertexInternal(MeshData, InnerPointTopPos_Start, StartCapNormal, FVector2D(0.0f, (float)(i_cap_start + 1) / FrustumParameters.ArcSegments));
-
-            AddQuadInternal(MeshData.Triangles, OuterVtx_Bottom_Start, OuterVtx_Top_Start, InnerVtx_Top_Start, InnerVtx_Bottom_Start); // Correct winding for outwards
-        }
-
-        // End Cap (at Angle = FrustumAngle)
-        FVector EndCapNormal = FVector(-FMath::Sin(FMath::DegreesToRadians(FrustumParameters.FrustumAngle)), FMath::Cos(FMath::DegreesToRadians(FrustumParameters.FrustumAngle)), 0);
-
-        for (int32 i_cap_end = 0; i_cap_end < FrustumParameters.ArcSegments; ++i_cap_end)
-        {
-            int32 OuterVtx_Bottom_End = SideVerticesGrid[i_cap_end][FrustumParameters.BottomSides - 1];
-            int32 OuterVtx_Top_End = SideVerticesGrid[i_cap_end + 1][FrustumParameters.BottomSides - 1];
-
-            float Z_Bottom_End = MeshData.Vertices[OuterVtx_Bottom_End].Z;
-            float Z_Top_End = MeshData.Vertices[OuterVtx_Top_End].Z;
-
-            // These points form the "inner" edge along the Z-axis for the slice
-            FVector InnerPointBottomPos_End(0, 0, Z_Bottom_End);
-            FVector InnerPointTopPos_End(0, 0, Z_Top_End);
-
-            int32 InnerVtx_Bottom_End = AddVertexInternal(MeshData, InnerPointBottomPos_End, EndCapNormal, FVector2D(0.0f, (float)i_cap_end / FrustumParameters.ArcSegments));
-            int32 InnerVtx_Top_End = AddVertexInternal(MeshData, InnerPointTopPos_End, EndCapNormal, FVector2D(0.0f, (float)(i_cap_end + 1) / FrustumParameters.ArcSegments));
-
-            AddQuadInternal(MeshData.Triangles, InnerVtx_Bottom_End, InnerVtx_Top_End, OuterVtx_Top_End, OuterVtx_Bottom_End); // Reverse winding for outwards
-        }
+        AddTriangle(
+            Section,
+            CenterVertex,
+            BottomRing[s],
+            BottomRing[s + 1]
+        );
     }
 }
 
-void AFrustum::GenerateTopAndBottomFaces(FMeshData& MeshData)
+void AFrustum::CreateChamfers(FMeshSection& Section)
 {
-    const float HalfHeight = FrustumParameters.Height / 2.0f;
-    const float AngleStepBottom = FMath::DegreesToRadians(FrustumParameters.FrustumAngle) / FrustumParameters.BottomSides;
-    const float AngleStepTop = FMath::DegreesToRadians(FrustumParameters.FrustumAngle) / FrustumParameters.TopSides;
+    const float HalfHeight = Parameters.Height / 2.0f;
+    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.BottomSides;
 
-    // Top Face
-    int32 TopCenterVtx = AddVertexInternal(MeshData, FVector(0, 0, HalfHeight), FVector(0, 0, 1), FVector2D(0.5, 0.5));
-    for (int32 i_top = 0; i_top < FrustumParameters.TopSides; ++i_top)
+    // 顶部倒角
+    for (int32 s = 0; s < Parameters.BottomSides; ++s)
     {
-        float Angle1 = i_top * AngleStepTop;
-        float Angle2 = ((i_top + 1) % FrustumParameters.TopSides) * AngleStepTop;
+        const float Angle = s * AngleStep;
+        const FVector RadialDir = FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0);
 
-        FVector P1(FrustumParameters.TopRadius * FMath::Cos(Angle1), FrustumParameters.TopRadius * FMath::Sin(Angle1), HalfHeight);
-        FVector P2(FrustumParameters.TopRadius * FMath::Cos(Angle2), FrustumParameters.TopRadius * FMath::Sin(Angle2), HalfHeight);
+        // 顶部边缘位置
+        const FVector TopEdgePos = RadialDir * Parameters.TopRadius + FVector(0, 0, HalfHeight);
 
-        // Calculate UVs for circular top/bottom faces
-        FVector2D UV1 = FVector2D(P1.X / (FrustumParameters.TopRadius * 2) + 0.5f, P1.Y / (FrustumParameters.TopRadius * 2) + 0.5f);
-        FVector2D UV2 = FVector2D(P2.X / (FrustumParameters.TopRadius * 2) + 0.5f, P2.Y / (FrustumParameters.TopRadius * 2) + 0.5f);
+        // 生成倒角环
+        TArray<int32> ChamferRing;
+        ChamferRing.SetNum(Parameters.ChamferSections + 1);
 
-        int32 Vtx1 = AddVertexInternal(MeshData, P1, FVector(0, 0, 1), UV1);
-        int32 Vtx2 = AddVertexInternal(MeshData, P2, FVector(0, 0, 1), UV2);
-
-        AddTriangleInternal(MeshData.Triangles, TopCenterVtx, Vtx2, Vtx1); // Clockwise for top face
-    }
-
-    // Bottom Face
-    int32 BottomCenterVtx = AddVertexInternal(MeshData, FVector(0, 0, -HalfHeight), FVector(0, 0, -1), FVector2D(0.5, 0.5));
-    for (int32 i_bottom = 0; i_bottom < FrustumParameters.BottomSides; ++i_bottom)
-    {
-        float Angle1 = i_bottom * AngleStepBottom;
-        float Angle2 = ((i_bottom + 1) % FrustumParameters.BottomSides) * AngleStepBottom;
-
-        FVector P1(FrustumParameters.BottomRadius * FMath::Cos(Angle1), FrustumParameters.BottomRadius * FMath::Sin(Angle1), -HalfHeight);
-        FVector P2(FrustumParameters.BottomRadius * FMath::Cos(Angle2), FrustumParameters.BottomRadius * FMath::Sin(Angle2), -HalfHeight);
-
-        // Calculate UVs for circular top/bottom faces
-        FVector2D UV1 = FVector2D(P1.X / (FrustumParameters.BottomRadius * 2) + 0.5f, P1.Y / (FrustumParameters.BottomRadius * 2) + 0.5f);
-        FVector2D UV2 = FVector2D(P2.X / (FrustumParameters.BottomRadius * 2) + 0.5f, P2.Y / (FrustumParameters.BottomRadius * 2) + 0.5f);
-
-        int32 Vtx1 = AddVertexInternal(MeshData, P1, FVector(0, 0, -1), UV1);
-        int32 Vtx2 = AddVertexInternal(MeshData, P2, FVector(0, 0, -1), UV2);
-
-        AddTriangleInternal(MeshData.Triangles, BottomCenterVtx, Vtx1, Vtx2); // Counter-clockwise for bottom face
-    }
-}
-
-void AFrustum::GenerateSideFaces(FMeshData& MeshData)
-{
-    // Side faces are generated directly within GenerateGeometry for easier bending and connection logic.
-    // This function can be kept for future expansion if needed, but currently its logic is integrated.
-}
-
-
-void AFrustum::GenerateChamfers(FMeshData& MeshData)
-{
-    if (FrustumParameters.ChamferRadius < KINDA_SMALL_NUMBER) return;
-
-    const float HalfHeight = FrustumParameters.Height / 2.0f;
-    const float AngleStepBottom = FMath::DegreesToRadians(FrustumParameters.FrustumAngle) / FrustumParameters.BottomSides;
-    const float AngleStepTop = FMath::DegreesToRadians(FrustumParameters.FrustumAngle) / FrustumParameters.TopSides;
-
-    // Chamfers for the top edge
-    for (int32 i_chamfer_top = 0; i_chamfer_top < FrustumParameters.TopSides; ++i_chamfer_top)
-    {
-        float AngleStart = i_chamfer_top * AngleStepTop;
-        float AngleEnd = ((i_chamfer_top + 1) % FrustumParameters.TopSides) * AngleStepTop;
-
-        TArray<int32> PrevChamferRingVtx; // Vertices from the previous chamfer section
-
-        // Start from the main face edge and move towards the side face
-        for (int32 s_chamfer_top = 0; s_chamfer_top <= FrustumParameters.ChamferSections; ++s_chamfer_top)
+        for (int32 c = 0; c <= Parameters.ChamferSections; ++c)
         {
-            float AlphaChamfer = (float)s_chamfer_top / FrustumParameters.ChamferSections; // 0 at main face, 1 at side face
-            float CurrentChamferRadius = FrustumParameters.ChamferRadius * AlphaChamfer;
+            const float Alpha = static_cast<float>(c) / Parameters.ChamferSections;
+            const float Radius = Parameters.ChamferRadius * (1.0f - Alpha);
 
-            TArray<int32> CurrentChamferRingVtx;
+            // 混合法线
+            FVector Normal = FMath::Lerp(
+                FVector(0, 0, 1),
+                RadialDir,
+                Alpha
+            ).GetSafeNormal();
 
-            for (int32 j_chamfer_top_seg = 0; j_chamfer_top_seg < 2; ++j_chamfer_top_seg) // Two points per chamfer section segment
-            {
-                float CurrentAngle = (j_chamfer_top_seg == 0) ? AngleStart : AngleEnd;
+            // 计算位置
+            const FVector Position = TopEdgePos - Normal * Parameters.ChamferRadius + Normal * Radius;
 
-                // Position on the top face edge (before chamfering)
-                FVector BasePos = FVector(FrustumParameters.TopRadius * FMath::Cos(CurrentAngle), FrustumParameters.TopRadius * FMath::Sin(CurrentAngle), HalfHeight);
+            // UV映射
+            const float U = static_cast<float>(s) / Parameters.BottomSides;
+            const float V = 1.0f + Alpha;
 
-                // Normal interpolation for the chamfer surface
-                FVector NormalTop = FVector(0, 0, 1); // Normal of the top face
-                FVector NormalSide = FVector(FMath::Cos(CurrentAngle), FMath::Sin(CurrentAngle), 0).GetSafeNormal(); // Approximate normal of the side face at this angle
+            ChamferRing[c] = AddVertex(Section, Position, Normal, FVector2D(U, V));
+        }
 
-                FVector BlendedNormal = FMath::Lerp(NormalTop, NormalSide, AlphaChamfer).GetSafeNormal();
-
-                // Position calculation for chamfer vertex
-                FVector Pos = BasePos - NormalTop * CurrentChamferRadius + BlendedNormal * CurrentChamferRadius;
-
-                // UV calculation for chamfer - simple linear blend for now
-                FVector2D UV = FVector2D(FMath::Lerp(0.5f, (float)i_chamfer_top / FrustumParameters.TopSides, AlphaChamfer), FMath::Lerp(0.5f, 1.0f, AlphaChamfer));
-
-
-                int32 Vtx = AddVertexInternal(MeshData, Pos, BlendedNormal, UV);
-                CurrentChamferRingVtx.Add(Vtx);
-            }
-
-            if (s_chamfer_top > 0)
-            {
-                AddQuadInternal(MeshData.Triangles, PrevChamferRingVtx[0], CurrentChamferRingVtx[0], CurrentChamferRingVtx[1], PrevChamferRingVtx[1]);
-            }
-            PrevChamferRingVtx = CurrentChamferRingVtx;
+        // 连接倒角四边形
+        for (int32 c = 0; c < Parameters.ChamferSections; ++c)
+        {
+            AddQuad(
+                Section,
+                ChamferRing[c],
+                ChamferRing[c + 1],
+                ChamferRing[c + 1],
+                ChamferRing[c]
+            );
         }
     }
 
-    // Chamfers for the bottom edge (similar logic, adjust height and normal)
-    for (int32 i_chamfer_bottom = 0; i_chamfer_bottom < FrustumParameters.BottomSides; ++i_chamfer_bottom)
+    // 底部倒角
+    for (int32 s = 0; s < Parameters.BottomSides; ++s)
     {
-        float AngleStart = i_chamfer_bottom * AngleStepBottom;
-        float AngleEnd = ((i_chamfer_bottom + 1) % FrustumParameters.BottomSides) * AngleStepBottom;
+        const float Angle = s * AngleStep;
+        const FVector RadialDir = FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0);
 
-        TArray<int32> PrevChamferRingVtx;
+        // 底部边缘位置
+        const FVector BottomEdgePos = RadialDir * Parameters.BottomRadius + FVector(0, 0, -HalfHeight);
 
-        for (int32 s_chamfer_bottom = 0; s_chamfer_bottom <= FrustumParameters.ChamferSections; ++s_chamfer_bottom)
+        // 生成倒角环
+        TArray<int32> ChamferRing;
+        ChamferRing.SetNum(Parameters.ChamferSections + 1);
+
+        for (int32 c = 0; c <= Parameters.ChamferSections; ++c)
         {
-            float AlphaChamfer = (float)s_chamfer_bottom / FrustumParameters.ChamferSections;
-            float CurrentChamferRadius = FrustumParameters.ChamferRadius * AlphaChamfer;
+            const float Alpha = static_cast<float>(c) / Parameters.ChamferSections;
+            const float Radius = Parameters.ChamferRadius * (1.0f - Alpha);
 
-            TArray<int32> CurrentChamferRingVtx;
+            // 混合法线
+            FVector Normal = FMath::Lerp(
+                FVector(0, 0, -1),
+                RadialDir,
+                Alpha
+            ).GetSafeNormal();
 
-            for (int32 j_chamfer_bottom_seg = 0; j_chamfer_bottom_seg < 2; ++j_chamfer_bottom_seg)
-            {
-                float CurrentAngle = (j_chamfer_bottom_seg == 0) ? AngleStart : AngleEnd;
+            // 计算位置
+            const FVector Position = BottomEdgePos - Normal * Parameters.ChamferRadius + Normal * Radius;
 
-                FVector BasePos = FVector(FrustumParameters.BottomRadius * FMath::Cos(CurrentAngle), FrustumParameters.BottomRadius * FMath::Sin(CurrentAngle), -HalfHeight);
+            // UV映射
+            const float U = static_cast<float>(s) / Parameters.BottomSides;
+            const float V = Alpha; // 底部倒角UV从0开始
 
-                FVector NormalBottom = FVector(0, 0, -1);
-                FVector NormalSide = FVector(FMath::Cos(CurrentAngle), FMath::Sin(CurrentAngle), 0).GetSafeNormal();
+            ChamferRing[c] = AddVertex(Section, Position, Normal, FVector2D(U, V));
+        }
 
-                FVector BlendedNormal = FMath::Lerp(NormalBottom, NormalSide, AlphaChamfer).GetSafeNormal();
-
-                FVector Pos = BasePos - NormalBottom * CurrentChamferRadius + BlendedNormal * CurrentChamferRadius;
-
-                FVector2D UV = FVector2D(FMath::Lerp(0.5f, (float)i_chamfer_bottom / FrustumParameters.BottomSides, AlphaChamfer), FMath::Lerp(0.5f, 0.0f, AlphaChamfer));
-
-                int32 Vtx = AddVertexInternal(MeshData, Pos, BlendedNormal, UV);
-                CurrentChamferRingVtx.Add(Vtx);
-            }
-
-            if (s_chamfer_bottom > 0)
-            {
-                AddQuadInternal(MeshData.Triangles, PrevChamferRingVtx[0], PrevChamferRingVtx[1], CurrentChamferRingVtx[1], CurrentChamferRingVtx[0]); // Reverse winding for bottom chamfer
-            }
-            PrevChamferRingVtx = CurrentChamferRingVtx;
+        // 连接倒角四边形
+        for (int32 c = 0; c < Parameters.ChamferSections; ++c)
+        {
+            AddQuad(
+                Section,
+                ChamferRing[c],
+                ChamferRing[c],
+                ChamferRing[c + 1],
+                ChamferRing[c + 1]
+            );
         }
     }
 }
 
-void AFrustum::SetupMaterial()
+void AFrustum::CreateEndCaps(FMeshSection& Section)
 {
-    static ConstructorHelpers::FObjectFinder<UMaterial> MaterialFinder(TEXT("Material'/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall'"));
-    if (MaterialFinder.Succeeded())
+    const float HalfHeight = Parameters.Height / 2.0f;
+    const float StartAngle = 0.0f;
+    const float EndAngle = FMath::DegreesToRadians(Parameters.ArcAngle);
+
+    // 起始端面
+    const FVector StartNormal = FVector(-FMath::Sin(StartAngle), FMath::Cos(StartAngle), 0);
+    TArray<FVector> StartCapVertices;
+
+    // 生成端面顶点
+    for (int32 h = 0; h <= Parameters.HeightSegments; ++h)
     {
-        ProceduralMesh->SetMaterial(0, MaterialFinder.Object);
+        const float Z = -HalfHeight + h * (Parameters.Height / Parameters.HeightSegments);
+        const float Alpha = static_cast<float>(h) / Parameters.HeightSegments;
+        const float Radius = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha);
+
+        // 边缘顶点
+        const FVector EdgePos = FVector(Radius * FMath::Cos(StartAngle), Radius * FMath::Sin(StartAngle), Z);
+        StartCapVertices.Add(EdgePos);
+
+        // 内部顶点
+        const FVector InnerPos = FVector(Parameters.CapThickness * FMath::Cos(StartAngle),
+            Parameters.CapThickness * FMath::Sin(StartAngle),
+            Z);
+        StartCapVertices.Add(InnerPos);
+    }
+
+    // 添加端面网格
+    for (int32 h = 0; h < Parameters.HeightSegments; ++h)
+    {
+        const int32 CurrentBase = h * 2;
+        const int32 NextBase = (h + 1) * 2;
+
+        const int32 V1 = AddVertex(Section, StartCapVertices[CurrentBase], StartNormal, FVector2D(0, h / (float)Parameters.HeightSegments));
+        const int32 V2 = AddVertex(Section, StartCapVertices[CurrentBase + 1], StartNormal, FVector2D(1, h / (float)Parameters.HeightSegments));
+        const int32 V3 = AddVertex(Section, StartCapVertices[NextBase], StartNormal, FVector2D(0, (h + 1) / (float)Parameters.HeightSegments));
+        const int32 V4 = AddVertex(Section, StartCapVertices[NextBase + 1], StartNormal, FVector2D(1, (h + 1) / (float)Parameters.HeightSegments));
+
+        AddQuad(Section, V1, V3, V4, V2);
+    }
+
+    // 结束端面
+    const FVector EndNormal = FVector(-FMath::Sin(EndAngle), FMath::Cos(EndAngle), 0);
+    TArray<FVector> EndCapVertices;
+
+    // 生成端面顶点
+    for (int32 h = 0; h <= Parameters.HeightSegments; ++h)
+    {
+        const float Z = -HalfHeight + h * (Parameters.Height / Parameters.HeightSegments);
+        const float Alpha = static_cast<float>(h) / Parameters.HeightSegments;
+        const float Radius = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha);
+
+        // 边缘顶点
+        const FVector EdgePos = FVector(Radius * FMath::Cos(EndAngle), Radius * FMath::Sin(EndAngle), Z);
+        EndCapVertices.Add(EdgePos);
+
+        // 内部顶点
+        const FVector InnerPos = FVector(Parameters.CapThickness * FMath::Cos(EndAngle),
+            Parameters.CapThickness * FMath::Sin(EndAngle),
+            Z);
+        EndCapVertices.Add(InnerPos);
+    }
+
+    // 添加端面网格
+    for (int32 h = 0; h < Parameters.HeightSegments; ++h)
+    {
+        const int32 CurrentBase = h * 2;
+        const int32 NextBase = (h + 1) * 2;
+
+        const int32 V1 = AddVertex(Section, EndCapVertices[CurrentBase], EndNormal, FVector2D(0, h / (float)Parameters.HeightSegments));
+        const int32 V2 = AddVertex(Section, EndCapVertices[CurrentBase + 1], EndNormal, FVector2D(1, h / (float)Parameters.HeightSegments));
+        const int32 V3 = AddVertex(Section, EndCapVertices[NextBase], EndNormal, FVector2D(0, (h + 1) / (float)Parameters.HeightSegments));
+        const int32 V4 = AddVertex(Section, EndCapVertices[NextBase + 1], EndNormal, FVector2D(1, (h + 1) / (float)Parameters.HeightSegments));
+
+        AddQuad(Section, V1, V2, V4, V3);
+    }
+}
+
+void AFrustum::ApplyMaterial()
+{
+    static ConstructorHelpers::FObjectFinder<UMaterial> DefaultMaterial(TEXT("Material'/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall'"));
+    if (DefaultMaterial.Succeeded())
+    {
+        MeshComponent->SetMaterial(0, DefaultMaterial.Object);
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("Failed to find material. Make sure StarterContent is enabled or provide a valid path."));
+        UE_LOG(LogTemp, Warning, TEXT("Failed to find default material. Using fallback."));
+
+        // 创建简单回退材质
+        UMaterial* FallbackMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
+        if (FallbackMaterial)
+        {
+            MeshComponent->SetMaterial(0, FallbackMaterial);
+        }
     }
 }
