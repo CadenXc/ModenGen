@@ -125,13 +125,12 @@ private:
     void CreateChamfers(FMeshSection& Section);
     void CreateEndCaps(FMeshSection& Section);
 
+    TArray<int32> GenerateRingVertices( FMeshSection& Section, float Radius, float Z, int32 NumSides, float ArcAngleDeg, const FVector& NormalBase, float VValue, bool bCapUV);
+
     // 顶点管理
     int32 AddVertex(FMeshSection& Section, const FVector& Position, const FVector& Normal, const FVector2D& UV);
     void AddQuad(FMeshSection& Section, int32 V1, int32 V2, int32 V3, int32 V4);
     void AddTriangle(FMeshSection& Section, int32 V1, int32 V2, int32 V3);
-
-    // 侧面弯曲
-    void ApplyBendingEffect(FMeshSection& Section, const TArray<TArray<int32>>& VertexRings);
 
     // 材质管理
     void ApplyMaterial();

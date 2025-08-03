@@ -73,6 +73,42 @@ void AFrustum::Regenerate()
     GenerateGeometry();
 }
 
+TArray<int32> AFrustum::GenerateRingVertices( FMeshSection& Section, float Radius, float Z, int32 NumSides, float ArcAngleDeg, const FVector& NormalBase, float VValue, bool bCapUV)
+{
+    TArray<int32> RingIndices;
+    RingIndices.SetNum(NumSides + 1);
+
+    const float ArcAngleRad = FMath::DegreesToRadians(ArcAngleDeg);
+    const float AngleStep = ArcAngleRad / NumSides;
+
+    for (int32 s = 0; s <= NumSides; ++s)
+    {
+        const float Angle = s * AngleStep;
+        const float X = Radius * FMath::Cos(Angle);
+        const float Y = Radius * FMath::Sin(Angle);
+
+        FVector2D UV;
+        if (bCapUV) {
+            // 圆形UV映射用于封顶
+            UV = FVector2D(0.5f + 0.5f * FMath::Cos(Angle), 0.5f + 0.5f * FMath::Sin(Angle));
+        }
+        else {
+            // 线性UV映射用于侧面
+            UV = FVector2D(static_cast<float>(s) / NumSides, VValue);
+        }
+
+        // 计算法线（封顶使用固定法线，侧面使用径向法线）
+        FVector Normal = NormalBase;
+        if (NormalBase.IsZero()) {
+            Normal = FVector(X, Y, 0).GetSafeNormal();
+        }
+
+        RingIndices[s] = AddVertex(Section, FVector(X, Y, Z), Normal, UV);
+    }
+
+    return RingIndices;
+}
+
 void AFrustum::GenerateGeometry()
 {
     if (!MeshComponent)
@@ -104,12 +140,12 @@ void AFrustum::GenerateGeometry()
 
     // 预估内存需求
     const int32 TotalSides = FMath::Max(Parameters.TopSides, Parameters.BottomSides);
-    const int32 VertexCountEstimate = 
+    const int32 VertexCountEstimate =
         (Parameters.HeightSegments + 1) * (TotalSides + 1) * 4 +
         Parameters.ChamferSections * TotalSides * 8 +
         (Parameters.ArcAngle < 360.0f ? Parameters.HeightSegments * 4 : 0);
 
-    const int32 TriangleCountEstimate = 
+    const int32 TriangleCountEstimate =
         Parameters.HeightSegments * TotalSides * 6 +
         Parameters.ChamferSections * TotalSides * 6 * 2 +
         (Parameters.ArcAngle < 360.0f ? Parameters.HeightSegments * 6 : 0);
@@ -195,160 +231,52 @@ void AFrustum::CreateSideGeometry(FMeshSection& Section)
 {
     const float HalfHeight = Parameters.Height / 2.0f;
 
-    // 只生成底面和顶面两个环
-    TArray<TArray<int32>> VertexRings;
-    VertexRings.SetNum(2); // 0: 底面, 1: 顶面
-
     // 生成底面环
+    TArray<int32> BottomRing = GenerateRingVertices( Section, Parameters.BottomRadius, -HalfHeight, Parameters.BottomSides, Parameters.ArcAngle,
+        FVector::ZeroVector, // 自动计算法线
+        0.0f,                // V值
+        false                // 线性UV
+    );
+
+    // 使用辅助函数生成顶面环
+    TArray<int32> TopRing = GenerateRingVertices( Section, Parameters.TopRadius, HalfHeight, Parameters.TopSides, Parameters.ArcAngle,
+        FVector::ZeroVector, // 自动计算法线
+        1.0f,                // V值
+        false                // 线性UV
+    );
+
+    // 边数不同，使用三角形扇连接
+    const int32 CommonSides = FMath::Min(Parameters.BottomSides, Parameters.TopSides);
+
+    for (int32 s = 0; s < CommonSides; ++s)
     {
-        const float Radius = Parameters.BottomRadius;
-        TArray<int32>& Ring = VertexRings[0];
-        Ring.SetNum(Parameters.BottomSides + 1);
+        // 计算当前角度
+        const float Angle = s * FMath::DegreesToRadians(Parameters.ArcAngle) / CommonSides;
 
-        for (int32 s = 0; s <= Parameters.BottomSides; ++s)
-        {
-            const float Angle = s * FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.BottomSides;
-            const float X = Radius * FMath::Cos(Angle);
-            const float Y = Radius * FMath::Sin(Angle);
+        // 底面顶点索引
+        const int32 BottomIndex = FMath::RoundToInt(Angle / (2 * PI) * Parameters.BottomSides) % Parameters.BottomSides;
+        const int32 NextBottomIndex = (BottomIndex + 1) % Parameters.BottomSides;
 
-            // 法线计算
-            FVector Normal = FVector(X, Y, 0).GetSafeNormal();
-            Normal.Z = -0.5f; // 轻微向下倾斜
+        // 顶面顶点索引
+        const int32 TopIndex = FMath::RoundToInt(Angle / (2 * PI) * Parameters.TopSides) % Parameters.TopSides;
+        const int32 NextTopIndex = (TopIndex + 1) % Parameters.TopSides;
 
-            // UV映射
-            const float U = static_cast<float>(s) / Parameters.BottomSides;
-            const float V = 0.0f; // 底面
+        // 创建两个三角形连接底面和顶面
+        AddTriangle(Section,
+            BottomRing[BottomIndex],
+            TopRing[TopIndex],
+            TopRing[NextTopIndex]);
 
-            Ring[s] = AddVertex(Section, FVector(X, Y, -HalfHeight), Normal, FVector2D(U, V));
-        }
-    }
-
-    // 生成顶面环
-    {
-        const float Radius = Parameters.TopRadius;
-        TArray<int32>& Ring = VertexRings[1];
-        Ring.SetNum(Parameters.TopSides + 1);
-
-        for (int32 s = 0; s <= Parameters.TopSides; ++s)
-        {
-            const float Angle = s * FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.TopSides;
-            const float X = Radius * FMath::Cos(Angle);
-            const float Y = Radius * FMath::Sin(Angle);
-
-            // 法线计算
-            FVector Normal = FVector(X, Y, 0).GetSafeNormal();
-            Normal.Z = 0.5f; // 轻微向上倾斜
-
-            // UV映射
-            const float U = static_cast<float>(s) / Parameters.TopSides;
-            const float V = 1.0f; // 顶面
-
-            Ring[s] = AddVertex(Section, FVector(X, Y, HalfHeight), Normal, FVector2D(U, V));
-        }
-    }
-
-    /*
-    // 连接底面和顶面
-    if (Parameters.BottomSides == Parameters.TopSides)
-    {
-        // 边数相同，直接连接
-        for (int32 s = 0; s < Parameters.BottomSides; ++s)
-        {
-            const int32 VBottom0 = VertexRings[0][s];
-            const int32 VBottom1 = VertexRings[0][s + 1];
-            const int32 VTop0 = VertexRings[1][s];
-            const int32 VTop1 = VertexRings[1][s + 1];
-
-            // 创建两个三角形组成的四边形
-            AddTriangle(Section, VBottom0, VTop0, VTop1);
-            AddTriangle(Section, VBottom0, VTop1, VBottom1);
-        }
-    }
-    else
-    {
-    */
-        // 边数不同，使用三角形扇连接
-        const int32 CommonSides = FMath::Min(Parameters.BottomSides, Parameters.TopSides);
-        
-        for (int32 s = 0; s < CommonSides; ++s)
-        {
-            // 计算当前角度
-            const float Angle = s * FMath::DegreesToRadians(Parameters.ArcAngle) / CommonSides;
-            
-            // 底面顶点索引
-            const int32 BottomIndex = FMath::RoundToInt(Angle / (2 * PI) * Parameters.BottomSides) % Parameters.BottomSides;
-            const int32 NextBottomIndex = (BottomIndex + 1) % Parameters.BottomSides;
-            
-            // 顶面顶点索引
-            const int32 TopIndex = FMath::RoundToInt(Angle / (2 * PI) * Parameters.TopSides) % Parameters.TopSides;
-            const int32 NextTopIndex = (TopIndex + 1) % Parameters.TopSides;
-            
-            // 创建两个三角形连接底面和顶面
-            AddTriangle(Section, 
-                VertexRings[0][BottomIndex],
-                VertexRings[1][TopIndex],
-                VertexRings[1][NextTopIndex]);
-            
-            AddTriangle(Section, 
-                VertexRings[0][BottomIndex],
-                VertexRings[1][NextTopIndex],
-                VertexRings[0][NextBottomIndex]);
-        }
-    //}
-
-    // 应用弯曲效果（如果有）
-    if (!FMath::IsNearlyZero(Parameters.BendAmount))
-    {
-        ApplyBendingEffect(Section, VertexRings);
-    }
-}
-
-void AFrustum::ApplyBendingEffect(FMeshSection& Section, const TArray<TArray<int32>>& VertexRings)
-{
-    // 只有两层：0=底面，1=顶面
-    for (int32 h = 0; h < 2; ++h)
-    {
-        const float Alpha = static_cast<float>(h); // 底面=0, 顶面=1
-        
-        // 弯曲因子（基于高度）
-        const float BendFactor = FMath::Sin(Alpha * PI);
-        const float RadiusDelta = Parameters.BendAmount * BendFactor;
-        
-        // Z轴法线偏移量
-        const float NormalZ = -Parameters.BendAmount * FMath::Cos(Alpha * PI);
-        
-        // 当前层的边数
-        const int32 Sides = (h == 0) ? Parameters.BottomSides : Parameters.TopSides;
-        
-        for (int32 s = 0; s <= Sides; ++s)
-        {
-            const int32 VertexIndex = VertexRings[h][s];
-            FVector& Position = Section.Vertices[VertexIndex];
-            FVector& Normal = Section.Normals[VertexIndex];
-            
-            // 计算原始半径（弯曲前的半径）
-            const float OriginalRadius = FMath::Sqrt(Position.X * Position.X + Position.Y * Position.Y);
-            
-            // 应用弯曲半径变化（确保不小于最小半径）
-            const float BentRadius = FMath::Max(
-                OriginalRadius + RadiusDelta * OriginalRadius,
-                Parameters.MinBendRadius
-            );
-            
-            // 更新顶点位置
-            const FVector RadialDir = Position.GetSafeNormal2D();
-            Position = RadialDir * BentRadius + FVector(0, 0, Position.Z);
-            
-            // 更新法线（添加Z分量）
-            Normal = (Normal + FVector(0, 0, NormalZ)).GetSafeNormal();
-        }
+        AddTriangle(Section,
+            BottomRing[BottomIndex],
+            TopRing[NextTopIndex],
+            BottomRing[NextBottomIndex]);
     }
 }
 
 void AFrustum::CreateTopGeometry(FMeshSection& Section)
 {
     const float HalfHeight = Parameters.Height / 2.0f;
-    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.TopSides;
 
     // 中心顶点
     const int32 CenterVertex = AddVertex(
@@ -358,27 +286,12 @@ void AFrustum::CreateTopGeometry(FMeshSection& Section)
         FVector2D(0.5f, 0.5f)
     );
 
-    // 顶部顶点环
-    TArray<int32> TopRing;
-    TopRing.SetNum(Parameters.TopSides + 1);
-
-    for (int32 s = 0; s <= Parameters.TopSides; ++s)
-    {
-        const float Angle = s * AngleStep;
-        const float X = Parameters.TopRadius * FMath::Cos(Angle);
-        const float Y = Parameters.TopRadius * FMath::Sin(Angle);
-
-        // UV映射到圆形
-        const float U = 0.5f + 0.5f * FMath::Cos(Angle);
-        const float V = 0.5f + 0.5f * FMath::Sin(Angle);
-
-        TopRing[s] = AddVertex(
-            Section,
-            FVector(X, Y, HalfHeight),
-            FVector(0, 0, 1),
-            FVector2D(U, V)
-        );
-    }
+    // 使用辅助函数生成顶部环
+    TArray<int32> TopRing = GenerateRingVertices( Section, Parameters.TopRadius, HalfHeight, Parameters.TopSides, Parameters.ArcAngle,
+        FVector(0, 0, 1), // 固定法线
+        0.0f,              // V值未使用
+        true               // 圆形UV
+    );
 
     // 创建顶部三角扇
     for (int32 s = 0; s < Parameters.TopSides; ++s)
@@ -395,7 +308,6 @@ void AFrustum::CreateTopGeometry(FMeshSection& Section)
 void AFrustum::CreateBottomGeometry(FMeshSection& Section)
 {
     const float HalfHeight = Parameters.Height / 2.0f;
-    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.BottomSides;
 
     // 中心顶点
     const int32 CenterVertex = AddVertex(
@@ -405,27 +317,12 @@ void AFrustum::CreateBottomGeometry(FMeshSection& Section)
         FVector2D(0.5f, 0.5f)
     );
 
-    // 底部顶点环
-    TArray<int32> BottomRing;
-    BottomRing.SetNum(Parameters.BottomSides + 1);
-
-    for (int32 s = 0; s <= Parameters.BottomSides; ++s)
-    {
-        const float Angle = s * AngleStep;
-        const float X = Parameters.BottomRadius * FMath::Cos(Angle);
-        const float Y = Parameters.BottomRadius * FMath::Sin(Angle);
-
-        // UV映射到圆形
-        const float U = 0.5f + 0.5f * FMath::Cos(Angle);
-        const float V = 0.5f + 0.5f * FMath::Sin(Angle);
-
-        BottomRing[s] = AddVertex(
-            Section,
-            FVector(X, Y, -HalfHeight),
-            FVector(0, 0, -1),
-            FVector2D(U, V)
-        );
-    }
+    // 使用辅助函数生成底部环
+    TArray<int32> BottomRing = GenerateRingVertices( Section, Parameters.BottomRadius, -HalfHeight, Parameters.BottomSides, Parameters.ArcAngle,
+        FVector(0, 0, -1), // 固定法线
+        0.0f,               // V值未使用
+        true                // 圆形UV
+    );
 
     // 创建底部三角扇
     for (int32 s = 0; s < Parameters.BottomSides; ++s)
