@@ -19,7 +19,7 @@ bin-release/
 
 # UE
 .vs/
-Binariesjj
+Binaries/
 Config/
 Content/
 DerivedDataCache/

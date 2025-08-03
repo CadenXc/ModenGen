@@ -130,6 +130,9 @@ private:
     void AddQuad(FMeshSection& Section, int32 V1, int32 V2, int32 V3, int32 V4);
     void AddTriangle(FMeshSection& Section, int32 V1, int32 V2, int32 V3);
 
+    // 侧面弯曲
+    void ApplyBendingEffect(FMeshSection& Section, const TArray<TArray<int32>>& VertexRings);
+
     // 材质管理
     void ApplyMaterial();
 
