@@ -53,6 +53,7 @@ struct FFrustumParameters
     // 端面控制
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Caps", meta = (ClampMin = "0.0"))
         float CapThickness = 10.0f;
+
 };
 
 UCLASS()
@@ -125,7 +126,7 @@ private:
     void CreateChamfers(FMeshSection& Section);
     void CreateEndCaps(FMeshSection& Section);
 
-    TArray<int32> GenerateRingVertices( FMeshSection& Section, float Radius, float Z, int32 NumSides, float ArcAngleDeg, const FVector& NormalBase, float VValue, bool bCapUV);
+    TArray<int32> GenerateRingVertices(FMeshSection& Section, float Radius, float Z, int32 NumSides, float ArcAngleDeg, const FVector& NormalBase, float VValue, bool bCapUV);
 
     // 顶点管理
     int32 AddVertex(FMeshSection& Section, const FVector& Position, const FVector& Normal, const FVector2D& UV);
@@ -134,6 +135,9 @@ private:
 
     // 材质管理
     void ApplyMaterial();
+
+    // 弯曲计算函数
+    void ApplyBendEffect(FVector& Position, FVector& Normal, float Z) const;
 
     // 内部状态
     bool bGeometryDirty = true;
