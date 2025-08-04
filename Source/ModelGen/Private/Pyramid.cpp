@@ -70,6 +70,105 @@ void APyramid::AddTriangle(TArray<int32>& Triangles, int32 V1, int32 V2, int32 V
     Triangles.Add(V3);
 }
 
+TArray<FVector> APyramid::GenerateCircleVertices(float Radius, float Z, int32 NumSides)
+{
+    TArray<FVector> Vertices;
+    Vertices.Reserve(NumSides);
+
+    for (int32 i = 0; i < NumSides; i++)
+    {
+        float Angle = 2 * PI * i / NumSides;
+        Vertices.Add(FVector(
+            Radius * FMath::Cos(Angle),
+            Radius * FMath::Sin(Angle),
+            Z
+        ));
+    }
+    return Vertices;
+}
+
+void APyramid::GeneratePrismSides(
+    TArray<FVector>& Vertices,
+    TArray<int32>& Triangles,
+    TArray<FVector>& Normals,
+    TArray<FVector2D>& UV0,
+    TArray<FProcMeshTangent>& Tangents,
+    const TArray<FVector>& BottomVerts,
+    const TArray<FVector>& TopVerts,
+    bool bReverseNormal,
+    float UVOffsetY,
+    float UVScaleY)
+{
+    const int32 NumSides = BottomVerts.Num();
+    for (int32 i = 0; i < NumSides; i++)
+    {
+        int32 NextIndex = (i + 1) % NumSides;
+
+        // 计算法线
+        FVector Edge1 = BottomVerts[NextIndex] - BottomVerts[i];
+        FVector Edge2 = TopVerts[i] - BottomVerts[i];
+        FVector Normal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
+        if (bReverseNormal) Normal = -Normal;
+
+        // 添加四边形（两个三角形）
+        int32 V0 = AddVertex(Vertices, Normals, UV0, Tangents, BottomVerts[i], Normal,
+            FVector2D(static_cast<float>(i) / NumSides, UVOffsetY));
+        int32 V1 = AddVertex(Vertices, Normals, UV0, Tangents, BottomVerts[NextIndex], Normal,
+            FVector2D(static_cast<float>(i + 1) / NumSides, UVOffsetY));
+        int32 V2 = AddVertex(Vertices, Normals, UV0, Tangents, TopVerts[NextIndex], Normal,
+            FVector2D(static_cast<float>(i + 1) / NumSides, UVOffsetY + UVScaleY));
+        int32 V3 = AddVertex(Vertices, Normals, UV0, Tangents, TopVerts[i], Normal,
+            FVector2D(static_cast<float>(i) / NumSides, UVOffsetY + UVScaleY));
+
+        if (bReverseNormal)
+        {
+            AddTriangle(Triangles, V0, V3, V2);
+            AddTriangle(Triangles, V0, V2, V1);
+        }
+        else
+        {
+            AddTriangle(Triangles, V0, V1, V2);
+            AddTriangle(Triangles, V0, V2, V3);
+        }
+    }
+}
+
+void APyramid::GeneratePolygonFace(
+    TArray<FVector>& Vertices,
+    TArray<int32>& Triangles,
+    TArray<FVector>& Normals,
+    TArray<FVector2D>& UV0,
+    TArray<FProcMeshTangent>& Tangents,
+    const TArray<FVector>& PolygonVerts,
+    const FVector& Normal,
+    bool bReverseOrder,
+    float UVOffsetZ)
+{
+    const int32 NumSides = PolygonVerts.Num();
+    const FVector Center = FVector(0, 0, PolygonVerts[0].Z);
+    int32 CenterIndex = AddVertex(Vertices, Normals, UV0, Tangents, Center, Normal, FVector2D(0.5f, 0.5f));
+
+    for (int32 i = 0; i < NumSides; i++)
+    {
+        int32 NextIndex = (i + 1) % NumSides;
+        int32 V0 = AddVertex(Vertices, Normals, UV0, Tangents, PolygonVerts[i], Normal,
+            FVector2D(0.5f + 0.5f * FMath::Cos(2 * PI * i / NumSides),
+                0.5f + 0.5f * FMath::Sin(2 * PI * i / NumSides)));
+        int32 V1 = AddVertex(Vertices, Normals, UV0, Tangents, PolygonVerts[NextIndex], Normal,
+            FVector2D(0.5f + 0.5f * FMath::Cos(2 * PI * NextIndex / NumSides),
+                0.5f + 0.5f * FMath::Sin(2 * PI * NextIndex / NumSides)));
+
+        if (bReverseOrder)
+        {
+            AddTriangle(Triangles, CenterIndex, V1, V0);
+        }
+        else
+        {
+            AddTriangle(Triangles, CenterIndex, V0, V1);
+        }
+    }
+}
+
 void APyramid::GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides, bool bInCreateBottom)
 {
     if (!ProceduralMesh || InSides < 3) return;
@@ -81,125 +180,48 @@ void APyramid::GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides
     TArray<FVector> Normals;
     TArray<FVector2D> UV0;
     TArray<FProcMeshTangent> Tangents;
-    TArray<FLinearColor> VertexColors; // 留空（使用默认白色）
 
-    // 计算棱柱顶面半径（向内收缩）
+    // 计算棱柱顶面半径和高度
     float BevelTopRadius = FMath::Max(0.0f, InBaseRadius - BevelRadius);
     float TotalHeight = InHeight;
 
     // 1. 生成棱柱部分（倒角）
     if (BevelRadius > 0.0f)
     {
-        TArray<FVector> BottomVertices;
-        TArray<FVector> TopVertices;
-
-        // 计算底面和顶面顶点
-        for (int32 i = 0; i < InSides; i++)
-        {
-            float Angle = 2 * PI * i / InSides;
-            float CosA = FMath::Cos(Angle);
-            float SinA = FMath::Sin(Angle);
-            BottomVertices.Add(FVector(CosA * BevelTopRadius, SinA * BevelTopRadius, 0.0f));
-            TopVertices.Add(FVector(CosA * BevelTopRadius, SinA * BevelTopRadius, BevelRadius));
-        }
+        TArray<FVector> BottomVerts = GenerateCircleVertices(BevelTopRadius, 0.0f, InSides);
+        TArray<FVector> TopVerts = GenerateCircleVertices(BevelTopRadius, BevelRadius, InSides);
 
         // 生成棱柱侧面
-        for (int32 i = 0; i < InSides; i++)
-        {
-            int32 NextIndex = (i + 1) % InSides;
-
-            // 计算侧面法线（向外）
-            FVector Edge1 = BottomVertices[NextIndex] - BottomVertices[i];
-            FVector Edge2 = TopVertices[i] - BottomVertices[i];
-            FVector Normal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
-
-            // 添加四边形（两个三角形）
-            int32 V0 = AddVertex(Vertices, Normals, UV0, Tangents, BottomVertices[i], Normal, FVector2D(static_cast<float>(i) / InSides, 0.0f));
-            int32 V1 = AddVertex(Vertices, Normals, UV0, Tangents, BottomVertices[NextIndex], Normal, FVector2D(static_cast<float>(i + 1) / InSides, 0.0f));
-            int32 V2 = AddVertex(Vertices, Normals, UV0, Tangents, TopVertices[NextIndex], Normal, FVector2D(static_cast<float>(i + 1) / InSides, 0.5f));
-            int32 V3 = AddVertex(Vertices, Normals, UV0, Tangents, TopVertices[i], Normal, FVector2D(static_cast<float>(i) / InSides, 0.5f));
-
-            AddTriangle(Triangles, V0, V1, V2);
-            AddTriangle(Triangles, V0, V2, V3);
-        }
+        GeneratePrismSides(Vertices, Triangles, Normals, UV0, Tangents,
+            BottomVerts, TopVerts, false, 0.0f, 0.5f);
 
         // 生成棱柱底面（可选）
         if (bInCreateBottom)
         {
-            int32 CenterIndex = AddVertex(Vertices, Normals, UV0, Tangents, FVector(0, 0, 0), FVector(0, 0, -1), FVector2D(0.5f, 0.5f));
-            for (int32 i = 0; i < InSides; i++)
-            {
-                int32 NextIndex = (i + 1) % InSides;
-                int32 V0 = AddVertex(Vertices, Normals, UV0, Tangents, BottomVertices[i], FVector(0, 0, -1),
-                    FVector2D(0.5f + 0.5f * FMath::Cos(2 * PI * i / InSides), 0.5f + 0.5f * FMath::Sin(2 * PI * i / InSides)));
-                int32 V1 = AddVertex(Vertices, Normals, UV0, Tangents, BottomVertices[NextIndex], FVector(0, 0, -1),
-                    FVector2D(0.5f + 0.5f * FMath::Cos(2 * PI * NextIndex / InSides), 0.5f + 0.5f * FMath::Sin(2 * PI * NextIndex / InSides)));
-
-                // 底面三角形（从下方看为逆时针）
-                AddTriangle(Triangles, CenterIndex, V1, V0);
-            }
+            GeneratePolygonFace(Vertices, Triangles, Normals, UV0, Tangents,
+                BottomVerts, FVector(0, 0, -1), true);
         }
 
         // 生成棱柱顶面（金字塔底面）
-        int32 BevelTopCenter = AddVertex(Vertices, Normals, UV0, Tangents, FVector(0, 0, BevelRadius), FVector(0, 0, 1), FVector2D(0.5f, 0.5f));
-        for (int32 i = 0; i < InSides; i++)
-        {
-            int32 NextIndex = (i + 1) % InSides;
-            int32 V0 = AddVertex(Vertices, Normals, UV0, Tangents, TopVertices[i], FVector(0, 0, 1),
-                FVector2D(0.5f + 0.5f * FMath::Cos(2 * PI * i / InSides), 0.5f + 0.5f * FMath::Sin(2 * PI * i / InSides)));
-            int32 V1 = AddVertex(Vertices, Normals, UV0, Tangents, TopVertices[NextIndex], FVector(0, 0, 1),
-                FVector2D(0.5f + 0.5f * FMath::Cos(2 * PI * NextIndex / InSides), 0.5f + 0.5f * FMath::Sin(2 * PI * NextIndex / InSides)));
-
-            // 顶面三角形（从上方看为逆时针）
-            AddTriangle(Triangles, BevelTopCenter, V0, V1);
-        }
+        GeneratePolygonFace(Vertices, Triangles, Normals, UV0, Tangents,
+            TopVerts, FVector(0, 0, 1));
     }
     else
     {
-        // 无倒角时使用原始底面
-        TArray<FVector> BaseVertices;
-        for (int32 i = 0; i < InSides; i++)
-        {
-            float Angle = 2 * PI * i / InSides;
-            BaseVertices.Add(FVector(
-                InBaseRadius * FMath::Cos(Angle),
-                InBaseRadius * FMath::Sin(Angle),
-                0.0f
-            ));
-        }
-
-        // 直接生成金字塔底面（如果需要）
+        // 无倒角时生成底面
         if (bInCreateBottom)
         {
-            int32 CenterIndex = AddVertex(Vertices, Normals, UV0, Tangents, FVector::ZeroVector, FVector(0, 0, -1), FVector2D(0.5f, 0.5f));
-            for (int32 i = 0; i < InSides; i++)
-            {
-                int32 NextIndex = (i + 1) % InSides;
-                int32 V0 = AddVertex(Vertices, Normals, UV0, Tangents, BaseVertices[i], FVector(0, 0, -1),
-                    FVector2D(0.5f + 0.5f * FMath::Cos(2 * PI * i / InSides), 0.5f + 0.5f * FMath::Sin(2 * PI * i / InSides)));
-                int32 V1 = AddVertex(Vertices, Normals, UV0, Tangents, BaseVertices[NextIndex], FVector(0, 0, -1),
-                    FVector2D(0.5f + 0.5f * FMath::Cos(2 * PI * NextIndex / InSides), 0.5f + 0.5f * FMath::Sin(2 * PI * NextIndex / InSides)));
-
-                AddTriangle(Triangles, CenterIndex, V1, V0);
-            }
+            TArray<FVector> BaseVerts = GenerateCircleVertices(InBaseRadius, 0.0f, InSides);
+            GeneratePolygonFace(Vertices, Triangles, Normals, UV0, Tangents,
+                BaseVerts, FVector(0, 0, -1), true);
         }
     }
 
     // 2. 生成金字塔主体部分
-    FVector Apex(0.0f, 0.0f, TotalHeight); // 顶点位置
-    TArray<FVector> BaseVertices;
     float PyramidBaseRadius = (BevelRadius > 0) ? BevelTopRadius : InBaseRadius;
     float PyramidBaseHeight = (BevelRadius > 0) ? BevelRadius : 0.0f;
-
-    for (int32 i = 0; i < InSides; i++)
-    {
-        float Angle = 2 * PI * i / InSides;
-        BaseVertices.Add(FVector(
-            PyramidBaseRadius * FMath::Cos(Angle),
-            PyramidBaseRadius * FMath::Sin(Angle),
-            PyramidBaseHeight
-        ));
-    }
+    TArray<FVector> BaseVertices = GenerateCircleVertices(PyramidBaseRadius, PyramidBaseHeight, InSides);
+    FVector Apex(0.0f, 0.0f, TotalHeight);
 
     for (int32 i = 0; i < InSides; i++)
     {

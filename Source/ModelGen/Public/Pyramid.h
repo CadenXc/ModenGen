@@ -1,3 +1,4 @@
+// Pyramid.h
 #pragma once
 
 #include "CoreMinimal.h"
@@ -26,7 +27,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid Parameters")
         bool bCreateBottom = true; // 是否创建底面
 
-    // 新增倒角参数
+    // 倒角参数
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid Parameters")
         float BevelRadius = 0.0f; // 倒角半径（棱柱部分高度）
 
@@ -55,4 +56,34 @@ private:
 
     // 添加三角形
     void AddTriangle(TArray<int32>& Triangles, int32 V1, int32 V2, int32 V3);
+
+    // 生成圆形顶点序列
+    TArray<FVector> GenerateCircleVertices(float Radius, float Z, int32 NumSides);
+
+    // 生成棱柱侧面
+    void GeneratePrismSides(
+        TArray<FVector>& Vertices,
+        TArray<int32>& Triangles,
+        TArray<FVector>& Normals,
+        TArray<FVector2D>& UV0,
+        TArray<FProcMeshTangent>& Tangents,
+        const TArray<FVector>& BottomVerts,
+        const TArray<FVector>& TopVerts,
+        bool bReverseNormal = false,
+        float UVOffsetY = 0.0f,
+        float UVScaleY = 1.0f
+    );
+
+    // 生成多边形面
+    void GeneratePolygonFace(
+        TArray<FVector>& Vertices,
+        TArray<int32>& Triangles,
+        TArray<FVector>& Normals,
+        TArray<FVector2D>& UV0,
+        TArray<FProcMeshTangent>& Tangents,
+        const TArray<FVector>& PolygonVerts,
+        const FVector& Normal,
+        bool bReverseOrder = false,
+        float UVOffsetZ = 0.0f
+    );
 };
