@@ -26,6 +26,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid Parameters")
         bool bCreateBottom = true; // 是否创建底面
 
+    // 新增倒角参数
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid Parameters")
+        float BevelRadius = 0.0f; // 倒角半径（棱柱部分高度）
+
     UFUNCTION(BlueprintCallable, Category = "Pyramid")
         void GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides, bool bInCreateBottom);
 
