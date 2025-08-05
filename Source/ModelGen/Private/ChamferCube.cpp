@@ -219,7 +219,7 @@ void AChamferCube::GenerateEdgeChamfers(TMap<FVector, int32>& UniqueVerticesMap,
     for (const FEdgeChamferDef& EdgeDef : EdgeDefs)
     {
         TArray<int32> PrevStripStartIndices; // 存储上一段弧线起点的顶点索引
-        TArray<int32> PrevStripEndIndices;   // 存储上一段弧线终点的顶点索引
+        TArray<int32> PrevStripEndIndices;   // 存储上一段弧线终点的终点索引
 
         // 沿边缘分段生成顶点和三角形
         for (int32 s = 0; s <= Sections; ++s)
@@ -277,7 +277,6 @@ void AChamferCube::GenerateEdgeChamfers(TMap<FVector, int32>& UniqueVerticesMap,
 void AChamferCube::GenerateCornerChamfers(TMap<FVector, int32>& UniqueVerticesMap, TArray<FVector>& Vertices, TArray<FVector>& Normals, TArray<FVector2D>& UV0, TArray<FLinearColor>& VertexColors, TArray<FProcMeshTangent>& Tangents, TArray<int32>& Triangles, const TArray<FVector>& CorePoints, float ChamferSize, int32 Sections)
 {
     // 确保核心点数量正确
-    // 硬编码了
     if (CorePoints.Num() < 8)
     {
         UE_LOG(LogTemp, Error, TEXT("Invalid CorePoints array size. Expected 8 elements."));

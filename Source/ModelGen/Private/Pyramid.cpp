@@ -122,13 +122,13 @@ void APyramid::GeneratePrismSides(
 
         if (bReverseNormal)
         {
-            AddTriangle(Triangles, V0, V3, V2);
-            AddTriangle(Triangles, V0, V2, V1);
+            AddTriangle(Triangles, V0, V2, V3);
+            AddTriangle(Triangles, V0, V1, V2);
         }
         else
         {
-            AddTriangle(Triangles, V0, V1, V2);
-            AddTriangle(Triangles, V0, V2, V3);
+            AddTriangle(Triangles, V0, V2, V1);
+            AddTriangle(Triangles, V0, V3, V2);
         }
     }
 }
@@ -182,7 +182,8 @@ void APyramid::GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides
     TArray<FProcMeshTangent> Tangents;
 
     // 计算棱柱顶面半径和高度
-    float BevelTopRadius = FMath::Max(0.0f, InBaseRadius - BevelRadius);
+    float BevelTopRadius = FMath::Max(0.0f, InBaseRadius - InBaseRadius * BevelRadius / InHeight);
+    //float BevelTopRadius = FMath::Max(0.0f, InBaseRadius - BevelRadius);
     float TotalHeight = InHeight;
 
     // 1. 生成棱柱部分（倒角）

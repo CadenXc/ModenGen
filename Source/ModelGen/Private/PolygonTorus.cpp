@@ -157,11 +157,8 @@ void APolygonTorus::GeneratePolygonTorus(float MajorRad, float MinorRad, int32 M
     // 生成侧面（连接相邻截面）
     for (int32 i = 0; i < MajorSegs; i++)
     {
-        // 如果是部分圆环且是最后一段，跳过
-        if (!bIsFullCircle && i == MajorSegs - 1) break;
-
         int32 CurrentSectionStart = SectionStartIndices[i];
-        int32 NextSectionStart = SectionStartIndices[(i + 1) % (MajorSegs + (bIsFullCircle ? 0 : 1))];
+        int32 NextSectionStart = SectionStartIndices[i + 1]; // 直接使用i+1而不是取模
 
         for (int32 j = 0; j < MinorSegs; j++)
         {
@@ -179,26 +176,43 @@ void APolygonTorus::GeneratePolygonTorus(float MajorRad, float MinorRad, int32 M
     // 生成端面（如果角度小于360度）
     if (!bIsFullCircle)
     {
-        // 起始端面
+        // 添加端盖中心顶点并记录索引
+        int32 StartCenterIndex = Vertices.Num();
+        FVector StartCenter(FMath::Cos(0) * MajorRad, FMath::Sin(0) * MajorRad, 0);
+        Vertices.Add(StartCenter);
+        Normals.Add(-FVector(-FMath::Sin(0), FMath::Cos(0), 0)); // 法线指向内侧
+        UVs.Add(FVector2D(0.5f, 0.5f));
+        Tangents.Add(FProcMeshTangent(FVector(1, 0, 0), false));
+
+        int32 EndCenterIndex = Vertices.Num();
+        FVector EndCenter(FMath::Cos(AngleRad) * MajorRad, FMath::Sin(AngleRad) * MajorRad, 0);
+        Vertices.Add(EndCenter);
+        Normals.Add(FVector(-FMath::Sin(AngleRad), FMath::Cos(AngleRad), 0)); // 法线指向外侧
+        UVs.Add(FVector2D(0.5f, 0.5f));
+        Tangents.Add(FProcMeshTangent(FVector(1, 0, 0), false));
+
+        // 生成起始端盖（使用正确的中心顶点）
         int32 StartSection = SectionStartIndices[0];
         for (int32 j = 0; j < MinorSegs; j++)
         {
             int32 NextJ = (j + 1) % MinorSegs;
 
+            // 调整三角形绕序为顺时针（确保法线方向正确）
             Triangles.Add(StartSection + j);
+            Triangles.Add(StartCenterIndex);
             Triangles.Add(StartSection + NextJ);
-            Triangles.Add(StartSection + MinorSegs); // 中心顶点
         }
 
-        // 结束端面
+        // 生成结束端盖（使用正确的中心顶点）
         int32 EndSection = SectionStartIndices[MajorSegs];
         for (int32 j = 0; j < MinorSegs; j++)
         {
             int32 NextJ = (j + 1) % MinorSegs;
 
+            // 调整三角形绕序为逆时针（确保法线方向正确）
             Triangles.Add(EndSection + j);
-            Triangles.Add(EndSection + MinorSegs); // 中心顶点
             Triangles.Add(EndSection + NextJ);
+            Triangles.Add(EndCenterIndex);
         }
     }
 
