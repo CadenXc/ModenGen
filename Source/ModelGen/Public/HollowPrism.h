@@ -10,32 +10,35 @@ struct FPrismParameters
 {
     GENERATED_BODY()
 
-        UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Geometry", meta = (ClampMin = "0.01"))
-        float InnerRadius = 50.0f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Geometry", meta = (ClampMin = "0.01"))
+    float InnerRadius = 50.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Geometry", meta = (ClampMin = "0.01"))
-        float OuterRadius = 100.0f;
+    float OuterRadius = 100.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Geometry", meta = (ClampMin = "0.01"))
-        float Height = 200.0f;
+    float Height = 200.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Polygons", meta = (ClampMin = "3"))
-        int32 InnerSides = 8;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Polygons", meta = (ClampMin = "3"))
-        int32 OuterSides = 16;
+    int32 Sides = 8;  // 内外多边形使用相同的边数
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Angular", meta = (UIMin = "0.0", UIMax = "360.0"))
-        float ArcAngle = 360.0f;
-};
+    float ArcAngle = 360.0f;
 
-// 端面顶点结构体
-struct FEndCapVertices
-{
-    int32 InnerTop;
-    int32 InnerBottom;
-    int32 OuterTop;
-    int32 OuterBottom;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Triangulation")
+    bool bUseTriangleMethod = true;  // 是否使用三角形方法连接内外多边形
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chamfer", meta = (ClampMin = "0.0"))
+    float ChamferRadius = 5.0f;  // 倒角半径
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chamfer")
+    bool bUseChamfer = false;  // 是否启用倒角
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chamfer", meta = (ClampMin = "1"))
+    int32 ChamferSections = 3;  // 倒角分段数，用于创建圆滑边缘
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chamfer", meta = (ClampMin = "1"))
+    int32 ChamferSegments = 5;  // 倒角段数
 };
 
 UCLASS()
@@ -47,10 +50,10 @@ public:
     AHollowPrism();
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Prism")
-        FPrismParameters Parameters;
+    FPrismParameters Parameters;
 
     UFUNCTION(BlueprintCallable, Category = "Prism")
-        void Regenerate();
+    void Regenerate();
 
 protected:
     virtual void BeginPlay() override;
@@ -61,7 +64,7 @@ protected:
 
 private:
     UPROPERTY(VisibleAnywhere)
-        UProceduralMeshComponent* MeshComponent;
+    UProceduralMeshComponent* MeshComponent;
 
     struct FMeshSection
     {
@@ -93,37 +96,38 @@ private:
         }
     };
 
-    // 主要几何生成函数
     void GenerateGeometry();
-    void ValidateAndClampParameters();
-    void ReserveMeshMemory(FMeshSection& MeshData);
-    void CreateMeshFromData(const FMeshSection& MeshData);
+    void GenerateSideWalls(FMeshSection& Section);
+    void GenerateTopCap(FMeshSection& Section);
+    void GenerateBottomCap(FMeshSection& Section);
+    void GenerateEndCaps(FMeshSection& Section);
 
-    // 顶点和面片操作
+    // 新增的三角形方法函数
+    void GenerateTopCapWithTriangles(FMeshSection& Section);
+    void GenerateBottomCapWithTriangles(FMeshSection& Section);
+    void GenerateTopCapWithQuads(FMeshSection& Section);
+    void GenerateBottomCapWithQuads(FMeshSection& Section);
+
     int32 AddVertex(FMeshSection& Section, const FVector& Position, const FVector& Normal, const FVector2D& UV);
     void AddQuad(FMeshSection& Section, int32 V1, int32 V2, int32 V3, int32 V4);
     void AddTriangle(FMeshSection& Section, int32 V1, int32 V2, int32 V3);
 
-    // 侧面几何生成
-    void GenerateSideGeometry(FMeshSection& Section);
-    void GenerateVertexRings(FMeshSection& Section, float HalfHeight, float ArcRad,
-        TArray<int32>& InnerRingTop, TArray<int32>& InnerRingBottom,
-        TArray<int32>& OuterRingTop, TArray<int32>& OuterRingBottom);
-    void GenerateSideQuads(FMeshSection& Section, 
-        const TArray<int32>& InnerRingTop, const TArray<int32>& InnerRingBottom,
-        const TArray<int32>& OuterRingTop, const TArray<int32>& OuterRingBottom);
-
-    // 顶面和底面几何生成
-    void GenerateTopGeometry(FMeshSection& Section);
-    void GenerateBottomGeometry(FMeshSection& Section);
-    void GenerateRingVertices(FMeshSection& Section, float Height, float ArcRad, 
-        const FVector& Normal, TArray<int32>& InnerRing, TArray<int32>& OuterRing);
-    void ConnectRingsWithTriangles(FMeshSection& Section, const TArray<int32>& InnerRing, 
-        const TArray<int32>& OuterRing, bool bReverse);
-
-    // 端面几何生成
-    void GenerateEndCaps(FMeshSection& Section);
-
-    // 材质应用
-    void ApplyMaterial();
+    // 计算圆环顶点
+    void CalculateRingVertices(float Radius, int32 Sides, float Z, float ArcAngle, TArray<FVector>& OutVertices, TArray<FVector2D>& OutUVs, float UOffset = 0.0f);
+    
+    // 倒角相关函数
+    void GenerateChamferedGeometry(FMeshSection& Section);
+    void GenerateChamferedSideWalls(FMeshSection& Section);
+    void GenerateChamferedTopCap(FMeshSection& Section);
+    void GenerateChamferedBottomCap(FMeshSection& Section);
+    void GenerateEdgeChamfers(FMeshSection& Section);
+    void GenerateCornerChamfers(FMeshSection& Section);
+    void GenerateEdgeChamfer(FMeshSection& Section, const FVector& RadialDir, 
+                            float OriginalRadius, float ChamferedRadius, 
+                            float OriginalZ, float ChamferedZ, 
+                            bool bIsTop, bool bIsOuter, int32 SideIndex);
+    void GenerateCornerChamfer(FMeshSection& Section, const FVector& RadialDir, 
+                              float OriginalRadius, float ChamferedRadius, 
+                              float OriginalZ, float ChamferedZ, 
+                              bool bIsTop, bool bIsOuter, int32 SideIndex);
 };
