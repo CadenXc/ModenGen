@@ -29,6 +29,15 @@ struct FPrismParameters
         float ArcAngle = 360.0f;
 };
 
+// 端面顶点结构体
+struct FEndCapVertices
+{
+    int32 InnerTop;
+    int32 InnerBottom;
+    int32 OuterTop;
+    int32 OuterBottom;
+};
+
 UCLASS()
 class MODELGEN_API AHollowPrism : public AActor
 {
@@ -84,16 +93,37 @@ private:
         }
     };
 
+    // 主要几何生成函数
     void GenerateGeometry();
-    void GenerateSideGeometry(FMeshSection& Section);
-    void GenerateTopGeometry(FMeshSection& Section);
-    void GenerateBottomGeometry(FMeshSection& Section);
-    void GenerateEndCaps(FMeshSection& Section);
+    void ValidateAndClampParameters();
+    void ReserveMeshMemory(FMeshSection& MeshData);
+    void CreateMeshFromData(const FMeshSection& MeshData);
 
+    // 顶点和面片操作
     int32 AddVertex(FMeshSection& Section, const FVector& Position, const FVector& Normal, const FVector2D& UV);
     void AddQuad(FMeshSection& Section, int32 V1, int32 V2, int32 V3, int32 V4);
     void AddTriangle(FMeshSection& Section, int32 V1, int32 V2, int32 V3);
-    void ConnectRingsWithTriangles(FMeshSection& Section, const TArray<int32>& InnerRing, const TArray<int32>& OuterRing, bool bReverse = false);
 
+    // 侧面几何生成
+    void GenerateSideGeometry(FMeshSection& Section);
+    void GenerateVertexRings(FMeshSection& Section, float HalfHeight, float ArcRad,
+        TArray<int32>& InnerRingTop, TArray<int32>& InnerRingBottom,
+        TArray<int32>& OuterRingTop, TArray<int32>& OuterRingBottom);
+    void GenerateSideQuads(FMeshSection& Section, 
+        const TArray<int32>& InnerRingTop, const TArray<int32>& InnerRingBottom,
+        const TArray<int32>& OuterRingTop, const TArray<int32>& OuterRingBottom);
+
+    // 顶面和底面几何生成
+    void GenerateTopGeometry(FMeshSection& Section);
+    void GenerateBottomGeometry(FMeshSection& Section);
+    void GenerateRingVertices(FMeshSection& Section, float Height, float ArcRad, 
+        const FVector& Normal, TArray<int32>& InnerRing, TArray<int32>& OuterRing);
+    void ConnectRingsWithTriangles(FMeshSection& Section, const TArray<int32>& InnerRing, 
+        const TArray<int32>& OuterRing, bool bReverse);
+
+    // 端面几何生成
+    void GenerateEndCaps(FMeshSection& Section);
+
+    // 材质应用
     void ApplyMaterial();
 };

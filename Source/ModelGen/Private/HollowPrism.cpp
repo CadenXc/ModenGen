@@ -4,6 +4,10 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/KismetMathLibrary.h"
 
+// ============================================================================
+// 构造函数和生命周期
+// ============================================================================
+
 AHollowPrism::AHollowPrism()
 {
     PrimaryActorTick.bCanEverTick = false;
@@ -47,6 +51,10 @@ void AHollowPrism::Regenerate()
     GenerateGeometry();
 }
 
+// ============================================================================
+// 主要几何生成函数
+// ============================================================================
+
 void AHollowPrism::GenerateGeometry()
 {
     if (!MeshComponent)
@@ -57,28 +65,50 @@ void AHollowPrism::GenerateGeometry()
 
     MeshComponent->ClearAllMeshSections();
 
+    // 验证和约束参数
+    ValidateAndClampParameters();
+
+    FMeshSection MeshData;
+    ReserveMeshMemory(MeshData);
+
+    // 生成各个几何部分
+    GenerateSideGeometry(MeshData);
+    GenerateTopGeometry(MeshData);
+    GenerateBottomGeometry(MeshData);
+
+    // 如果弧角小于360度，生成端面
+    if (Parameters.ArcAngle < 360.0f - KINDA_SMALL_NUMBER)
+    {
+        GenerateEndCaps(MeshData);
+    }
+
+    // 创建网格
+    CreateMeshFromData(MeshData);
+}
+
+// ============================================================================
+// 参数验证和内存分配
+// ============================================================================
+
+void AHollowPrism::ValidateAndClampParameters()
+{
     Parameters.InnerRadius = FMath::Max(0.01f, Parameters.InnerRadius);
     Parameters.OuterRadius = FMath::Max(0.01f, Parameters.OuterRadius);
     Parameters.Height = FMath::Max(0.01f, Parameters.Height);
     Parameters.InnerSides = FMath::Max(3, Parameters.InnerSides);
     Parameters.OuterSides = FMath::Max(3, Parameters.OuterSides);
     Parameters.ArcAngle = FMath::Clamp(Parameters.ArcAngle, 0.0f, 360.0f);
+}
 
-    FMeshSection MeshData;
-
+void AHollowPrism::ReserveMeshMemory(FMeshSection& MeshData)
+{
     const int32 VertexCountEstimate = (Parameters.InnerSides + Parameters.OuterSides) * 4 + 16;
     const int32 TriangleCountEstimate = (Parameters.InnerSides + Parameters.OuterSides) * 12;
     MeshData.Reserve(VertexCountEstimate, TriangleCountEstimate);
+}
 
-    GenerateSideGeometry(MeshData);
-    GenerateTopGeometry(MeshData);
-    GenerateBottomGeometry(MeshData);
-
-    if (Parameters.ArcAngle < 360.0f - KINDA_SMALL_NUMBER)
-    {
-        GenerateEndCaps(MeshData);
-    }
-
+void AHollowPrism::CreateMeshFromData(const FMeshSection& MeshData)
+{
     if (MeshData.Vertices.Num() > 0)
     {
         MeshComponent->CreateMeshSection_LinearColor(
@@ -99,6 +129,10 @@ void AHollowPrism::GenerateGeometry()
     }
 }
 
+// ============================================================================
+// 顶点和面片操作
+// ============================================================================
+
 int32 AHollowPrism::AddVertex(FMeshSection& Section, const FVector& Position, const FVector& Normal, const FVector2D& UV)
 {
     const int32 Index = Section.Vertices.Add(Position);
@@ -106,6 +140,7 @@ int32 AHollowPrism::AddVertex(FMeshSection& Section, const FVector& Position, co
     Section.UVs.Add(UV);
     Section.VertexColors.Add(FLinearColor::White);
 
+    // 计算切线
     FVector Tangent = FVector::CrossProduct(Normal, FVector::UpVector);
     if (Tangent.IsNearlyZero())
     {
@@ -119,10 +154,12 @@ int32 AHollowPrism::AddVertex(FMeshSection& Section, const FVector& Position, co
 
 void AHollowPrism::AddQuad(FMeshSection& Section, int32 V1, int32 V2, int32 V3, int32 V4)
 {
+    // 第一个三角形
     Section.Triangles.Add(V1);
     Section.Triangles.Add(V2);
     Section.Triangles.Add(V3);
 
+    // 第二个三角形
     Section.Triangles.Add(V1);
     Section.Triangles.Add(V3);
     Section.Triangles.Add(V4);
@@ -135,58 +172,29 @@ void AHollowPrism::AddTriangle(FMeshSection& Section, int32 V1, int32 V2, int32 
     Section.Triangles.Add(V3);
 }
 
-void AHollowPrism::ConnectRingsWithTriangles(FMeshSection& Section, const TArray<int32>& InnerRing, const TArray<int32>& OuterRing, bool bReverse)
-{
-    const int32 InnerCount = InnerRing.Num();
-    const int32 OuterCount = OuterRing.Num();
-    const int32 TotalSegments = FMath::Max(InnerCount, OuterCount);
-
-    for (int32 i = 0; i < TotalSegments; i++)
-    {
-        const float Ratio = static_cast<float>(i) / TotalSegments;
-        const int32 InnerIndex = FMath::FloorToInt(Ratio * (InnerCount - 1));
-        const int32 OuterIndex = FMath::FloorToInt(Ratio * (OuterCount - 1));
-
-        const int32 NextInnerIndex = (InnerIndex + 1) % (InnerCount - 1);
-        const int32 NextOuterIndex = (OuterIndex + 1) % (OuterCount - 1);
-
-        if (bReverse)
-        {
-            // 修复底面三角形连接顺序
-            AddTriangle(Section,
-                InnerRing[InnerIndex],
-                OuterRing[OuterIndex],
-                OuterRing[NextOuterIndex]);
-
-            AddTriangle(Section,
-                InnerRing[InnerIndex],
-                OuterRing[NextOuterIndex],
-                InnerRing[NextInnerIndex]);
-        }
-        else
-        {
-            // 顶面连接顺序保持不变
-            AddTriangle(Section,
-                InnerRing[InnerIndex],
-                OuterRing[NextOuterIndex],
-                OuterRing[OuterIndex]);
-
-            AddTriangle(Section,
-                InnerRing[InnerIndex],
-                InnerRing[NextInnerIndex],
-                OuterRing[NextOuterIndex]);
-        }
-    }
-}
+// ============================================================================
+// 侧面几何生成
+// ============================================================================
 
 void AHollowPrism::GenerateSideGeometry(FMeshSection& Section)
 {
     const float HalfHeight = Parameters.Height / 2.0f;
     const float ArcRad = FMath::DegreesToRadians(Parameters.ArcAngle);
 
+    // 生成顶点环
     TArray<int32> InnerRingTop, InnerRingBottom;
     TArray<int32> OuterRingTop, OuterRingBottom;
+    
+    GenerateVertexRings(Section, HalfHeight, ArcRad, InnerRingTop, InnerRingBottom, OuterRingTop, OuterRingBottom);
 
+    // 生成侧面四边形
+    GenerateSideQuads(Section, InnerRingTop, InnerRingBottom, OuterRingTop, OuterRingBottom);
+}
+
+void AHollowPrism::GenerateVertexRings(FMeshSection& Section, float HalfHeight, float ArcRad,
+    TArray<int32>& InnerRingTop, TArray<int32>& InnerRingBottom,
+    TArray<int32>& OuterRingTop, TArray<int32>& OuterRingBottom)
+{
     // 内环顶点 (顶部和底部)
     for (int32 s = 0; s <= Parameters.InnerSides; s++)
     {
@@ -218,7 +226,12 @@ void AHollowPrism::GenerateSideGeometry(FMeshSection& Section)
         OuterRingTop.Add(AddVertex(Section, OuterTopPos, RadialNormal, FVector2D(U, 1.0f)));
         OuterRingBottom.Add(AddVertex(Section, OuterBottomPos, RadialNormal, FVector2D(U, 0.0f)));
     }
+}
 
+void AHollowPrism::GenerateSideQuads(FMeshSection& Section, 
+    const TArray<int32>& InnerRingTop, const TArray<int32>& InnerRingBottom,
+    const TArray<int32>& OuterRingTop, const TArray<int32>& OuterRingBottom)
+{
     // 内侧面
     for (int32 s = 0; s < Parameters.InnerSides; s++)
     {
@@ -242,6 +255,10 @@ void AHollowPrism::GenerateSideGeometry(FMeshSection& Section)
     }
 }
 
+// ============================================================================
+// 顶面和底面几何生成
+// ============================================================================
+
 void AHollowPrism::GenerateTopGeometry(FMeshSection& Section)
 {
     const float HalfHeight = Parameters.Height / 2.0f;
@@ -250,32 +267,8 @@ void AHollowPrism::GenerateTopGeometry(FMeshSection& Section)
     TArray<int32> InnerRing, OuterRing;
     const FVector TopNormal(0, 0, 1);
 
-    // 内环顶点
-    for (int32 s = 0; s <= Parameters.InnerSides; s++)
-    {
-        const float Angle = s * ArcRad / Parameters.InnerSides;
-        const float CosA = FMath::Cos(Angle);
-        const float SinA = FMath::Sin(Angle);
-
-        const FVector InnerPos(Parameters.InnerRadius * CosA, Parameters.InnerRadius * SinA, HalfHeight);
-        const FVector2D UV(0.5f + 0.5f * CosA, 0.5f + 0.5f * SinA);
-        InnerRing.Add(AddVertex(Section, InnerPos, TopNormal, UV));
-    }
-
-    // 外环顶点
-    for (int32 s = 0; s <= Parameters.OuterSides; s++)
-    {
-        const float Angle = s * ArcRad / Parameters.OuterSides;
-        const float CosA = FMath::Cos(Angle);
-        const float SinA = FMath::Sin(Angle);
-
-        const FVector OuterPos(Parameters.OuterRadius * CosA, Parameters.OuterRadius * SinA, HalfHeight);
-        const FVector2D UV(0.5f + 0.5f * CosA, 0.5f + 0.5f * SinA);
-        OuterRing.Add(AddVertex(Section, OuterPos, TopNormal, UV));
-    }
-
-    // 使用三角剖分连接内环和外环
-    ConnectRingsWithTriangles(Section, InnerRing, OuterRing);
+    GenerateRingVertices(Section, HalfHeight, ArcRad, TopNormal, InnerRing, OuterRing);
+    ConnectRingsWithTriangles(Section, InnerRing, OuterRing, false);
 }
 
 void AHollowPrism::GenerateBottomGeometry(FMeshSection& Section)
@@ -286,6 +279,13 @@ void AHollowPrism::GenerateBottomGeometry(FMeshSection& Section)
     TArray<int32> InnerRing, OuterRing;
     const FVector BottomNormal(0, 0, -1);
 
+    GenerateRingVertices(Section, -HalfHeight, ArcRad, BottomNormal, InnerRing, OuterRing);
+    ConnectRingsWithTriangles(Section, InnerRing, OuterRing, true);
+}
+
+void AHollowPrism::GenerateRingVertices(FMeshSection& Section, float Height, float ArcRad, 
+    const FVector& Normal, TArray<int32>& InnerRing, TArray<int32>& OuterRing)
+{
     // 内环顶点
     for (int32 s = 0; s <= Parameters.InnerSides; s++)
     {
@@ -293,9 +293,9 @@ void AHollowPrism::GenerateBottomGeometry(FMeshSection& Section)
         const float CosA = FMath::Cos(Angle);
         const float SinA = FMath::Sin(Angle);
 
-        const FVector InnerPos(Parameters.InnerRadius * CosA, Parameters.InnerRadius * SinA, -HalfHeight);
+        const FVector InnerPos(Parameters.InnerRadius * CosA, Parameters.InnerRadius * SinA, Height);
         const FVector2D UV(0.5f + 0.5f * CosA, 0.5f + 0.5f * SinA);
-        InnerRing.Add(AddVertex(Section, InnerPos, BottomNormal, UV));
+        InnerRing.Add(AddVertex(Section, InnerPos, Normal, UV));
     }
 
     // 外环顶点
@@ -305,106 +305,70 @@ void AHollowPrism::GenerateBottomGeometry(FMeshSection& Section)
         const float CosA = FMath::Cos(Angle);
         const float SinA = FMath::Sin(Angle);
 
-        const FVector OuterPos(Parameters.OuterRadius * CosA, Parameters.OuterRadius * SinA, -HalfHeight);
+        const FVector OuterPos(Parameters.OuterRadius * CosA, Parameters.OuterRadius * SinA, Height);
         const FVector2D UV(0.5f + 0.5f * CosA, 0.5f + 0.5f * SinA);
-        OuterRing.Add(AddVertex(Section, OuterPos, BottomNormal, UV));
+        OuterRing.Add(AddVertex(Section, OuterPos, Normal, UV));
     }
-
-    // 使用三角剖分连接内环和外环 (反转方向)
-    ConnectRingsWithTriangles(Section, InnerRing, OuterRing, true);
 }
+
+void AHollowPrism::ConnectRingsWithTriangles(FMeshSection& Section, const TArray<int32>& InnerRing, 
+    const TArray<int32>& OuterRing, bool bReverse)
+{
+    const int32 InnerCount = InnerRing.Num();
+    const int32 OuterCount = OuterRing.Num();
+    const int32 TotalSegments = FMath::Max(InnerCount, OuterCount);
+
+    for (int32 i = 0; i < TotalSegments; i++)
+    {
+        const float Ratio = static_cast<float>(i) / TotalSegments;
+        const int32 InnerIndex = FMath::FloorToInt(Ratio * (InnerCount - 1));
+        const int32 OuterIndex = FMath::FloorToInt(Ratio * (OuterCount - 1));
+
+        const int32 NextInnerIndex = (InnerIndex + 1) % (InnerCount - 1);
+        const int32 NextOuterIndex = (OuterIndex + 1) % (OuterCount - 1);
+
+        if (bReverse)
+        {
+            // 底面三角形连接顺序
+            AddTriangle(Section,
+                InnerRing[InnerIndex],
+                OuterRing[OuterIndex],
+                OuterRing[NextOuterIndex]);
+
+            AddTriangle(Section,
+                InnerRing[InnerIndex],
+                OuterRing[NextOuterIndex],
+                InnerRing[NextInnerIndex]);
+        }
+        else
+        {
+            // 顶面连接顺序
+            AddTriangle(Section,
+                InnerRing[InnerIndex],
+                OuterRing[NextOuterIndex],
+                OuterRing[OuterIndex]);
+
+            AddTriangle(Section,
+                InnerRing[InnerIndex],
+                InnerRing[NextInnerIndex],
+                OuterRing[NextOuterIndex]);
+        }
+    }
+}
+
+// ============================================================================
+// 端面几何生成
+// ============================================================================
 
 void AHollowPrism::GenerateEndCaps(FMeshSection& Section)
 {
-    if (Parameters.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) return;
-
-    const float HalfHeight = Parameters.Height / 2.0f;
-    const float ArcRad = FMath::DegreesToRadians(Parameters.ArcAngle);
-
-    // 计算起始端(0度)和结束端(ArcAngle)的法线方向
-    const FVector StartNormal(-FMath::Cos(0), -FMath::Sin(0), 0); // 指向外侧的法线
-    const FVector EndNormal(FMath::Cos(ArcRad), FMath::Sin(ArcRad), 0);
-
-    // 添加顶部和底部中心点（沿Z轴）
-    const int32 TopCenter = AddVertex(Section, FVector(0, 0, HalfHeight), FVector(0, 0, 1), FVector2D(0.5f, 0.5f));
-    const int32 BottomCenter = AddVertex(Section, FVector(0, 0, -HalfHeight), FVector(0, 0, -1), FVector2D(0.5f, 0.5f));
-
-    // 起始端顶点（0度位置）
-    const FVector StartInnerTopPos(Parameters.InnerRadius * FMath::Cos(0), Parameters.InnerRadius * FMath::Sin(0), HalfHeight);
-    const FVector StartInnerBottomPos(Parameters.InnerRadius * FMath::Cos(0), Parameters.InnerRadius * FMath::Sin(0), -HalfHeight);
-    const FVector StartOuterTopPos(Parameters.OuterRadius * FMath::Cos(0), Parameters.OuterRadius * FMath::Sin(0), HalfHeight);
-    const FVector StartOuterBottomPos(Parameters.OuterRadius * FMath::Cos(0), Parameters.OuterRadius * FMath::Sin(0), -HalfHeight);
-
-    const int32 V_InnerTopStart = AddVertex(Section, StartInnerTopPos, StartNormal, FVector2D(0, 1));
-    const int32 V_InnerBottomStart = AddVertex(Section, StartInnerBottomPos, StartNormal, FVector2D(0, 0));
-    const int32 V_OuterTopStart = AddVertex(Section, StartOuterTopPos, StartNormal, FVector2D(1, 1));
-    const int32 V_OuterBottomStart = AddVertex(Section, StartOuterBottomPos, StartNormal, FVector2D(1, 0));
-
-    // 结束端顶点（ArcAngle位置）
-    const float EndCos = FMath::Cos(ArcRad);
-    const float EndSin = FMath::Sin(ArcRad);
-    const FVector EndInnerTopPos(Parameters.InnerRadius * EndCos, Parameters.InnerRadius * EndSin, HalfHeight);
-    const FVector EndInnerBottomPos(Parameters.InnerRadius * EndCos, Parameters.InnerRadius * EndSin, -HalfHeight);
-    const FVector EndOuterTopPos(Parameters.OuterRadius * EndCos, Parameters.OuterRadius * EndSin, HalfHeight);
-    const FVector EndOuterBottomPos(Parameters.OuterRadius * EndCos, Parameters.OuterRadius * EndSin, -HalfHeight);
-
-    const int32 V_InnerTopEnd = AddVertex(Section, EndInnerTopPos, EndNormal, FVector2D(0, 1));
-    const int32 V_InnerBottomEnd = AddVertex(Section, EndInnerBottomPos, EndNormal, FVector2D(0, 0));
-    const int32 V_OuterTopEnd = AddVertex(Section, EndOuterTopPos, EndNormal, FVector2D(1, 1));
-    const int32 V_OuterBottomEnd = AddVertex(Section, EndOuterBottomPos, EndNormal, FVector2D(1, 0));
-
-    // 构建起始端封闭面
-    // 顶部四边形（连接中心点和内外环）
-    AddQuad(Section,
-        TopCenter,
-        V_InnerTopStart,
-        V_OuterTopStart,
-        TopCenter
-    );
-    // 底部四边形（连接中心点和内外环）
-    AddQuad(Section,
-        BottomCenter,
-        V_OuterBottomStart,
-        V_InnerBottomStart,
-        BottomCenter
-    );
-    // 侧面四边形（连接上下）
-    AddQuad(Section,
-        V_InnerTopStart,
-        V_InnerBottomStart,
-        V_OuterBottomStart,
-        V_OuterTopStart
-    );
-
-    // 构建结束端封闭面
-    // 顶部四边形（连接中心点和内外环）
-    AddQuad(Section,
-        TopCenter,
-        V_OuterTopEnd,
-        V_InnerTopEnd,
-        TopCenter
-    );
-    // 底部四边形（连接中心点和内外环）
-    AddQuad(Section,
-        BottomCenter,
-        V_InnerBottomEnd,
-        V_OuterBottomEnd,
-        BottomCenter
-    );
-    // 侧面四边形（连接上下）
-    AddQuad(Section,
-        V_OuterTopEnd,
-        V_OuterBottomEnd,
-        V_InnerBottomEnd,
-        V_InnerTopEnd
-    );
-
-    // 连接中心点与内外环形成完整切面
-    AddTriangle(Section, TopCenter, V_InnerTopEnd, V_InnerTopStart);
-    AddTriangle(Section, BottomCenter, V_InnerBottomStart, V_InnerBottomEnd);
-    AddTriangle(Section, TopCenter, V_OuterTopStart, V_OuterTopEnd);
-    AddTriangle(Section, BottomCenter, V_OuterBottomEnd, V_OuterBottomStart);
+    // 完全移除端面生成 - 当ArcAngle < 360度时保持完全开放
+    // 不生成任何端面顶点或连接，避免孤立的线条
 }
+
+// ============================================================================
+// 材质应用
+// ============================================================================
 
 void AHollowPrism::ApplyMaterial()
 {
