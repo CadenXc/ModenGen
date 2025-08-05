@@ -58,9 +58,9 @@ public:
 protected:
     virtual void BeginPlay() override;
 
-#if WITH_EDITOR
+    #if WITH_EDITOR
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-#endif
+    #endif
 
 private:
     UPROPERTY(VisibleAnywhere)
@@ -114,7 +114,7 @@ private:
 
     // 计算圆环顶点
     void CalculateRingVertices(float Radius, int32 Sides, float Z, float ArcAngle, TArray<FVector>& OutVertices, TArray<FVector2D>& OutUVs, float UOffset = 0.0f);
-    
+
     // 倒角相关函数
     void GenerateChamferedGeometry(FMeshSection& Section);
     void GenerateChamferedSideWalls(FMeshSection& Section);
@@ -122,12 +122,26 @@ private:
     void GenerateChamferedBottomCap(FMeshSection& Section);
     void GenerateEdgeChamfers(FMeshSection& Section);
     void GenerateCornerChamfers(FMeshSection& Section);
-    void GenerateEdgeChamfer(FMeshSection& Section, const FVector& RadialDir, 
-                            float OriginalRadius, float ChamferedRadius, 
-                            float OriginalZ, float ChamferedZ, 
-                            bool bIsTop, bool bIsOuter, int32 SideIndex);
-    void GenerateCornerChamfer(FMeshSection& Section, const FVector& RadialDir, 
-                              float OriginalRadius, float ChamferedRadius, 
-                              float OriginalZ, float ChamferedZ, 
-                              bool bIsTop, bool bIsOuter, int32 SideIndex);
+    void GenerateEdgeChamfer(FMeshSection& Section, const FVector& RadialDir,
+        float OriginalRadius, float ChamferedRadius,
+        float OriginalZ, float ChamferedZ,
+        bool bIsTop, bool bIsOuter, int32 SideIndex);
+    void GenerateCornerChamfer(FMeshSection& Section, const FVector& RadialDir,
+        float OriginalRadius, float ChamferedRadius,
+        float OriginalZ, float ChamferedZ,
+        bool bIsTop, bool bIsOuter, int32 SideIndex);
+
+    // 贝塞尔曲线倒角相关结构体和函数
+    struct FChamferArcControlPoints
+    {
+        FVector StartPoint;    // 起点
+        FVector EndPoint;      // 终点
+        FVector ControlPoint;  // 控制点
+    };
+
+    FChamferArcControlPoints CalculateChamferControlPoints(const FVector& SideVertex, const FVector& TopBottomVertex);
+    FVector CalculateChamferArcPoint(const FChamferArcControlPoints& ControlPoints, float t);
+    FVector CalculateChamferArcTangent(const FChamferArcControlPoints& ControlPoints, float t);
+    void CreateTopChamferGeometry(FMeshSection& Section, float StartZ);
+    void CreateBottomChamferGeometry(FMeshSection& Section, float StartZ);
 };
