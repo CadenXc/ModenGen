@@ -42,17 +42,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ChamferCube Collision")
 		bool bUseAsyncCooking = true;
 
-	// 蓝图可调用的生成函数
-	UFUNCTION(BlueprintCallable, Category = "ChamferCube")
 		void GenerateChamferedCube(float Size, float ChamferSize, int32 Sections);
 
 	// 重新生成网格
 	UFUNCTION(BlueprintCallable, Category = "ChamferCube")
 		void RegenerateMesh();
-
-	// 获取网格组件
-	UFUNCTION(BlueprintPure, Category = "ChamferCube")
-		UProceduralMeshComponent* GetProceduralMesh() const { return ProceduralMesh; }
 
 	virtual void OnConstruction(const FTransform& Transform) override;
 
@@ -118,7 +112,7 @@ public:
 	{
 		float Size = 100.0f;
 		float ChamferSize = 10.0f;
-		int32 Sections = 3;
+		int32 Sections = 1;
 		
 		// 验证参数有效性
 		bool IsValid() const;

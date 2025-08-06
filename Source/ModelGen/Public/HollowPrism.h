@@ -117,11 +117,11 @@ private:
 
     // 倒角相关函数
     void GenerateChamferedGeometry(FMeshSection& Section);
-    void GenerateChamferedSideWalls(FMeshSection& Section);
-    void GenerateChamferedTopCap(FMeshSection& Section);
-    void GenerateChamferedBottomCap(FMeshSection& Section);
-    void GenerateEdgeChamfers(FMeshSection& Section);
-    void GenerateCornerChamfers(FMeshSection& Section);
+    void GenerateChamferedSideWalls(FMeshSection& Section, float ChamferedTopZ, float ChamferedBottomZ);
+    void GenerateChamferedTopCap(FMeshSection& Section, float ChamferedTopZ, float ChamferedInnerRadius, float ChamferedOuterRadius);
+    void GenerateChamferedBottomCap(FMeshSection& Section, float ChamferedBottomZ, float ChamferedInnerRadius, float ChamferedOuterRadius);
+    void GenerateEdgeChamfers(FMeshSection& Section, float ChamferedTopZ, float ChamferedBottomZ, float ChamferedInnerRadius, float ChamferedOuterRadius);
+    void GenerateCornerChamfers(FMeshSection& Section, float ChamferedTopZ, float ChamferedBottomZ, float ChamferedInnerRadius, float ChamferedOuterRadius);
     void GenerateEdgeChamfer(FMeshSection& Section, const FVector& RadialDir,
         float OriginalRadius, float ChamferedRadius,
         float OriginalZ, float ChamferedZ,
@@ -131,7 +131,7 @@ private:
         float OriginalZ, float ChamferedZ,
         bool bIsTop, bool bIsOuter, int32 SideIndex);
 
-    // 贝塞尔曲线倒角相关结构体和函数
+    // 贝塞尔曲线控制点结构
     struct FChamferArcControlPoints
     {
         FVector StartPoint;    // 起点
@@ -142,6 +142,6 @@ private:
     FChamferArcControlPoints CalculateChamferControlPoints(const FVector& SideVertex, const FVector& TopBottomVertex);
     FVector CalculateChamferArcPoint(const FChamferArcControlPoints& ControlPoints, float t);
     FVector CalculateChamferArcTangent(const FChamferArcControlPoints& ControlPoints, float t);
-    void CreateTopChamferGeometry(FMeshSection& Section, float StartZ);
-    void CreateBottomChamferGeometry(FMeshSection& Section, float StartZ);
+    void CreateTopChamferGeometry(FMeshSection& Section, float StartZ, float ChamferedTopZ);
+    void CreateBottomChamferGeometry(FMeshSection& Section, float StartZ, float ChamferedBottomZ);
 };

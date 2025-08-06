@@ -6,6 +6,642 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/KismetMathLibrary.h"
 
+// FFrustumParameters 实现
+bool FFrustumParameters::IsValid() const
+{
+    return TopRadius > 0.01f && 
+           BottomRadius > 0.01f && 
+           Height > 0.01f && 
+           Sides >= 3 && 
+           HeightSegments >= 1 &&
+           ChamferRadius >= 0.0f &&
+           ChamferSections >= 1 &&
+           ArcAngle >= 0.0f && ArcAngle <= 360.0f &&
+           MinBendRadius >= 0.0f &&
+           CapThickness >= 0.0f;
+}
+
+void FFrustumParameters::GetEstimatedCounts(int32& OutVertexCount, int32& OutTriangleCount) const
+{
+    // 预估顶点数量
+    OutVertexCount = (HeightSegments + 1) * (Sides + 1) * 4 +
+                    (ArcAngle < 360.0f ? HeightSegments * 4 : 0);
+
+    // 预估三角形数量
+    OutTriangleCount = HeightSegments * Sides * 6 +
+                      (ArcAngle < 360.0f ? HeightSegments * 6 : 0);
+}
+
+// FFrustumGeometry 实现
+void FFrustumGeometry::Clear()
+{
+    Vertices.Reset();
+    Triangles.Reset();
+    Normals.Reset();
+    UVs.Reset();
+    VertexColors.Reset();
+    Tangents.Reset();
+}
+
+void FFrustumGeometry::Reserve(int32 VertexCount, int32 TriangleCount)
+{
+    Vertices.Reserve(VertexCount);
+    Triangles.Reserve(TriangleCount);
+    Normals.Reserve(VertexCount);
+    UVs.Reserve(VertexCount);
+    VertexColors.Reserve(VertexCount);
+    Tangents.Reserve(VertexCount);
+}
+
+bool FFrustumGeometry::IsValid() const
+{
+    return Vertices.Num() > 0 && 
+           Triangles.Num() > 0 && 
+           Normals.Num() == Vertices.Num() &&
+           UVs.Num() == Vertices.Num() &&
+           VertexColors.Num() == Vertices.Num() &&
+           Tangents.Num() == Vertices.Num();
+}
+
+void FFrustumGeometry::GetStats(int32& OutVertexCount, int32& OutTriangleCount) const
+{
+    OutVertexCount = Vertices.Num();
+    OutTriangleCount = Triangles.Num() / 3;
+}
+
+// FFrustumBuilder::FBuildParameters 实现
+bool FFrustumBuilder::FBuildParameters::IsValid() const
+{
+    return TopRadius > 0.01f && 
+           BottomRadius > 0.01f && 
+           Height > 0.01f && 
+           Sides >= 3 && 
+           HeightSegments >= 1 &&
+           ChamferRadius >= 0.0f &&
+           ChamferSections >= 1 &&
+           ArcAngle >= 0.0f && ArcAngle <= 360.0f &&
+           MinBendRadius >= 0.0f &&
+           CapThickness >= 0.0f;
+}
+
+// FFrustumBuilder 实现
+FFrustumBuilder::FFrustumBuilder(const FBuildParameters& InParams)
+    : Params(InParams)
+{
+}
+
+bool FFrustumBuilder::Generate(FFrustumGeometry& OutGeometry)
+{
+    if (!Params.IsValid())
+    {
+        UE_LOG(LogTemp, Error, TEXT("Invalid build parameters for Frustum"));
+        return false;
+    }
+
+    // 清除之前的几何数据
+    OutGeometry.Clear();
+    UniqueVerticesMap.Empty();
+
+    // 生成共享的顶点环
+    FVertexRings Rings;
+    GenerateAllVertexRings(OutGeometry, Rings);
+
+    // 生成各个几何部分
+    GenerateSideGeometry(OutGeometry, Rings);
+    GenerateTopGeometry(OutGeometry, Rings);
+    GenerateBottomGeometry(OutGeometry, Rings);
+
+    if (Params.ArcAngle < 360.0f - KINDA_SMALL_NUMBER)
+    {
+        GenerateEndCaps(OutGeometry, Rings);
+    }
+
+    return OutGeometry.IsValid();
+}
+
+int32 FFrustumBuilder::GetOrAddVertex(FFrustumGeometry& Geometry, const FVector& Pos, const FVector& Normal, const FVector2D& UV)
+{
+    int32* FoundIndex = UniqueVerticesMap.Find(Pos);
+    if (FoundIndex)
+    {
+        return *FoundIndex;
+    }
+
+    int32 NewIndex = AddVertex(Geometry, Pos, Normal, UV);
+    UniqueVerticesMap.Add(Pos, NewIndex);
+    return NewIndex;
+}
+
+int32 FFrustumBuilder::AddVertex(FFrustumGeometry& Geometry, const FVector& Pos, const FVector& Normal, const FVector2D& UV)
+{
+    Geometry.Vertices.Add(Pos);
+    Geometry.Normals.Add(Normal);
+    Geometry.UVs.Add(UV);
+    Geometry.VertexColors.Add(FLinearColor::White);
+    Geometry.Tangents.Add(FProcMeshTangent(CalculateTangent(Normal), false));
+
+    return Geometry.Vertices.Num() - 1;
+}
+
+FVector FFrustumBuilder::CalculateTangent(const FVector& Normal) const
+{
+    FVector TangentDirection = FVector::CrossProduct(Normal, FVector::UpVector);
+    if (TangentDirection.IsNearlyZero())
+    {
+        TangentDirection = FVector::CrossProduct(Normal, FVector::RightVector);
+    }
+    TangentDirection.Normalize();
+    return TangentDirection;
+}
+
+void FFrustumBuilder::AddQuad(FFrustumGeometry& Geometry, int32 V1, int32 V2, int32 V3, int32 V4)
+{
+    AddTriangle(Geometry, V1, V2, V3);
+    AddTriangle(Geometry, V1, V3, V4);
+}
+
+void FFrustumBuilder::AddTriangle(FFrustumGeometry& Geometry, int32 V1, int32 V2, int32 V3)
+{
+    Geometry.Triangles.Add(V1);
+    Geometry.Triangles.Add(V2);
+    Geometry.Triangles.Add(V3);
+}
+
+float FFrustumBuilder::CalculateBentRadius(float BaseRadius, float Alpha) const
+{
+    const float BendFactor = FMath::Sin(Alpha * PI);
+    return FMath::Max(
+        BaseRadius + Params.BendAmount * BendFactor * BaseRadius,
+        Params.MinBendRadius
+    );
+}
+
+FVector FFrustumBuilder::CalculateBentNormal(const FVector& BaseNormal, float Alpha) const
+{
+    if (FMath::IsNearlyZero(Params.BendAmount))
+    {
+        return BaseNormal;
+    }
+
+    const float NormalZ = -Params.BendAmount * FMath::Cos(Alpha * PI);
+    return (BaseNormal + FVector(0, 0, NormalZ)).GetSafeNormal();
+}
+
+void FFrustumBuilder::GenerateAllVertexRings(FFrustumGeometry& Geometry, FVertexRings& Rings)
+{
+    const float AngleStep = FMath::DegreesToRadians(Params.ArcAngle) / Params.Sides;
+    const float HalfHeight = Params.GetHalfHeight();
+
+    // 生成侧面顶点环
+    if (Params.ChamferRadius > 0.0f && Params.ChamferSections > 0)
+    {
+        // 有倒角时的侧面环
+        const float SideHeight = Params.GetSideHeight();
+        if (SideHeight > 0)
+        {
+            const float HeightStep = SideHeight / Params.HeightSegments;
+            const float StartZ = -HalfHeight + Params.GetBottomChamferHeight();
+
+            Rings.SideRings.SetNum(Params.HeightSegments + 1);
+
+            for (int32 h = 0; h <= Params.HeightSegments; ++h)
+            {
+                const float Z = StartZ + h * HeightStep;
+                const float Alpha = (Z + HalfHeight) / Params.Height;
+                const float Radius = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha);
+                const float BentRadius = CalculateBentRadius(Radius, Alpha);
+
+                TArray<int32>& Ring = Rings.SideRings[h];
+                Ring.SetNum(Params.Sides);
+
+                for (int32 s = 0; s < Params.Sides; ++s)
+                {
+                    const float Angle = s * AngleStep;
+                    const float X = BentRadius * FMath::Cos(Angle);
+                    const float Y = BentRadius * FMath::Sin(Angle);
+
+                    FVector Normal = FVector(X, Y, 0).GetSafeNormal();
+                    Normal = CalculateBentNormal(Normal, Alpha);
+
+                    const float U = static_cast<float>(s) / Params.Sides;
+                    const float V = Alpha;
+
+                    Ring[s] = GetOrAddVertex(Geometry, FVector(X, Y, Z), Normal, FVector2D(U, V));
+                }
+            }
+        }
+
+        // 生成倒角顶点环（这些将连接到内圆面）
+        GenerateTopChamferGeometry(Geometry, Rings);
+        GenerateBottomChamferGeometry(Geometry, Rings);
+        
+        // 创建内圆环顶点，用于生成内部面
+        
+        // 顶部内圆环
+        if (Rings.TopInnerRing.Num() == 0)
+        {
+            const float TopInnerRadius = Params.GetTopInnerRadius();
+            const float TopZ = HalfHeight;
+            
+            Rings.TopInnerRing.SetNum(Params.Sides);
+            for (int32 s = 0; s < Params.Sides; ++s)
+            {
+                const float Angle = s * AngleStep;
+                const float X = TopInnerRadius * FMath::Cos(Angle);
+                const float Y = TopInnerRadius * FMath::Sin(Angle);
+                
+                const float U = static_cast<float>(s) / Params.Sides;
+                const float V = 0.0f;
+                
+                Rings.TopInnerRing[s] = GetOrAddVertex(
+                    Geometry, 
+                    FVector(X, Y, TopZ), 
+                    FVector(0, 0, 1), 
+                    FVector2D(U, V)
+                );
+            }
+        }
+        
+        // 底部内圆环
+        if (Rings.BottomInnerRing.Num() == 0)
+        {
+            const float BottomInnerRadius = Params.GetBottomInnerRadius();
+            const float BottomZ = -HalfHeight;
+            
+            Rings.BottomInnerRing.SetNum(Params.Sides);
+            for (int32 s = 0; s < Params.Sides; ++s)
+            {
+                const float Angle = s * AngleStep;
+                const float X = BottomInnerRadius * FMath::Cos(Angle);
+                const float Y = BottomInnerRadius * FMath::Sin(Angle);
+                
+                const float U = static_cast<float>(s) / Params.Sides;
+                const float V = 1.0f;
+                
+                Rings.BottomInnerRing[s] = GetOrAddVertex(
+                    Geometry, 
+                    FVector(X, Y, BottomZ), 
+                    FVector(0, 0, -1), 
+                    FVector2D(U, V)
+                );
+            }
+        }
+    }
+    else
+    {
+        // 无倒角时，生成完整的侧面环
+        const float HeightStep = Params.Height / Params.HeightSegments;
+
+        Rings.SideRings.SetNum(Params.HeightSegments + 1);
+
+        for (int32 h = 0; h <= Params.HeightSegments; ++h)
+        {
+            const float Z = -HalfHeight + h * HeightStep;
+            const float Alpha = (Z + HalfHeight) / Params.Height;
+            const float Radius = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha);
+            const float BentRadius = CalculateBentRadius(Radius, Alpha);
+
+            TArray<int32>& Ring = Rings.SideRings[h];
+            Ring.SetNum(Params.Sides);
+
+            for (int32 s = 0; s < Params.Sides; ++s)
+            {
+                const float Angle = s * AngleStep;
+                const float X = BentRadius * FMath::Cos(Angle);
+                const float Y = BentRadius * FMath::Sin(Angle);
+
+                FVector Normal = FVector(X, Y, 0).GetSafeNormal();
+                Normal = CalculateBentNormal(Normal, Alpha);
+
+                const float U = static_cast<float>(s) / Params.Sides;
+                const float V = Alpha;
+
+                Ring[s] = GetOrAddVertex(Geometry, FVector(X, Y, Z), Normal, FVector2D(U, V));
+            }
+        }
+
+        // 顶部和底部环就是侧面环的首尾
+        Rings.TopRing = Rings.SideRings.Last();
+        Rings.BottomRing = Rings.SideRings[0];
+    }
+}
+
+void FFrustumBuilder::GenerateSideGeometry(FFrustumGeometry& Geometry, const FVertexRings& Rings)
+{
+    if (Rings.SideRings.Num() < 2) return;
+
+    // 生成侧面四边形，使用共享的顶点环
+    for (int32 h = 0; h < Rings.SideRings.Num() - 1; ++h)
+    {
+        for (int32 s = 0; s < Params.Sides; ++s)
+        {
+            const int32 V00 = Rings.SideRings[h][s];
+            const int32 V10 = Rings.SideRings[h + 1][s];
+            const int32 V01 = Rings.SideRings[h][(s + 1) % Params.Sides];
+            const int32 V11 = Rings.SideRings[h + 1][(s + 1) % Params.Sides];
+
+            AddQuad(Geometry, V00, V10, V11, V01);
+        }
+    }
+}
+
+void FFrustumBuilder::GenerateTopGeometry(FFrustumGeometry& Geometry, const FVertexRings& Rings)
+{
+    // 如果有倒角，使用内圆环；否则使用侧面环的顶部
+    const TArray<int32>& TopRing = (Params.ChamferRadius > 0.0f && Params.ChamferSections > 0) 
+                                   ? Rings.TopInnerRing 
+                                   : Rings.TopRing;
+
+    if (TopRing.Num() < 3) return;
+
+    // 创建多边形面（三角形扇形从第一个顶点开始）
+    for (int32 s = 1; s < TopRing.Num() - 1; ++s)
+    {
+        AddTriangle(
+            Geometry,
+            TopRing[0],
+            TopRing[s + 1],
+            TopRing[s]
+        );
+    }
+}
+
+void FFrustumBuilder::GenerateTopChamferGeometry(FFrustumGeometry& Geometry, FVertexRings& Rings)
+{
+    const float AngleStep = FMath::DegreesToRadians(Params.ArcAngle) / Params.Sides;
+    const float HalfHeight = Params.GetHalfHeight();
+    const float ChamferRadius = Params.ChamferRadius;
+    const int32 ChamferSections = Params.ChamferSections;
+
+    if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
+
+    TArray<int32> PrevRing;
+
+    for (int32 i = 0; i <= ChamferSections; ++i)
+    {
+        const float alpha = static_cast<float>(i) / ChamferSections;
+
+        // 倒角起点：主侧面几何体的最顶层边缘顶点
+        const float StartZ = HalfHeight - Params.GetTopChamferHeight();
+        const float Alpha_Height = (StartZ + HalfHeight) / Params.Height;
+        const float RadiusAtZ = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha_Height);
+        const float BentRadius = CalculateBentRadius(RadiusAtZ, Alpha_Height);
+        const FVector ChamferStartPoint = FVector(BentRadius, 0, StartZ);
+
+        // 倒角终点：在顶面上，半径减去倒角半径
+        const float TopRadius = Params.GetTopInnerRadius();
+        const FVector ChamferEndPoint = FVector(TopRadius, 0, HalfHeight);
+
+        // 计算倒角弧线控制点
+        FVector ControlPoint = FVector(ChamferStartPoint.X, 0, ChamferEndPoint.Z);
+
+        TArray<int32> CurrentRing;
+        CurrentRing.Reserve(Params.Sides + 1);
+
+        for (int32 s = 0; s <= Params.Sides; ++s)
+        {
+            const float angle = s * AngleStep;
+
+            // 计算倒角弧线上的点
+            const float t2 = alpha * alpha;
+            const float mt = 1.0f - alpha;
+            const float mt2 = mt * mt;
+            
+            const FVector LocalChamferPos = ChamferStartPoint * mt2 + 
+                                          ControlPoint * (2.0f * mt * alpha) + 
+                                          ChamferEndPoint * t2;
+            
+            const FVector Position = FVector(
+                LocalChamferPos.X * FMath::Cos(angle),
+                LocalChamferPos.X * FMath::Sin(angle),
+                LocalChamferPos.Z
+            );
+
+            // 计算法线
+            const FVector Tangent = (ChamferEndPoint - ChamferStartPoint) * (2.0f * alpha) + 
+                                  (ControlPoint - ChamferStartPoint) * (2.0f * mt);
+            const FVector Normal = FVector(
+                Tangent.X * FMath::Cos(angle),
+                Tangent.X * FMath::Sin(angle),
+                Tangent.Z
+            ).GetSafeNormal();
+
+            const float U = static_cast<float>(s) / Params.Sides;
+            const float V = (Position.Z + HalfHeight) / Params.Height;
+
+            CurrentRing.Add(GetOrAddVertex(Geometry, Position, Normal, FVector2D(U, V)));
+        }
+
+        if (i > 0)
+        {
+            for (int32 s = 0; s < Params.Sides; ++s)
+            {
+                const int32 V00 = PrevRing[s];
+                const int32 V10 = CurrentRing[s];
+                const int32 V01 = PrevRing[s + 1];
+                const int32 V11 = CurrentRing[s + 1];
+                AddQuad(Geometry, V00, V10, V11, V01);
+            }
+        }
+        PrevRing = CurrentRing;
+        
+        // 保存最后一个环作为内圆环（用于生成顶部面）
+        if (i == ChamferSections)
+        {
+            Rings.TopInnerRing.SetNum(Params.Sides);
+            for (int32 s = 0; s < Params.Sides; ++s)
+            {
+                Rings.TopInnerRing[s] = CurrentRing[s];
+            }
+        }
+    }
+}
+
+void FFrustumBuilder::GenerateBottomGeometry(FFrustumGeometry& Geometry, const FVertexRings& Rings)
+{
+    // 如果有倒角，使用内圆环；否则使用侧面环的底部
+    const TArray<int32>& BottomRing = (Params.ChamferRadius > 0.0f && Params.ChamferSections > 0) 
+                                      ? Rings.BottomInnerRing 
+                                      : Rings.BottomRing;
+
+    if (BottomRing.Num() < 3) return;
+
+    // 创建多边形面（三角形扇形从第一个顶点开始，注意底面的三角形顺序）
+    for (int32 s = 1; s < BottomRing.Num() - 1; ++s)
+    {
+        AddTriangle(
+            Geometry,
+            BottomRing[0],
+            BottomRing[s],
+            BottomRing[s + 1]
+        );
+    }
+}
+
+void FFrustumBuilder::GenerateBottomChamferGeometry(FFrustumGeometry& Geometry, FVertexRings& Rings)
+{
+    const float AngleStep = FMath::DegreesToRadians(Params.ArcAngle) / Params.Sides;
+    const float HalfHeight = Params.GetHalfHeight();
+    const float ChamferRadius = Params.ChamferRadius;
+    const int32 ChamferSections = Params.ChamferSections;
+
+    if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
+
+    TArray<int32> PrevRing;
+
+    for (int32 i = 0; i <= ChamferSections; ++i)
+    {
+        const float alpha = static_cast<float>(i) / ChamferSections;
+
+        // 倒角起点：主侧面几何体的最底层边缘顶点
+        const float StartZ = -HalfHeight + Params.GetBottomChamferHeight();
+        const float Alpha_Height = (StartZ + HalfHeight) / Params.Height;
+        const float RadiusAtZ = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha_Height);
+        const float BentRadius = CalculateBentRadius(RadiusAtZ, Alpha_Height);
+        const FVector ChamferStartPoint = FVector(BentRadius, 0, StartZ);
+
+        // 倒角终点：在底面上，半径减去倒角半径
+        const float BottomRadius = Params.GetBottomInnerRadius();
+        const FVector ChamferEndPoint = FVector(BottomRadius, 0, -HalfHeight);
+
+        // 计算倒角弧线控制点
+        FVector ControlPoint = FVector(ChamferStartPoint.X, 0, ChamferEndPoint.Z);
+
+        TArray<int32> CurrentRing;
+        CurrentRing.Reserve(Params.Sides + 1);
+
+        for (int32 s = 0; s <= Params.Sides; ++s)
+        {
+            const float angle = s * AngleStep;
+
+            // 计算倒角弧线上的点
+            const float t2 = alpha * alpha;
+            const float mt = 1.0f - alpha;
+            const float mt2 = mt * mt;
+            
+            const FVector LocalChamferPos = ChamferStartPoint * mt2 + 
+                                          ControlPoint * (2.0f * mt * alpha) + 
+                                          ChamferEndPoint * t2;
+            
+            const FVector Position = FVector(
+                LocalChamferPos.X * FMath::Cos(angle),
+                LocalChamferPos.X * FMath::Sin(angle),
+                LocalChamferPos.Z
+            );
+
+            // 计算法线
+            const FVector Tangent = (ChamferEndPoint - ChamferStartPoint) * (2.0f * alpha) + 
+                                  (ControlPoint - ChamferStartPoint) * (2.0f * mt);
+            const FVector Normal = FVector(
+                Tangent.X * FMath::Cos(angle),
+                Tangent.X * FMath::Sin(angle),
+                Tangent.Z
+            ).GetSafeNormal();
+
+            const float U = static_cast<float>(s) / Params.Sides;
+            const float V = (Position.Z + HalfHeight) / Params.Height;
+
+            CurrentRing.Add(GetOrAddVertex(Geometry, Position, Normal, FVector2D(U, V)));
+        }
+
+        if (i > 0)
+        {
+            for (int32 s = 0; s < Params.Sides; ++s)
+            {
+                const int32 V00 = PrevRing[s];
+                const int32 V10 = CurrentRing[s];
+                const int32 V01 = PrevRing[s + 1];
+                const int32 V11 = CurrentRing[s + 1];
+
+                AddQuad(Geometry, V00, V01, V11, V10);
+            }
+        }
+        PrevRing = CurrentRing;
+        
+        // 保存最后一个环作为内圆环（用于生成底部面）
+        if (i == ChamferSections)
+        {
+            Rings.BottomInnerRing.SetNum(Params.Sides);
+            for (int32 s = 0; s < Params.Sides; ++s)
+            {
+                Rings.BottomInnerRing[s] = CurrentRing[s];
+            }
+        }
+    }
+}
+
+void FFrustumBuilder::GenerateEndCaps(FFrustumGeometry& Geometry, const FVertexRings& Rings)
+{
+    const float HalfHeight = Params.GetHalfHeight();
+    const float StartAngle = 0.0f;
+    const float EndAngle = FMath::DegreesToRadians(Params.ArcAngle);
+
+    const FVector StartNormal = FVector(FMath::Sin(StartAngle), -FMath::Cos(StartAngle), 0.0f);
+    const FVector EndNormal = FVector(FMath::Sin(EndAngle), -FMath::Cos(EndAngle), 0.0f);
+
+    TArray<FVector> StartCapVerticesOuter;
+    TArray<FVector> StartCapVerticesInner;
+    TArray<FVector> EndCapVerticesOuter;
+    TArray<FVector> EndCapVerticesInner;
+
+    // 生成端面顶点环
+    for (int32 h = 0; h <= Params.HeightSegments; ++h)
+    {
+        const float Z = -HalfHeight + h * (Params.Height / Params.HeightSegments);
+        const float Alpha = (Z + HalfHeight) / Params.Height;
+
+        const float Radius = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha);
+        const float BentRadius = CalculateBentRadius(Radius, Alpha);
+
+        const FVector StartEdgePos = FVector(BentRadius * FMath::Cos(StartAngle), BentRadius * FMath::Sin(StartAngle), Z);
+        StartCapVerticesOuter.Add(StartEdgePos);
+        const FVector EndEdgePos = FVector(BentRadius * FMath::Cos(EndAngle), BentRadius * FMath::Sin(EndAngle), Z);
+        EndCapVerticesOuter.Add(EndEdgePos);
+
+        const FVector StartInnerPos = FVector(0, 0, Z);
+        StartCapVerticesInner.Add(StartInnerPos);
+        const FVector EndInnerPos = FVector(0, 0, Z);
+        EndCapVerticesInner.Add(EndInnerPos);
+    }
+
+    // 构建起始端面
+    for (int32 h = 0; h < Params.HeightSegments; ++h)
+    {
+        const FVector2D UVCorners[4] = {
+            FVector2D(0, (float)h / Params.HeightSegments),
+            FVector2D(1, (float)h / Params.HeightSegments),
+            FVector2D(0, (float)(h + 1) / Params.HeightSegments),
+            FVector2D(1, (float)(h + 1) / Params.HeightSegments)
+        };
+
+        const int32 V1 = GetOrAddVertex(Geometry, StartCapVerticesOuter[h], StartNormal, UVCorners[0]);
+        const int32 V2 = GetOrAddVertex(Geometry, StartCapVerticesInner[h], StartNormal, UVCorners[1]);
+        const int32 V3 = GetOrAddVertex(Geometry, StartCapVerticesOuter[h + 1], StartNormal, UVCorners[2]);
+        const int32 V4 = GetOrAddVertex(Geometry, StartCapVerticesInner[h + 1], StartNormal, UVCorners[3]);
+
+        AddQuad(Geometry, V1, V2, V4, V3);
+    }
+
+    // 构建结束端面
+    for (int32 h = 0; h < Params.HeightSegments; ++h)
+    {
+        const FVector2D UVCorners[4] = {
+            FVector2D(0, (float)h / Params.HeightSegments),
+            FVector2D(1, (float)h / Params.HeightSegments),
+            FVector2D(0, (float)(h + 1) / Params.HeightSegments),
+            FVector2D(1, (float)(h + 1) / Params.HeightSegments)
+        };
+
+        const int32 V1 = GetOrAddVertex(Geometry, EndCapVerticesOuter[h], EndNormal, UVCorners[0]);
+        const int32 V2 = GetOrAddVertex(Geometry, EndCapVerticesInner[h], EndNormal, UVCorners[1]);
+        const int32 V3 = GetOrAddVertex(Geometry, EndCapVerticesOuter[h + 1], EndNormal, UVCorners[2]);
+        const int32 V4 = GetOrAddVertex(Geometry, EndCapVerticesInner[h + 1], EndNormal, UVCorners[3]);
+
+        AddQuad(Geometry, V1, V3, V4, V2);
+    }
+}
+
+// AFrustum 实现
 AFrustum::AFrustum()
 {
     PrimaryActorTick.bCanEverTick = true;
@@ -15,7 +651,7 @@ AFrustum::AFrustum()
     RootComponent = MeshComponent;
 
     // 配置网格属性
-    MeshComponent->bUseAsyncCooking = true;
+    MeshComponent->bUseAsyncCooking = bUseAsyncCooking;
     MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
     MeshComponent->SetSimulatePhysics(false);
 
@@ -29,9 +665,9 @@ void AFrustum::BeginPlay()
     GenerateGeometry();
 }
 
-void AFrustum::PostLoad()
+void AFrustum::OnConstruction(const FTransform& Transform)
 {
-    Super::PostLoad();
+    Super::OnConstruction(Transform);
     GenerateGeometry();
 }
 
@@ -73,582 +709,135 @@ void AFrustum::Regenerate()
     GenerateGeometry();
 }
 
+void AFrustum::RegenerateMesh()
+{
+    Regenerate();
+}
+
+bool AFrustum::IsGeometryValid() const
+{
+    return CurrentGeometry.IsValid();
+}
+
+void AFrustum::GetGeometryStats(int32& OutVertexCount, int32& OutTriangleCount) const
+{
+    CurrentGeometry.GetStats(OutVertexCount, OutTriangleCount);
+}
+
+void AFrustum::SetupCollision()
+{
+    if (MeshComponent)
+    {
+        MeshComponent->bUseAsyncCooking = bUseAsyncCooking;
+        
+        if (bGenerateCollision)
+        {
+            MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+        }
+        else
+        {
+            MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        }
+        
+        MeshComponent->SetSimulatePhysics(false);
+    }
+}
+
 void AFrustum::GenerateGeometry()
 {
     if (!MeshComponent)
     {
-        UE_LOG(LogTemp, Error, TEXT("Mesh component is missing!"));
+        LogError(TEXT("Mesh component is missing!"));
+        return;
+    }
+
+    if (!ValidateParameters())
+    {
+        LogError(TEXT("Invalid parameters!"));
         return;
     }
 
     // 清除现有网格
     MeshComponent->ClearAllMeshSections();
 
-    // 验证参数
-    Parameters.TopRadius = FMath::Max(0.01f, Parameters.TopRadius);
-    Parameters.BottomRadius = FMath::Max(0.01f, Parameters.BottomRadius);
-    Parameters.Height = FMath::Max(0.01f, Parameters.Height);
-    Parameters.Sides = FMath::Max(3, Parameters.Sides);
-    Parameters.HeightSegments = FMath::Max(1, Parameters.HeightSegments);
-    Parameters.ChamferRadius = FMath::Max(0.0f, Parameters.ChamferRadius);
-    Parameters.ChamferSections = FMath::Max(1, Parameters.ChamferSections);
-    Parameters.ArcAngle = FMath::Clamp(Parameters.ArcAngle, 0.0f, 360.0f);
-    Parameters.MinBendRadius = FMath::Max(1.0f, Parameters.MinBendRadius);
-    Parameters.CapThickness = FMath::Max(0.0f, Parameters.CapThickness);
+    // 创建几何生成器
+    FFrustumBuilder::FBuildParameters BuildParams;
+    BuildParams.TopRadius = Parameters.TopRadius;
+    BuildParams.BottomRadius = Parameters.BottomRadius;
+    BuildParams.Height = Parameters.Height;
+    BuildParams.Sides = Parameters.Sides;
+    BuildParams.HeightSegments = Parameters.HeightSegments;
+    BuildParams.ChamferRadius = Parameters.ChamferRadius;
+    BuildParams.ChamferSections = Parameters.ChamferSections;
+    BuildParams.BendAmount = Parameters.BendAmount;
+    BuildParams.MinBendRadius = Parameters.MinBendRadius;
+    BuildParams.ArcAngle = Parameters.ArcAngle;
+    BuildParams.CapThickness = Parameters.CapThickness;
 
-    // 创建新网格数据
-    FMeshSection MeshData;
+    GeometryBuilder = MakeUnique<FFrustumBuilder>(BuildParams);
 
-    // 预估内存需求
-    const int32 VertexCountEstimate =
-        (Parameters.HeightSegments + 1) * (Parameters.Sides + 1) * 4 +
-        (Parameters.ArcAngle < 360.0f ? Parameters.HeightSegments * 4 : 0);
-
-    const int32 TriangleCountEstimate =
-        Parameters.HeightSegments * Parameters.Sides * 6 +
-        (Parameters.ArcAngle < 360.0f ? Parameters.HeightSegments * 6 : 0);
-
-    MeshData.Reserve(VertexCountEstimate, TriangleCountEstimate);
-
-    const float HalfHeight = Parameters.Height / 2.0f;
-    const float TopChamferHeight = FMath::Min(Parameters.ChamferRadius, Parameters.TopRadius);
-    const float BottomChamferHeight = FMath::Min(Parameters.ChamferRadius, Parameters.BottomRadius);
-
-    const float StartZ = -HalfHeight + BottomChamferHeight;
-    const float EndZ = HalfHeight - TopChamferHeight;
-
-    // 生成几何部件
-    CreateSideGeometry(MeshData, StartZ, EndZ);
-    CreateTopChamferGeometry(MeshData, EndZ);
-    CreateBottomChamferGeometry(MeshData, -HalfHeight + BottomChamferHeight);
-    CreateTopGeometry(MeshData, HalfHeight);
-    CreateBottomGeometry(MeshData, -HalfHeight);
-
-
-    if (Parameters.ArcAngle < 360.0f - KINDA_SMALL_NUMBER)
+    // 生成新几何体
+    if (GeometryBuilder->Generate(CurrentGeometry))
     {
-        CreateEndCaps(MeshData);
-    }
+        // 提交网格
+        if (CurrentGeometry.Vertices.Num() > 0)
+        {
+            MeshComponent->CreateMeshSection_LinearColor(
+                0,
+                CurrentGeometry.Vertices,
+                CurrentGeometry.Triangles,
+                CurrentGeometry.Normals,
+                CurrentGeometry.UVs,
+                CurrentGeometry.VertexColors,
+                CurrentGeometry.Tangents,
+                bGenerateCollision
+            );
 
-    // 提交网格
-    if (MeshData.Vertices.Num() > 0)
-    {
-        MeshComponent->CreateMeshSection_LinearColor(
-            0,
-            MeshData.Vertices,
-            MeshData.Triangles,
-            MeshData.Normals,
-            MeshData.UVs,
-            MeshData.VertexColors,
-            MeshData.Tangents,
-            true // 启用碰撞
-        );
-
-        ApplyMaterial();
+            ApplyMaterial();
+        }
+        else
+        {
+            LogError(TEXT("Generated frustum mesh has no vertices"));
+        }
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("Generated frustum mesh has no vertices"));
+        LogError(TEXT("Geometry generation failed"));
     }
 }
-
-int32 AFrustum::AddVertex(FMeshSection& Section, const FVector& Position, const FVector& Normal, const FVector2D& UV)
-{
-    const int32 Index = Section.Vertices.Add(Position);
-    Section.Normals.Add(Normal);
-    Section.UVs.Add(UV);
-    Section.VertexColors.Add(FLinearColor::White);
-
-    // 切线计算
-    FVector Tangent = FVector::CrossProduct(Normal, FVector::UpVector);
-    if (Tangent.IsNearlyZero())
-    {
-        Tangent = FVector::CrossProduct(Normal, FVector::RightVector);
-    }
-    Tangent.Normalize();
-
-    Section.Tangents.Add(FProcMeshTangent(Tangent, false));
-
-    return Index;
-}
-
-void AFrustum::AddQuad(FMeshSection& Section, int32 V1, int32 V2, int32 V3, int32 V4)
-{
-    Section.Triangles.Add(V1);
-    Section.Triangles.Add(V2);
-    Section.Triangles.Add(V3);
-
-    Section.Triangles.Add(V1);
-    Section.Triangles.Add(V3);
-    Section.Triangles.Add(V4);
-}
-
-void AFrustum::AddTriangle(FMeshSection& Section, int32 V1, int32 V2, int32 V3)
-{
-    Section.Triangles.Add(V1);
-    Section.Triangles.Add(V2);
-    Section.Triangles.Add(V3);
-}
-
-void AFrustum::CreateSideGeometry(FMeshSection& Section, float StartZ, float EndZ)
-{
-    const float SideHeight = EndZ - StartZ;
-    if (SideHeight <= 0) return;
-
-    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.Sides;
-    const float HeightStep = SideHeight / Parameters.HeightSegments;
-    const float HalfHeight = Parameters.Height / 2.0f;
-
-    // 顶点环缓存 [高度层][边]
-    TArray<TArray<int32>> VertexRings;
-    VertexRings.SetNum(Parameters.HeightSegments + 1);
-
-    // 生成顶点环
-    for (int32 h = 0; h <= Parameters.HeightSegments; ++h)
-    {
-        const float Z = StartZ + h * HeightStep;
-        const float Alpha = (Z + HalfHeight) / Parameters.Height; // Corrected alpha calculation for lerp
-        const float Radius = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha);
-
-        // 弯曲效果
-        const float BendFactor = FMath::Sin(Alpha * PI);
-        const float BentRadius = FMath::Max(
-            Radius + Parameters.BendAmount * BendFactor * Radius,
-            Parameters.MinBendRadius
-        );
-
-        TArray<int32>& Ring = VertexRings[h];
-        Ring.SetNum(Parameters.Sides + 1);
-
-        for (int32 s = 0; s <= Parameters.Sides; ++s)
-        {
-            const float Angle = s * AngleStep;
-            const float X = BentRadius * FMath::Cos(Angle);
-            const float Y = BentRadius * FMath::Sin(Angle);
-
-            // 法线计算（考虑弯曲）
-            FVector Normal = FVector(X, Y, 0).GetSafeNormal();
-            if (!FMath::IsNearlyZero(Parameters.BendAmount))
-            {
-                const float NormalZ = -Parameters.BendAmount * FMath::Cos(Alpha * PI);
-                Normal = (Normal + FVector(0, 0, NormalZ)).GetSafeNormal();
-            }
-
-            // UV映射
-            const float U = static_cast<float>(s) / Parameters.Sides;
-            const float V = Alpha;
-
-            Ring[s] = AddVertex(Section, FVector(X, Y, Z), Normal, FVector2D(U, V));
-        }
-    }
-
-    // 生成侧面四边形
-    for (int32 h = 0; h < Parameters.HeightSegments; ++h)
-    {
-        for (int32 s = 0; s < Parameters.Sides; ++s)
-        {
-            const int32 V00 = VertexRings[h][s];
-            const int32 V10 = VertexRings[h + 1][s];
-            const int32 V01 = VertexRings[h][s + 1];
-            const int32 V11 = VertexRings[h + 1][s + 1];
-
-            AddQuad(Section, V00, V10, V11, V01);
-        }
-    }
-}
-
-
-void AFrustum::CreateTopGeometry(FMeshSection& Section, float Z)
-{
-    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.Sides;
-    const float Radius = FMath::Max(0.0f, Parameters.TopRadius - Parameters.ChamferRadius);
-
-    // 中心顶点
-    const int32 CenterVertex = AddVertex(
-        Section,
-        FVector(0, 0, Z),
-        FVector(0, 0, 1),
-        FVector2D(0.5f, 0.5f)
-    );
-
-    // 顶部顶点环
-    TArray<int32> TopRing;
-    TopRing.SetNum(Parameters.Sides + 1);
-
-    for (int32 s = 0; s <= Parameters.Sides; ++s)
-    {
-        const float Angle = s * AngleStep;
-        const float X = Radius * FMath::Cos(Angle);
-        const float Y = Radius * FMath::Sin(Angle);
-
-        // UV映射到圆形
-        const float U = 0.5f + 0.5f * FMath::Cos(Angle);
-        const float V = 0.5f + 0.5f * FMath::Sin(Angle);
-
-        TopRing[s] = AddVertex(
-            Section,
-            FVector(X, Y, Z),
-            FVector(0, 0, 1),
-            FVector2D(U, V)
-        );
-    }
-
-    // 创建顶部三角扇
-    for (int32 s = 0; s < Parameters.Sides; ++s)
-    {
-        AddTriangle(
-            Section,
-            CenterVertex,
-            TopRing[s + 1],
-            TopRing[s]
-        );
-    }
-}
-
-void AFrustum::CreateBottomGeometry(FMeshSection& Section, float Z)
-{
-    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.Sides;
-    const float Radius = FMath::Max(0.0f, Parameters.BottomRadius - Parameters.ChamferRadius);
-
-    // 中心顶点
-    const int32 CenterVertex = AddVertex(
-        Section,
-        FVector(0, 0, Z),
-        FVector(0, 0, -1),
-        FVector2D(0.5f, 0.5f)
-    );
-
-    // 底部顶点环
-    TArray<int32> BottomRing;
-    BottomRing.SetNum(Parameters.Sides + 1);
-
-    for (int32 s = 0; s <= Parameters.Sides; ++s)
-    {
-        const float Angle = s * AngleStep;
-        const float X = Radius * FMath::Cos(Angle);
-        const float Y = Radius * FMath::Sin(Angle);
-
-        // UV映射到圆形
-        const float U = 0.5f + 0.5f * FMath::Cos(Angle);
-        const float V = 0.5f + 0.5f * FMath::Sin(Angle);
-
-        BottomRing[s] = AddVertex(
-            Section,
-            FVector(X, Y, Z),
-            FVector(0, 0, -1),
-            FVector2D(U, V)
-        );
-    }
-
-    // 创建底部三角扇
-    for (int32 s = 0; s < Parameters.Sides; ++s)
-    {
-        AddTriangle(
-            Section,
-            CenterVertex,
-            BottomRing[s],
-            BottomRing[s + 1]
-        );
-    }
-}
-
-
-// 修正后的辅助函数
-AFrustum::FChamferArcControlPoints AFrustum::CalculateChamferControlPoints(const FVector& SideVertex, const FVector& TopBottomVertex)
-{
-    FChamferArcControlPoints Points;
-
-    // 起点：使用传入的侧面顶点
-    Points.StartPoint = SideVertex;
-
-    // 终点：使用传入的顶/底面顶点
-    Points.EndPoint = TopBottomVertex;
-
-    // 控制点：位于原始的尖角处，由起点半径和终点高度确定
-    Points.ControlPoint = FVector(SideVertex.X, 0, TopBottomVertex.Z);
-
-    return Points;
-}
-
-
-FVector AFrustum::CalculateChamferArcPoint(const FChamferArcControlPoints& ControlPoints, float t)
-{
-    // 二次贝塞尔曲线：B(t) = (1-t)²P₀ + 2(1-t)tP₁ + t²P₂
-    float t2 = t * t;
-    float mt = 1.0f - t;
-    float mt2 = mt * mt;
-
-    return ControlPoints.StartPoint * mt2 +
-        ControlPoints.ControlPoint * (2.0f * mt * t) +
-        ControlPoints.EndPoint * t2;
-}
-
-FVector AFrustum::CalculateChamferArcTangent(const FChamferArcControlPoints& ControlPoints, float t)
-{
-    // 二次贝塞尔曲线切线：B'(t) = 2(1-t)(P₁-P₀) + 2t(P₂-P₁)
-    float mt = 1.0f - t;
-    return (ControlPoints.ControlPoint - ControlPoints.StartPoint) * (2.0f * mt) +
-        (ControlPoints.EndPoint - ControlPoints.ControlPoint) * (2.0f * t);
-}
-
-void AFrustum::CreateTopChamferGeometry(FMeshSection& Section, float StartZ)
-{
-    const float HalfHeight = Parameters.Height / 2.0f;
-    const float ChamferRadius = Parameters.ChamferRadius;
-    const int32 ChamferSections = Parameters.ChamferSections;
-    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.Sides;
-
-    if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
-
-    TArray<int32> PrevRing;
-
-    for (int32 i = 0; i <= ChamferSections; ++i)
-    {
-        const float alpha = static_cast<float>(i) / ChamferSections; // 沿倒角弧线的进度
-
-        // 倒角起点：主侧面几何体的最顶层边缘顶点
-        const float Alpha_Height = (StartZ + HalfHeight) / Parameters.Height;
-        const float RadiusAtZ = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha_Height);
-        const float BendFactor = FMath::Sin(Alpha_Height * PI);
-        const float BentRadius = FMath::Max(
-            RadiusAtZ + Parameters.BendAmount * BendFactor * RadiusAtZ,
-            Parameters.MinBendRadius
-        );
-        const FVector ChamferStartPoint = FVector(BentRadius, 0, StartZ);
-
-        // 倒角终点：在顶面上，半径减去倒角半径
-        const float TopRadius = FMath::Max(0.0f, Parameters.TopRadius - Parameters.ChamferRadius);
-        const FVector ChamferEndPoint = FVector(TopRadius, 0, HalfHeight);
-
-        // 调用修正后的函数，传入起点和终点
-        FChamferArcControlPoints ControlPoints = CalculateChamferControlPoints(ChamferStartPoint, ChamferEndPoint);
-
-        TArray<int32> CurrentRing;
-
-        // ... (以下部分保持不变，使用新的ControlPoints) ...
-
-        CurrentRing.Reserve(Parameters.Sides + 1);
-
-        for (int32 s = 0; s <= Parameters.Sides; ++s)
-        {
-            const float angle = s * AngleStep; // 圆周旋转角度
-
-            // 使用贝塞尔曲线计算倒角弧线上的点
-            const FVector LocalChamferPos = CalculateChamferArcPoint(ControlPoints, alpha);
-            const FVector Position = FVector(
-                LocalChamferPos.X * FMath::Cos(angle),
-                LocalChamferPos.X * FMath::Sin(angle),
-                LocalChamferPos.Z
-            );
-
-            // 计算法线
-            const FVector Tangent = CalculateChamferArcTangent(ControlPoints, alpha);
-            const FVector Normal = FVector(
-                Tangent.X * FMath::Cos(angle),
-                Tangent.X * FMath::Sin(angle),
-                Tangent.Z
-            ).GetSafeNormal();
-
-            // 计算 UV
-            const float U = static_cast<float>(s) / Parameters.Sides;
-            const float V = (Position.Z + HalfHeight) / Parameters.Height;
-
-            CurrentRing.Add(AddVertex(Section, Position, Normal, FVector2D(U, V)));
-        }
-
-        if (i > 0)
-        {
-            for (int32 s = 0; s < Parameters.Sides; ++s)
-            {
-                const int32 V00 = PrevRing[s];
-                const int32 V10 = CurrentRing[s];
-                const int32 V01 = PrevRing[s + 1];
-                const int32 V11 = CurrentRing[s + 1];
-                AddQuad(Section, V00, V10, V11, V01);
-            }
-        }
-        PrevRing = CurrentRing;
-    }
-}
-
-void AFrustum::CreateBottomChamferGeometry(FMeshSection& Section, float StartZ)
-{
-    const float HalfHeight = Parameters.Height / 2.0f;
-    const float ChamferRadius = Parameters.ChamferRadius;
-    const int32 ChamferSections = Parameters.ChamferSections;
-    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.Sides;
-
-    if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
-
-    TArray<int32> PrevRing;
-
-    for (int32 i = 0; i <= ChamferSections; ++i)
-    {
-        const float alpha = static_cast<float>(i) / ChamferSections;
-
-        // 倒角起点：主侧面几何体的最底层边缘顶点
-        const float Alpha_Height = (StartZ + HalfHeight) / Parameters.Height;
-        const float RadiusAtZ = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha_Height);
-        const float BendFactor = FMath::Sin(Alpha_Height * PI);
-        const float BentRadius = FMath::Max(
-            RadiusAtZ + Parameters.BendAmount * BendFactor * RadiusAtZ,
-            Parameters.MinBendRadius
-        );
-        const FVector ChamferStartPoint = FVector(BentRadius, 0, StartZ);
-
-        // 倒角终点：在底面上，半径减去倒角半径
-        const float BottomRadius = FMath::Max(0.0f, Parameters.BottomRadius - Parameters.ChamferRadius);
-        const FVector ChamferEndPoint = FVector(BottomRadius, 0, -HalfHeight);
-
-        // 调用修正后的函数，传入起点和终点
-        FChamferArcControlPoints ControlPoints = CalculateChamferControlPoints(ChamferStartPoint, ChamferEndPoint);
-
-        TArray<int32> CurrentRing;
-        CurrentRing.Reserve(Parameters.Sides + 1);
-
-        for (int32 s = 0; s <= Parameters.Sides; ++s)
-        {
-            const float angle = s * AngleStep;
-
-            const FVector LocalChamferPos = CalculateChamferArcPoint(ControlPoints, alpha);
-            const FVector Position = FVector(
-                LocalChamferPos.X * FMath::Cos(angle),
-                LocalChamferPos.X * FMath::Sin(angle),
-                LocalChamferPos.Z
-            );
-
-            const FVector Tangent = CalculateChamferArcTangent(ControlPoints, alpha);
-            const FVector Normal = FVector(
-                Tangent.X * FMath::Cos(angle),
-                Tangent.X * FMath::Sin(angle),
-                Tangent.Z
-            ).GetSafeNormal();
-
-            const float U = static_cast<float>(s) / Parameters.Sides;
-            const float V = (Position.Z + HalfHeight) / Parameters.Height;
-
-            CurrentRing.Add(AddVertex(Section, Position, Normal, FVector2D(U, V)));
-        }
-
-        if (i > 0)
-        {
-            for (int32 s = 0; s < Parameters.Sides; ++s)
-            {
-                const int32 V00 = PrevRing[s];
-                const int32 V10 = CurrentRing[s];
-                const int32 V01 = PrevRing[s + 1];
-                const int32 V11 = CurrentRing[s + 1];
-
-                // 注意：这里为了保持法线朝外，调整了顶点顺序
-                AddQuad(Section, V00, V01, V11, V10);
-            }
-        }
-        PrevRing = CurrentRing;
-    }
-}
-
-// 修正后的 CreateEndCaps 函数
-void AFrustum::CreateEndCaps(FMeshSection& Section)
-{
-    const float HalfHeight = Parameters.Height / 2.0f;
-    const float StartAngle = 0.0f;
-    const float EndAngle = FMath::DegreesToRadians(Parameters.ArcAngle);
-
-    // 起始端面法线：指向圆弧内部
-    const FVector StartNormal = FVector(FMath::Sin(StartAngle), -FMath::Cos(StartAngle), 0.0f);
-
-    // 结束端面法线：指向圆弧内部
-    const FVector EndNormal = FVector(FMath::Sin(EndAngle), -FMath::Cos(EndAngle), 0.0f);
-
-    // 缓存每层高度的顶点，因为我们需要内外两圈
-    TArray<FVector> StartCapVerticesOuter;
-    TArray<FVector> StartCapVerticesInner;
-    TArray<FVector> EndCapVerticesOuter;
-    TArray<FVector> EndCapVerticesInner;
-
-    // 生成端面顶点环
-    for (int32 h = 0; h <= Parameters.HeightSegments; ++h)
-    {
-        const float Z = -HalfHeight + h * (Parameters.Height / Parameters.HeightSegments);
-        const float Alpha = (Z + HalfHeight) / Parameters.Height;
-
-        // 与侧面几何体保持一致的半径计算
-        const float Radius = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha);
-        const float BendFactor = FMath::Sin(Alpha * PI);
-        const float BentRadius = FMath::Max(
-            Radius + Parameters.BendAmount * BendFactor * Radius,
-            Parameters.MinBendRadius
-        );
-
-        // 外圈顶点（侧面边缘）
-        const FVector StartEdgePos = FVector(BentRadius * FMath::Cos(StartAngle), BentRadius * FMath::Sin(StartAngle), Z);
-        StartCapVerticesOuter.Add(StartEdgePos);
-        const FVector EndEdgePos = FVector(BentRadius * FMath::Cos(EndAngle), BentRadius * FMath::Sin(EndAngle), Z);
-        EndCapVerticesOuter.Add(EndEdgePos);
-
-        // 内圈顶点（中心轴上的点）
-        const FVector StartInnerPos = FVector(0, 0, Z);
-        StartCapVerticesInner.Add(StartInnerPos);
-        const FVector EndInnerPos = FVector(0, 0, Z);
-        EndCapVerticesInner.Add(EndInnerPos);
-    }
-
-    // 构建起始端面
-    for (int32 h = 0; h < Parameters.HeightSegments; ++h)
-    {
-        const FVector2D UVCorners[4] = {
-            FVector2D(0, (float)h / Parameters.HeightSegments),
-            FVector2D(1, (float)h / Parameters.HeightSegments),
-            FVector2D(0, (float)(h + 1) / Parameters.HeightSegments),
-            FVector2D(1, (float)(h + 1) / Parameters.HeightSegments)
-        };
-
-        const int32 V1 = AddVertex(Section, StartCapVerticesOuter[h], StartNormal, UVCorners[0]);
-        const int32 V2 = AddVertex(Section, StartCapVerticesInner[h], StartNormal, UVCorners[1]);
-        const int32 V3 = AddVertex(Section, StartCapVerticesOuter[h + 1], StartNormal, UVCorners[2]);
-        const int32 V4 = AddVertex(Section, StartCapVerticesInner[h + 1], StartNormal, UVCorners[3]);
-
-        // 正确的四边形连接顺序
-        AddQuad(Section, V1, V2, V4, V3);
-    }
-
-    // 构建结束端面
-    for (int32 h = 0; h < Parameters.HeightSegments; ++h)
-    {
-        const FVector2D UVCorners[4] = {
-            FVector2D(0, (float)h / Parameters.HeightSegments),
-            FVector2D(1, (float)h / Parameters.HeightSegments),
-            FVector2D(0, (float)(h + 1) / Parameters.HeightSegments),
-            FVector2D(1, (float)(h + 1) / Parameters.HeightSegments)
-        };
-
-        const int32 V1 = AddVertex(Section, EndCapVerticesOuter[h], EndNormal, UVCorners[0]);
-        const int32 V2 = AddVertex(Section, EndCapVerticesInner[h], EndNormal, UVCorners[1]);
-        const int32 V3 = AddVertex(Section, EndCapVerticesOuter[h + 1], EndNormal, UVCorners[2]);
-        const int32 V4 = AddVertex(Section, EndCapVerticesInner[h + 1], EndNormal, UVCorners[3]);
-
-        // 正确的四边形连接顺序
-        AddQuad(Section, V1, V3, V4, V2);
-    }
-}
-
 
 void AFrustum::ApplyMaterial()
 {
-    static ConstructorHelpers::FObjectFinder<UMaterial> DefaultMaterial(TEXT("Material'/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall'"));
-    if (DefaultMaterial.Succeeded())
+    if (Material)
     {
-        MeshComponent->SetMaterial(0, DefaultMaterial.Object);
+        MeshComponent->SetMaterial(0, Material);
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("Failed to find default material. Using fallback."));
-
-        // 创建简单回退材质
-        UMaterial* FallbackMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
-        if (FallbackMaterial)
+        static ConstructorHelpers::FObjectFinder<UMaterial> DefaultMaterial(TEXT("Material'/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall'"));
+        if (DefaultMaterial.Succeeded())
         {
-            MeshComponent->SetMaterial(0, FallbackMaterial);
+            MeshComponent->SetMaterial(0, DefaultMaterial.Object);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Failed to find default material. Using fallback."));
+
+            UMaterial* FallbackMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
+            if (FallbackMaterial)
+            {
+                MeshComponent->SetMaterial(0, FallbackMaterial);
+            }
         }
     }
+}
+
+bool AFrustum::ValidateParameters() const
+{
+    return Parameters.IsValid();
+}
+
+void AFrustum::LogError(const FString& ErrorMessage)
+{
+    UE_LOG(LogTemp, Error, TEXT("Frustum: %s"), *ErrorMessage);
 }

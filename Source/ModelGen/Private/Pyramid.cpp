@@ -87,12 +87,12 @@ bool FPyramidBuilder::Generate(FPyramidGeometry& OutGeometry)
     {
         GeneratePrismSection(OutGeometry);
     }
-    else if (Params.bCreateBottom)
+    else
     {
         GenerateBottomFace(OutGeometry);
     }
-
     GeneratePyramidSection(OutGeometry);
+
 
     return OutGeometry.IsValid();
 }
@@ -105,14 +105,8 @@ void FPyramidBuilder::GeneratePrismSection(FPyramidGeometry& Geometry)
     // 生成棱柱侧面
     GeneratePrismSides(Geometry, BottomVerts, TopVerts, false, 0.0f, 0.5f);
 
-    // 生成棱柱底面（可选）
-    if (Params.bCreateBottom)
-    {
-        GeneratePolygonFace(Geometry, BottomVerts, FVector(0, 0, -1), false);
-    }
-
-    // 生成棱柱顶面（金字塔底面）
-    GeneratePolygonFace(Geometry, TopVerts, FVector(0, 0, 1), true);
+    // 生成棱柱底面
+    GeneratePolygonFace(Geometry, BottomVerts, FVector(0, 0, -1), false);
 }
 
 void FPyramidBuilder::GeneratePyramidSection(FPyramidGeometry& Geometry)
@@ -138,9 +132,9 @@ void FPyramidBuilder::GeneratePyramidSection(FPyramidGeometry& Geometry)
         int32 NextBaseIndex = GetOrAddVertex(Geometry, BaseVertices[NextIndex], Normal,
             FVector2D(static_cast<float>(i + 1) / Params.Sides, (Params.BevelRadius > 0) ? 0.5f : 0.0f));
 
-        // 添加三角形 - 确保逆时针顺序以正确朝向
-        AddTriangle(Geometry, ApexIndex, CurrentBaseIndex, NextBaseIndex);
+        AddTriangle(Geometry, ApexIndex, NextBaseIndex, CurrentBaseIndex);
     }
+
 }
 
 void FPyramidBuilder::GenerateBottomFace(FPyramidGeometry& Geometry)
@@ -238,11 +232,9 @@ void FPyramidBuilder::GeneratePolygonFace(FPyramidGeometry& Geometry, const TArr
     for (int32 i = 0; i < NumSides; i++)
     {
         int32 NextIndex = (i + 1) % NumSides;
-        int32 V0 = GetOrAddVertex(Geometry, PolygonVerts[i], Normal,
-            FVector2D(0.5f + 0.5f * FMath::Cos(2 * PI * i / NumSides),
+        int32 V0 = GetOrAddVertex(Geometry, PolygonVerts[i], Normal, FVector2D(0.5f + 0.5f * FMath::Cos(2 * PI * i / NumSides),
                 0.5f + 0.5f * FMath::Sin(2 * PI * i / NumSides)));
-        int32 V1 = GetOrAddVertex(Geometry, PolygonVerts[NextIndex], Normal,
-            FVector2D(0.5f + 0.5f * FMath::Cos(2 * PI * NextIndex / NumSides),
+        int32 V1 = GetOrAddVertex(Geometry, PolygonVerts[NextIndex], Normal, FVector2D(0.5f + 0.5f * FMath::Cos(2 * PI * NextIndex / NumSides),
                 0.5f + 0.5f * FMath::Sin(2 * PI * NextIndex / NumSides)));
 
         if (bReverseOrder)
@@ -293,14 +285,16 @@ void APyramid::OnConstruction(const FTransform& Transform)
 
 bool APyramid::GenerateMeshInternal()
 {
-    if (!ProceduralMesh) return false;
+    if (!ProceduralMesh)
+    {
+		return false;
+    }
 
     // 创建构建参数
     FPyramidBuildParameters BuildParams;
     BuildParams.BaseRadius = BaseRadius;
     BuildParams.Height = Height;
     BuildParams.Sides = Sides;
-    BuildParams.bCreateBottom = bCreateBottom;
     BuildParams.BevelRadius = BevelRadius;
 
     // 创建构建器并生成几何
@@ -348,12 +342,11 @@ void APyramid::RegenerateMesh()
     GenerateMeshInternal();
 }
 
-void APyramid::GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides, bool bInCreateBottom)
+void APyramid::GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides)
 {
     BaseRadius = InBaseRadius;
     Height = InHeight;
     Sides = InSides;
-    bCreateBottom = bInCreateBottom;
     
     GenerateMeshInternal();
 }

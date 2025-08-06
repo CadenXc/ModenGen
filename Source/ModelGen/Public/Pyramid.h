@@ -39,7 +39,6 @@ struct MODELGEN_API FPyramidBuildParameters
     float BaseRadius = 100.0f;
     float Height = 200.0f;
     int32 Sides = 4;
-    bool bCreateBottom = true;
     float BevelRadius = 0.0f;
 
     bool IsValid() const;
@@ -91,17 +90,14 @@ public:
     APyramid();
 
     // 可调节参数
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid Parameters", meta = (ClampMin = "1.0", ClampMax = "1000.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid Parameters", meta = (ClampMin = "1.0", ClampMax = "500.0"))
     float BaseRadius = 100.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid Parameters", meta = (ClampMin = "1.0", ClampMax = "1000.0"))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid Parameters", meta = (ClampMin = "1.0", ClampMax = "500.0"))
     float Height = 200.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid Parameters", meta = (ClampMin = 3, UIMin = 3))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid Parameters", meta = (ClampMin = 3, UIMin = 3, ClampMax = 25, UIMax = 25))
     int32 Sides = 4;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid Parameters")
-    bool bCreateBottom = true;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid Parameters", meta = (ClampMin = "0.0"))
     float BevelRadius = 0.0f;
@@ -121,7 +117,7 @@ public:
     UProceduralMeshComponent* GetProceduralMesh() const { return ProceduralMesh; }
 
     UFUNCTION(BlueprintCallable, Category = "Pyramid")
-    void GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides, bool bInCreateBottom);
+    void GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides);
 
     virtual void OnConstruction(const FTransform& Transform) override;
 
