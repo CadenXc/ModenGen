@@ -145,47 +145,44 @@ void FChamferCubeBuilder::GenerateMainFaces(FChamferCubeGeometry& Geometry)
 	const float HalfSize = Params.GetHalfSize();
 	const float InnerOffset = Params.GetInnerOffset();
 
-	// +X 面 (法线: (1,0,0))
-	int32 PxPyPz = GetOrAddVertex(Geometry, FVector(HalfSize, InnerOffset, InnerOffset), FVector(1, 0, 0), FVector2D(0, 1));
-	int32 PxPyNz = GetOrAddVertex(Geometry, FVector(HalfSize, InnerOffset, -InnerOffset), FVector(1, 0, 0), FVector2D(0, 0));
-	int32 PxNyNz = GetOrAddVertex(Geometry, FVector(HalfSize, -InnerOffset, -InnerOffset), FVector(1, 0, 0), FVector2D(1, 0));
-	int32 PxNyPz = GetOrAddVertex(Geometry, FVector(HalfSize, -InnerOffset, InnerOffset), FVector(1, 0, 0), FVector2D(1, 1));
-	AddQuad(Geometry, PxNyNz, PxNyPz, PxPyPz, PxPyNz);
+	// 定义面的中心点、方向向量和法线
+	struct FaceData
+	{
+		FVector Center;
+		FVector SizeX;
+		FVector SizeY;
+		FVector Normal;
+	};
 
-	// -X 面 (法线: (-1,0,0))
-	int32 NxPyPz = GetOrAddVertex(Geometry, FVector(-HalfSize, InnerOffset, InnerOffset), FVector(-1, 0, 0), FVector2D(1, 1));
-	int32 NxPyNz = GetOrAddVertex(Geometry, FVector(-HalfSize, InnerOffset, -InnerOffset), FVector(-1, 0, 0), FVector2D(1, 0));
-	int32 NxNyNz = GetOrAddVertex(Geometry, FVector(-HalfSize, -InnerOffset, -InnerOffset), FVector(-1, 0, 0), FVector2D(0, 0));
-	int32 NxNyPz = GetOrAddVertex(Geometry, FVector(-HalfSize, -InnerOffset, InnerOffset), FVector(-1, 0, 0), FVector2D(0, 1));
-	AddQuad(Geometry, NxNyNz, NxPyNz, NxPyPz, NxNyPz);
+	TArray<FaceData> Faces = {
+		// +X 面 (右面，法线指向 +X) - 从+X方向看，Z轴向左(SizeX)，Y轴向上(SizeY)
+		{FVector(HalfSize, 0, 0), FVector(0, 0, -InnerOffset), FVector(0, InnerOffset, 0), FVector(1, 0, 0)},
+		// -X 面 (左面，法线指向 -X) - 从-X方向看，Z轴向右(SizeX)，Y轴向上(SizeY)
+		{FVector(-HalfSize, 0, 0), FVector(0, 0, InnerOffset), FVector(0, InnerOffset, 0), FVector(-1, 0, 0)},
+		// +Y 面 (前面，法线指向 +Y) - 从+Y方向看，X轴向左，Z轴向右
+		{FVector(0, HalfSize, 0), FVector(-InnerOffset, 0, 0), FVector(0, 0, InnerOffset), FVector(0, 1, 0)},
+		// -Y 面 (后面，法线指向 -Y) - 从-Y方向看，X轴向右，Z轴向右
+		{FVector(0, -HalfSize, 0), FVector(InnerOffset, 0, 0), FVector(0, 0, InnerOffset), FVector(0, -1, 0)},
+		// +Z 面 (上面，法线指向 +Z) - 从+Z方向看，X轴向右，Y轴向上
+		{FVector(0, 0, HalfSize), FVector(InnerOffset, 0, 0), FVector(0, InnerOffset, 0), FVector(0, 0, 1)},
+		// -Z 面 (下面，法线指向 -Z) - 从-Z方向看，X轴向右，Y轴向下
+		{FVector(0, 0, -HalfSize), FVector(InnerOffset, 0, 0), FVector(0, -InnerOffset, 0), FVector(0, 0, -1)}
+	};
 
-	// +Y 面 (法线: (0,1,0))
-	int32 PyPxPz = GetOrAddVertex(Geometry, FVector(InnerOffset, HalfSize, InnerOffset), FVector(0, 1, 0), FVector2D(0, 1));
-	int32 PyPxNz = GetOrAddVertex(Geometry, FVector(InnerOffset, HalfSize, -InnerOffset), FVector(0, 1, 0), FVector2D(0, 0));
-	int32 PyNxNz = GetOrAddVertex(Geometry, FVector(-InnerOffset, HalfSize, -InnerOffset), FVector(0, 1, 0), FVector2D(1, 0));
-	int32 PyNxPz = GetOrAddVertex(Geometry, FVector(-InnerOffset, HalfSize, InnerOffset), FVector(0, 1, 0), FVector2D(1, 1));
-	AddQuad(Geometry, PyNxNz, PyPxNz, PyPxPz, PyNxPz);
+	// UV 坐标数组（对应新的顶点顺序）
+	TArray<FVector2D> UVs = {
+		FVector2D(0, 0), // 0: 左下
+		FVector2D(0, 1), // 1: 左上
+		FVector2D(1, 1), // 2: 右上
+		FVector2D(1, 0)  // 3: 右下
+	};
 
-	// -Y 面 (法线: (0,-1,0))
-	int32 NyPxPz = GetOrAddVertex(Geometry, FVector(InnerOffset, -HalfSize, InnerOffset), FVector(0, -1, 0), FVector2D(1, 1));
-	int32 NyPxNz = GetOrAddVertex(Geometry, FVector(InnerOffset, -HalfSize, -InnerOffset), FVector(0, -1, 0), FVector2D(1, 0));
-	int32 NyNxNz = GetOrAddVertex(Geometry, FVector(-InnerOffset, -HalfSize, -InnerOffset), FVector(0, -1, 0), FVector2D(0, 0));
-	int32 NyNxPz = GetOrAddVertex(Geometry, FVector(-InnerOffset, -HalfSize, InnerOffset), FVector(0, -1, 0), FVector2D(0, 1));
-	AddQuad(Geometry, NyNxNz, NyNxPz, NyPxPz, NyPxNz);
-
-	// +Z 面 (法线: (0,0,1))
-	int32 PzPxPy = GetOrAddVertex(Geometry, FVector(InnerOffset, InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(1, 1));
-	int32 PzNxPy = GetOrAddVertex(Geometry, FVector(-InnerOffset, InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(0, 1));
-	int32 PzNxNy = GetOrAddVertex(Geometry, FVector(-InnerOffset, -InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(0, 0));
-	int32 PzPxNy = GetOrAddVertex(Geometry, FVector(InnerOffset, -InnerOffset, HalfSize), FVector(0, 0, 1), FVector2D(1, 0));
-	AddQuad(Geometry, PzNxNy, PzNxPy, PzPxPy, PzPxNy);
-
-	// -Z 面 (法线: (0,0,-1))
-	int32 NzPxPy = GetOrAddVertex(Geometry, FVector(InnerOffset, InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(1, 0));
-	int32 NzNxPy = GetOrAddVertex(Geometry, FVector(-InnerOffset, InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(0, 0));
-	int32 NzNxNy = GetOrAddVertex(Geometry, FVector(-InnerOffset, -InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(0, 1));
-	int32 NzPxNy = GetOrAddVertex(Geometry, FVector(InnerOffset, -InnerOffset, -HalfSize), FVector(0, 0, -1), FVector2D(1, 1));
-	AddQuad(Geometry, NzNxNy, NzPxNy, NzPxPy, NzNxPy);
+	// 为每个面生成几何体
+	for (const FaceData& Face : Faces)
+	{
+		TArray<FVector> FaceVerts = GenerateRectangleVertices(Face.Center, Face.SizeX, Face.SizeY);
+		GenerateQuadSides(Geometry, FaceVerts, Face.Normal, UVs);
+	}
 }
 
 void FChamferCubeBuilder::GenerateEdgeChamfers(FChamferCubeGeometry& Geometry, const TArray<FVector>& CorePoints)
@@ -195,60 +192,35 @@ void FChamferCubeBuilder::GenerateEdgeChamfers(FChamferCubeGeometry& Geometry, c
 	{
 		int32 Core1Idx;
 		int32 Core2Idx;
-		FVector AxisDirection;
 		FVector Normal1;
 		FVector Normal2;
 	};
 
-	TArray<FEdgeChamferDef> EdgeDefs;
-	EdgeDefs.Reserve(12);
+	// 定义所有边缘的倒角数据
+	TArray<FEdgeChamferDef> EdgeDefs = {
+		// +X 方向的边缘
+		{ 0, 1, FVector(0,-1,0), FVector(0,0,-1) },
+		{ 2, 3, FVector(0,0,-1), FVector(0,1,0) },
+		{ 4, 5, FVector(0,0,1), FVector(0,-1,0) },
+		{ 6, 7, FVector(0,1,0), FVector(0,0,1) },
 
-	// +X 方向的边缘
-	EdgeDefs.Add({ 0, 1, FVector(1,0,0), FVector(0,-1,0), FVector(0,0,-1) });
-	EdgeDefs.Add({ 2, 3, FVector(1,0,0), FVector(0,0,-1), FVector(0,1,0) });
-	EdgeDefs.Add({ 4, 5, FVector(1,0,0), FVector(0,0,1), FVector(0,-1,0) });
-	EdgeDefs.Add({ 6, 7, FVector(1,0,0), FVector(0,1,0), FVector(0,0,1) });
+		// +Y 方向的边缘
+		{ 0, 2, FVector(0,0,-1), FVector(-1,0,0) },
+		{ 1, 3, FVector(1,0,0), FVector(0,0,-1) },
+		{ 4, 6, FVector(-1,0,0), FVector(0,0,1) },
+		{ 5, 7, FVector(0,0,1), FVector(1,0,0) },
 
-	// +Y 方向的边缘
-	EdgeDefs.Add({ 0, 2, FVector(0,1,0), FVector(0,0,-1), FVector(-1,0,0) });
-	EdgeDefs.Add({ 1, 3, FVector(0,1,0), FVector(1,0,0), FVector(0,0,-1) });
-	EdgeDefs.Add({ 4, 6, FVector(0,1,0), FVector(-1,0,0), FVector(0,0,1) });
-	EdgeDefs.Add({ 5, 7, FVector(0,1,0), FVector(0,0,1), FVector(1,0,0) });
-
-	// +Z 方向的边缘
-	EdgeDefs.Add({ 0, 4, FVector(0,0,1), FVector(-1,0,0), FVector(0,-1,0) });
-	EdgeDefs.Add({ 1, 5, FVector(0,0,1), FVector(0,-1,0), FVector(1,0,0) });
-	EdgeDefs.Add({ 2, 6, FVector(0,0,1), FVector(0,1,0), FVector(-1,0,0) });
-	EdgeDefs.Add({ 3, 7, FVector(0,0,1), FVector(1,0,0), FVector(0,1,0) });
+		// +Z 方向的边缘
+		{ 0, 4, FVector(-1,0,0), FVector(0,-1,0) },
+		{ 1, 5, FVector(0,-1,0), FVector(1,0,0) },
+		{ 2, 6, FVector(0,1,0), FVector(-1,0,0) },
+		{ 3, 7, FVector(1,0,0), FVector(0,1,0) }
+	};
 
 	// 为每条边生成倒角
 	for (const FEdgeChamferDef& EdgeDef : EdgeDefs)
 	{
-		TArray<int32> PrevStripStartIndices;
-		TArray<int32> PrevStripEndIndices;
-
-		for (int32 s = 0; s <= Params.Sections; ++s)
-		{
-			const float Alpha = static_cast<float>(s) / Params.Sections;
-			FVector CurrentNormal = FMath::Lerp(EdgeDef.Normal1, EdgeDef.Normal2, Alpha).GetSafeNormal();
-
-			FVector PosStart = CorePoints[EdgeDef.Core1Idx] + CurrentNormal * Params.ChamferSize;
-			FVector PosEnd = CorePoints[EdgeDef.Core2Idx] + CurrentNormal * Params.ChamferSize;
-
-			FVector2D UV1(Alpha, 0.0f);
-			FVector2D UV2(Alpha, 1.0f);
-
-			int32 VtxStart = GetOrAddVertex(Geometry, PosStart, CurrentNormal, UV1);
-			int32 VtxEnd = GetOrAddVertex(Geometry, PosEnd, CurrentNormal, UV2);
-
-			if (s > 0 && PrevStripStartIndices.Num() > 0 && PrevStripEndIndices.Num() > 0)
-			{
-				AddQuad(Geometry, PrevStripStartIndices[0], PrevStripEndIndices[0], VtxEnd, VtxStart);
-			}
-
-			PrevStripStartIndices = { VtxStart };
-			PrevStripEndIndices = { VtxEnd };
-		}
+		GenerateEdgeStrip(Geometry, CorePoints, EdgeDef.Core1Idx, EdgeDef.Core2Idx, EdgeDef.Normal1, EdgeDef.Normal2);
 	}
 }
 
@@ -260,11 +232,13 @@ void FChamferCubeBuilder::GenerateCornerChamfers(FChamferCubeGeometry& Geometry,
 		return;
 	}
 
+	// 为每个角落生成倒角
 	for (int32 CornerIndex = 0; CornerIndex < 8; ++CornerIndex)
 	{
 		const FVector& CurrentCorePoint = CorePoints[CornerIndex];
 		bool bSpecialCornerRenderingOrder = (CornerIndex == 4 || CornerIndex == 7 || CornerIndex == 2 || CornerIndex == 1);
 
+		// 计算角落的轴向
 		const float SignX = FMath::Sign(CurrentCorePoint.X);
 		const float SignY = FMath::Sign(CurrentCorePoint.Y);
 		const float SignZ = FMath::Sign(CurrentCorePoint.Z);
@@ -285,21 +259,23 @@ void FChamferCubeBuilder::GenerateCornerChamfers(FChamferCubeGeometry& Geometry,
 		// 生成四分之一球体的顶点
 		for (int32 Lat = 0; Lat <= Params.Sections; ++Lat)
 		{
-			const float LatAlpha = static_cast<float>(Lat) / Params.Sections;
-
 			for (int32 Lon = 0; Lon <= Params.Sections - Lat; ++Lon)
 			{
 				const float LonAlpha = static_cast<float>(Lon) / Params.Sections;
+				const float LatAlpha = static_cast<float>(Lat) / Params.Sections;
 
-				FVector CurrentNormal = (AxisX * (1.0f - LatAlpha - LonAlpha) +
-					AxisY * LatAlpha +
-					AxisZ * LonAlpha);
-				CurrentNormal.Normalize();
+				// 使用辅助函数生成顶点
+				TArray<FVector> Vertices = GenerateCornerVertices(CurrentCorePoint, AxisX, AxisY, AxisZ, Lat, Lon);
+				if (Vertices.Num() > 0)
+				{
+					FVector CurrentNormal = (AxisX * (1.0f - LatAlpha - LonAlpha) +
+						AxisY * LatAlpha +
+						AxisZ * LonAlpha);
+					CurrentNormal.Normalize();
 
-				FVector CurrentPos = CurrentCorePoint + CurrentNormal * Params.ChamferSize;
-				FVector2D UV(LonAlpha, LatAlpha);
-
-				CornerVerticesGrid[Lat][Lon] = GetOrAddVertex(Geometry, CurrentPos, CurrentNormal, UV);
+					FVector2D UV(LonAlpha, LatAlpha);
+					CornerVerticesGrid[Lat][Lon] = GetOrAddVertex(Geometry, Vertices[0], CurrentNormal, UV);
+				}
 			}
 		}
 
@@ -308,32 +284,7 @@ void FChamferCubeBuilder::GenerateCornerChamfers(FChamferCubeGeometry& Geometry,
 		{
 			for (int32 Lon = 0; Lon < Params.Sections - Lat; ++Lon)
 			{
-				const int32 V00 = CornerVerticesGrid[Lat][Lon];
-				const int32 V10 = CornerVerticesGrid[Lat + 1][Lon];
-				const int32 V01 = CornerVerticesGrid[Lat][Lon + 1];
-
-				if (bSpecialCornerRenderingOrder)
-				{
-					AddTriangle(Geometry, V00, V01, V10);
-				}
-				else
-				{
-					AddTriangle(Geometry, V00, V10, V01);
-				}
-
-				if (Lon + 1 < CornerVerticesGrid[Lat + 1].Num())
-				{
-					const int32 V11 = CornerVerticesGrid[Lat + 1][Lon + 1];
-
-					if (bSpecialCornerRenderingOrder)
-					{
-						AddTriangle(Geometry, V10, V01, V11);
-					}
-					else
-					{
-						AddTriangle(Geometry, V10, V11, V01);
-					}
-				}
+				GenerateCornerTriangles(Geometry, CornerVerticesGrid, Lat, Lon, bSpecialCornerRenderingOrder);
 			}
 		}
 	}
@@ -468,5 +419,144 @@ void AChamferCube::RegenerateMesh()
 	else
 	{
 		UE_LOG(LogTemp, Error, TEXT("Failed to generate ChamferCube geometry"));
+	}
+}
+
+// ============================================================================
+// FChamferCubeBuilder 辅助函数实现（类似 Pyramid 的辅助函数）
+// ============================================================================
+
+TArray<FVector> FChamferCubeBuilder::GenerateRectangleVertices(const FVector& Center, const FVector& SizeX, const FVector& SizeY) const
+{
+	TArray<FVector> Vertices;
+	Vertices.Reserve(4);
+	
+	// 生成矩形的四个顶点（按照右手法则：从法线方向看，顶点按逆时针排列）
+	// 这样在UE5的左手坐标系中会正确显示
+	Vertices.Add(Center - SizeX - SizeY); // 0: 左下
+	Vertices.Add(Center - SizeX + SizeY); // 1: 左上  
+	Vertices.Add(Center + SizeX + SizeY); // 2: 右上
+	Vertices.Add(Center + SizeX - SizeY); // 3: 右下
+	
+	return Vertices;
+}
+
+void FChamferCubeBuilder::GenerateQuadSides(FChamferCubeGeometry& Geometry, const TArray<FVector>& Verts, const FVector& Normal, const TArray<FVector2D>& UVs)
+{
+	if (Verts.Num() != 4 || UVs.Num() != 4)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("GenerateQuadSides: 需要4个顶点和4个UV坐标"));
+		return;
+	}
+	
+	// 添加四个顶点，每个顶点都使用相同的法线
+	int32 V0 = GetOrAddVertex(Geometry, Verts[0], Normal, UVs[0]);
+	int32 V1 = GetOrAddVertex(Geometry, Verts[1], Normal, UVs[1]);
+	int32 V2 = GetOrAddVertex(Geometry, Verts[2], Normal, UVs[2]);
+	int32 V3 = GetOrAddVertex(Geometry, Verts[3], Normal, UVs[3]);
+	
+	// 添加四边形（两个三角形）
+	AddQuad(Geometry, V0, V1, V2, V3);
+}
+
+// ============================================================================
+// FChamferCubeBuilder 倒角辅助函数实现
+// ============================================================================
+
+TArray<FVector> FChamferCubeBuilder::GenerateEdgeVertices(const FVector& CorePoint1, const FVector& CorePoint2, const FVector& Normal1, const FVector& Normal2, float Alpha) const
+{
+	TArray<FVector> Vertices;
+	Vertices.Reserve(2);
+	
+	// 计算插值法线
+	FVector CurrentNormal = FMath::Lerp(Normal1, Normal2, Alpha).GetSafeNormal();
+	
+	// 生成边缘的两个顶点
+	FVector PosStart = CorePoint1 + CurrentNormal * Params.ChamferSize;
+	FVector PosEnd = CorePoint2 + CurrentNormal * Params.ChamferSize;
+	
+	Vertices.Add(PosStart);
+	Vertices.Add(PosEnd);
+	
+	return Vertices;
+}
+
+void FChamferCubeBuilder::GenerateEdgeStrip(FChamferCubeGeometry& Geometry, const TArray<FVector>& CorePoints, int32 Core1Idx, int32 Core2Idx, const FVector& Normal1, const FVector& Normal2)
+{
+	TArray<int32> PrevStripStartIndices;
+	TArray<int32> PrevStripEndIndices;
+
+	for (int32 s = 0; s <= Params.Sections; ++s)
+	{
+		const float Alpha = static_cast<float>(s) / Params.Sections;
+		FVector CurrentNormal = FMath::Lerp(Normal1, Normal2, Alpha).GetSafeNormal();
+
+		FVector PosStart = CorePoints[Core1Idx] + CurrentNormal * Params.ChamferSize;
+		FVector PosEnd = CorePoints[Core2Idx] + CurrentNormal * Params.ChamferSize;
+
+		FVector2D UV1(Alpha, 0.0f);
+		FVector2D UV2(Alpha, 1.0f);
+
+		int32 VtxStart = GetOrAddVertex(Geometry, PosStart, CurrentNormal, UV1);
+		int32 VtxEnd = GetOrAddVertex(Geometry, PosEnd, CurrentNormal, UV2);
+
+		if (s > 0 && PrevStripStartIndices.Num() > 0 && PrevStripEndIndices.Num() > 0)
+		{
+			AddQuad(Geometry, PrevStripStartIndices[0], PrevStripEndIndices[0], VtxEnd, VtxStart);
+		}
+
+		PrevStripStartIndices = { VtxStart };
+		PrevStripEndIndices = { VtxEnd };
+	}
+}
+
+TArray<FVector> FChamferCubeBuilder::GenerateCornerVertices(const FVector& CorePoint, const FVector& AxisX, const FVector& AxisY, const FVector& AxisZ, int32 Lat, int32 Lon) const
+{
+	TArray<FVector> Vertices;
+	Vertices.Reserve(1);
+	
+	const float LatAlpha = static_cast<float>(Lat) / Params.Sections;
+	const float LonAlpha = static_cast<float>(Lon) / Params.Sections;
+
+	// 计算法线（三轴插值）
+	FVector CurrentNormal = (AxisX * (1.0f - LatAlpha - LonAlpha) +
+		AxisY * LatAlpha +
+		AxisZ * LonAlpha);
+	CurrentNormal.Normalize();
+
+	// 计算顶点位置
+	FVector CurrentPos = CorePoint + CurrentNormal * Params.ChamferSize;
+	Vertices.Add(CurrentPos);
+	
+	return Vertices;
+}
+
+void FChamferCubeBuilder::GenerateCornerTriangles(FChamferCubeGeometry& Geometry, const TArray<TArray<int32>>& CornerVerticesGrid, int32 Lat, int32 Lon, bool bSpecialOrder)
+{
+	const int32 V00 = CornerVerticesGrid[Lat][Lon];
+	const int32 V10 = CornerVerticesGrid[Lat + 1][Lon];
+	const int32 V01 = CornerVerticesGrid[Lat][Lon + 1];
+
+	if (bSpecialOrder)
+	{
+		AddTriangle(Geometry, V00, V01, V10);
+	}
+	else
+	{
+		AddTriangle(Geometry, V00, V10, V01);
+	}
+
+	if (Lon + 1 < CornerVerticesGrid[Lat + 1].Num())
+	{
+		const int32 V11 = CornerVerticesGrid[Lat + 1][Lon + 1];
+
+		if (bSpecialOrder)
+		{
+			AddTriangle(Geometry, V10, V01, V11);
+		}
+		else
+		{
+			AddTriangle(Geometry, V10, V11, V01);
+		}
 	}
 }

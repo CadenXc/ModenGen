@@ -148,6 +148,16 @@ private:
 	void AddQuad(FChamferCubeGeometry& Geometry, int32 V1, int32 V2, int32 V3, int32 V4);
 	void AddTriangle(FChamferCubeGeometry& Geometry, int32 V1, int32 V2, int32 V3);
 	
+	// 几何生成辅助函数（类似 Pyramid 的辅助函数）
+	TArray<FVector> GenerateRectangleVertices(const FVector& Center, const FVector& SizeX, const FVector& SizeY) const;
+	void GenerateQuadSides(FChamferCubeGeometry& Geometry, const TArray<FVector>& Verts, const FVector& Normal, const TArray<FVector2D>& UVs);
+	
+	// 倒角生成辅助函数
+	TArray<FVector> GenerateEdgeVertices(const FVector& CorePoint1, const FVector& CorePoint2, const FVector& Normal1, const FVector& Normal2, float Alpha) const;
+	void GenerateEdgeStrip(FChamferCubeGeometry& Geometry, const TArray<FVector>& CorePoints, int32 Core1Idx, int32 Core2Idx, const FVector& Normal1, const FVector& Normal2);
+	TArray<FVector> GenerateCornerVertices(const FVector& CorePoint, const FVector& AxisX, const FVector& AxisY, const FVector& AxisZ, int32 Lat, int32 Lon) const;
+	void GenerateCornerTriangles(FChamferCubeGeometry& Geometry, const TArray<TArray<int32>>& CornerVerticesGrid, int32 Lat, int32 Lon, bool bSpecialOrder);
+	
 	// 法线计算
 	FVector CalculateTangent(const FVector& Normal) const;
 };
