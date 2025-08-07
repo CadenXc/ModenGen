@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ProceduralMeshComponent.h"
+#include "BevelModifier.h"
 #include "HollowPrism.generated.h"
 
 USTRUCT(BlueprintType)
@@ -66,6 +67,9 @@ private:
     UPROPERTY(VisibleAnywhere)
     UProceduralMeshComponent* MeshComponent;
 
+    UPROPERTY(VisibleAnywhere)
+    UBevelModifier* BevelModifier;
+
     struct FMeshSection
     {
         TArray<FVector> Vertices;
@@ -108,12 +112,17 @@ private:
     void GenerateTopCapWithQuads(FMeshSection& Section);
     void GenerateBottomCapWithQuads(FMeshSection& Section);
 
-    int32 AddVertex(FMeshSection& Section, const FVector& Position, const FVector& Normal, const FVector2D& UV);
-    void AddQuad(FMeshSection& Section, int32 V1, int32 V2, int32 V3, int32 V4);
-    void AddTriangle(FMeshSection& Section, int32 V1, int32 V2, int32 V3);
-
-    // 计算圆环顶点
-    void CalculateRingVertices(float Radius, int32 Sides, float Z, float ArcAngle, TArray<FVector>& OutVertices, TArray<FVector2D>& OutUVs, float UOffset = 0.0f);
+    // 新增的优化倒角函数
+    void GenerateOptimizedChamferedGeometry(FMeshSection& Section);
+    void GenerateBaseGeometry(TArray<FVector>& OutVertices, TArray<int32>& OutIndices);
+    void GenerateTopCapTriangles(TArray<FVector>& Vertices, TArray<int32>& Indices,
+                               const TArray<int32>& InnerIndices, const TArray<int32>& OuterIndices);
+    void GenerateBottomCapTriangles(TArray<FVector>& Vertices, TArray<int32>& Indices,
+                                  const TArray<int32>& InnerIndices, const TArray<int32>& OuterIndices);
+    void GenerateTopCapQuads(TArray<FVector>& Vertices, TArray<int32>& Indices,
+                           const TArray<int32>& InnerIndices, const TArray<int32>& OuterIndices);
+    void GenerateBottomCapQuads(TArray<FVector>& Vertices, TArray<int32>& Indices,
+                              const TArray<int32>& InnerIndices, const TArray<int32>& OuterIndices);
 
     // 倒角相关函数
     void GenerateChamferedGeometry(FMeshSection& Section);
@@ -122,26 +131,39 @@ private:
     void GenerateChamferedBottomCap(FMeshSection& Section, float ChamferedBottomZ, float ChamferedInnerRadius, float ChamferedOuterRadius);
     void GenerateEdgeChamfers(FMeshSection& Section, float ChamferedTopZ, float ChamferedBottomZ, float ChamferedInnerRadius, float ChamferedOuterRadius);
     void GenerateCornerChamfers(FMeshSection& Section, float ChamferedTopZ, float ChamferedBottomZ, float ChamferedInnerRadius, float ChamferedOuterRadius);
+    
+    // 边缘倒角生成函数
     void GenerateEdgeChamfer(FMeshSection& Section, const FVector& RadialDir,
         float OriginalRadius, float ChamferedRadius,
         float OriginalZ, float ChamferedZ,
         bool bIsTop, bool bIsOuter, int32 SideIndex);
+    
+    // 角落倒角生成函数
     void GenerateCornerChamfer(FMeshSection& Section, const FVector& RadialDir,
         float OriginalRadius, float ChamferedRadius,
         float OriginalZ, float ChamferedZ,
         bool bIsTop, bool bIsOuter, int32 SideIndex);
 
-    // 贝塞尔曲线控制点结构
+    // 倒角弧线计算
     struct FChamferArcControlPoints
     {
-        FVector StartPoint;    // 起点
-        FVector EndPoint;      // 终点
-        FVector ControlPoint;  // 控制点
+        FVector StartPoint;
+        FVector ControlPoint;
+        FVector EndPoint;
     };
 
-    FChamferArcControlPoints CalculateChamferControlPoints(const FVector& SideVertex, const FVector& TopBottomVertex);
+    FChamferArcControlPoints CalculateChamferControlPoints(const FVector& StartPoint, const FVector& EndPoint);
     FVector CalculateChamferArcPoint(const FChamferArcControlPoints& ControlPoints, float t);
     FVector CalculateChamferArcTangent(const FChamferArcControlPoints& ControlPoints, float t);
+
+    // 倒角几何生成
     void CreateTopChamferGeometry(FMeshSection& Section, float StartZ, float ChamferedTopZ);
     void CreateBottomChamferGeometry(FMeshSection& Section, float StartZ, float ChamferedBottomZ);
+
+    // 辅助函数
+    int32 AddVertex(FMeshSection& Section, const FVector& Position, const FVector& Normal, const FVector2D& UV);
+    void AddQuad(FMeshSection& Section, int32 V1, int32 V2, int32 V3, int32 V4);
+    void AddTriangle(FMeshSection& Section, int32 V1, int32 V2, int32 V3);
+    void CalculateRingVertices(float Radius, int32 Sides, float Z, float ArcAngle,
+        TArray<FVector>& OutVertices, TArray<FVector2D>& OutUVs, float UOffset = 0.0f);
 };

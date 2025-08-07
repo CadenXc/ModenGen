@@ -3,6 +3,7 @@
 #include "Materials/Material.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "BevelModifier.h"
 
 AHollowPrism::AHollowPrism()
 {
@@ -14,6 +15,9 @@ AHollowPrism::AHollowPrism()
     MeshComponent->bUseAsyncCooking = true;
     MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
     MeshComponent->SetSimulatePhysics(false);
+
+    // 创建倒角修改器
+    BevelModifier = CreateDefaultSubobject<UBevelModifier>(TEXT("BevelModifier"));
 
     GenerateGeometry();
 }
@@ -99,10 +103,11 @@ void AHollowPrism::GenerateGeometry()
 
     MeshData.Reserve(VertexCountEstimate, TriangleCountEstimate * 3);
 
-    // 生成各部件几何
+    // 生成基础几何
     if (Parameters.bUseChamfer && Parameters.ChamferRadius > 0.0f)
     {
-        GenerateChamferedGeometry(MeshData);
+        // 使用优化的倒角算法
+        GenerateOptimizedChamferedGeometry(MeshData);
     }
     else
     {
@@ -157,6 +162,198 @@ void AHollowPrism::GenerateGeometry()
     else
     {
         UE_LOG(LogTemp, Warning, TEXT("Generated prism mesh has no vertices"));
+    }
+}
+
+// 新增：优化的倒角几何生成 - 基于Blender算法
+void AHollowPrism::GenerateOptimizedChamferedGeometry(FMeshSection& Section)
+{
+    if (!BevelModifier)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("BevelModifier is null, falling back to basic chamfer"));
+        GenerateChamferedGeometry(Section);
+        return;
+    }
+
+    // 配置BevelModifier参数
+    BevelModifier->BevelRadius = Parameters.ChamferRadius;
+    BevelModifier->BevelSegments = Parameters.ChamferSegments;
+    BevelModifier->AffectType = 1; // 边倒角
+    BevelModifier->ProfileType = 0; // 超椭圆配置文件
+    BevelModifier->ProfileValue = 0.5f; // 圆形配置文件
+    BevelModifier->bUseAngleLimit = false; // 对所有边进行倒角
+
+    // 生成基础几何的顶点和索引
+    TArray<FVector> BaseVertices;
+    TArray<int32> BaseIndices;
+    GenerateBaseGeometry(BaseVertices, BaseIndices);
+
+    // 应用倒角修改器
+    TArray<FVector> BeveledVertices;
+    TArray<int32> BeveledIndices;
+    
+    if (BevelModifier->CalculateBevel(BaseVertices, BaseIndices, BeveledVertices, BeveledIndices))
+    {
+        // 将倒角后的几何体添加到网格
+        for (const FVector& Vertex : BeveledVertices)
+        {
+            AddVertex(Section, Vertex, FVector::ZeroVector, FVector2D::ZeroVector);
+        }
+
+        // 添加三角形
+        for (int32 i = 0; i < BeveledIndices.Num(); i += 3)
+        {
+            if (i + 2 < BeveledIndices.Num())
+            {
+                AddTriangle(Section, BeveledIndices[i], BeveledIndices[i + 1], BeveledIndices[i + 2]);
+            }
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Bevel calculation failed, falling back to basic chamfer"));
+        GenerateChamferedGeometry(Section);
+    }
+}
+
+// 新增：生成基础几何体（用于倒角处理）
+void AHollowPrism::GenerateBaseGeometry(TArray<FVector>& OutVertices, TArray<int32>& OutIndices)
+{
+    const float HalfHeight = Parameters.Height / 2.0f;
+    const float ArcAngle = Parameters.ArcAngle;
+
+    // 生成内环顶点（顶部和底部）
+    TArray<FVector> InnerTopVertices, InnerBottomVertices;
+    TArray<FVector2D> InnerTopUVs, InnerBottomUVs;
+    CalculateRingVertices(Parameters.InnerRadius, Parameters.Sides, HalfHeight, ArcAngle, InnerTopVertices, InnerTopUVs);
+    CalculateRingVertices(Parameters.InnerRadius, Parameters.Sides, -HalfHeight, ArcAngle, InnerBottomVertices, InnerBottomUVs);
+
+    // 生成外环顶点（顶部和底部）
+    TArray<FVector> OuterTopVertices, OuterBottomVertices;
+    TArray<FVector2D> OuterTopUVs, OuterBottomUVs;
+    CalculateRingVertices(Parameters.OuterRadius, Parameters.Sides, HalfHeight, ArcAngle, OuterTopVertices, OuterTopUVs, 0.5f);
+    CalculateRingVertices(Parameters.OuterRadius, Parameters.Sides, -HalfHeight, ArcAngle, OuterBottomVertices, OuterBottomUVs, 0.5f);
+
+    // 添加顶点
+    TArray<int32> InnerTopIndices, InnerBottomIndices;
+    TArray<int32> OuterTopIndices, OuterBottomIndices;
+
+    // 内环顶点
+    for (int32 i = 0; i <= Parameters.Sides; i++)
+    {
+        InnerTopIndices.Add(OutVertices.Add(InnerTopVertices[i]));
+        InnerBottomIndices.Add(OutVertices.Add(InnerBottomVertices[i]));
+    }
+
+    // 外环顶点
+    for (int32 i = 0; i <= Parameters.Sides; i++)
+    {
+        OuterTopIndices.Add(OutVertices.Add(OuterTopVertices[i]));
+        OuterBottomIndices.Add(OutVertices.Add(OuterBottomVertices[i]));
+    }
+
+    // 生成侧面三角形
+    for (int32 i = 0; i < Parameters.Sides; i++)
+    {
+        // 内侧面
+        OutIndices.Add(InnerTopIndices[i]);
+        OutIndices.Add(InnerBottomIndices[i]);
+        OutIndices.Add(InnerBottomIndices[i + 1]);
+
+        OutIndices.Add(InnerTopIndices[i]);
+        OutIndices.Add(InnerBottomIndices[i + 1]);
+        OutIndices.Add(InnerTopIndices[i + 1]);
+
+        // 外侧面
+        OutIndices.Add(OuterTopIndices[i]);
+        OutIndices.Add(OuterTopIndices[i + 1]);
+        OutIndices.Add(OuterBottomIndices[i + 1]);
+
+        OutIndices.Add(OuterTopIndices[i]);
+        OutIndices.Add(OuterBottomIndices[i + 1]);
+        OutIndices.Add(OuterBottomIndices[i]);
+    }
+
+    // 生成顶面和底面
+    if (Parameters.bUseTriangleMethod)
+    {
+        GenerateTopCapTriangles(OutVertices, OutIndices, InnerTopIndices, OuterTopIndices);
+        GenerateBottomCapTriangles(OutVertices, OutIndices, InnerBottomIndices, OuterBottomIndices);
+    }
+    else
+    {
+        GenerateTopCapQuads(OutVertices, OutIndices, InnerTopIndices, OuterTopIndices);
+        GenerateBottomCapQuads(OutVertices, OutIndices, InnerBottomIndices, OuterBottomIndices);
+    }
+}
+
+// 新增：生成顶面三角形
+void AHollowPrism::GenerateTopCapTriangles(TArray<FVector>& Vertices, TArray<int32>& Indices,
+                                          const TArray<int32>& InnerIndices, const TArray<int32>& OuterIndices)
+{
+    for (int32 i = 0; i < Parameters.Sides; i++)
+    {
+        // 连接外环到内环的三角形
+        Indices.Add(OuterIndices[i]);
+        Indices.Add(OuterIndices[i + 1]);
+        Indices.Add(InnerIndices[i + 1]);
+
+        Indices.Add(OuterIndices[i]);
+        Indices.Add(InnerIndices[i + 1]);
+        Indices.Add(InnerIndices[i]);
+    }
+}
+
+// 新增：生成底面三角形
+void AHollowPrism::GenerateBottomCapTriangles(TArray<FVector>& Vertices, TArray<int32>& Indices,
+                                             const TArray<int32>& InnerIndices, const TArray<int32>& OuterIndices)
+{
+    for (int32 i = 0; i < Parameters.Sides; i++)
+    {
+        // 连接外环到内环的三角形
+        Indices.Add(OuterIndices[i + 1]);
+        Indices.Add(OuterIndices[i]);
+        Indices.Add(InnerIndices[i]);
+
+        Indices.Add(OuterIndices[i + 1]);
+        Indices.Add(InnerIndices[i]);
+        Indices.Add(InnerIndices[i + 1]);
+    }
+}
+
+// 新增：生成顶面四边形
+void AHollowPrism::GenerateTopCapQuads(TArray<FVector>& Vertices, TArray<int32>& Indices,
+                                      const TArray<int32>& InnerIndices, const TArray<int32>& OuterIndices)
+{
+    for (int32 i = 0; i < Parameters.Sides; i++)
+    {
+        // 第一个三角形
+        Indices.Add(OuterIndices[i]);
+        Indices.Add(OuterIndices[i + 1]);
+        Indices.Add(InnerIndices[i + 1]);
+
+        // 第二个三角形
+        Indices.Add(OuterIndices[i]);
+        Indices.Add(InnerIndices[i + 1]);
+        Indices.Add(InnerIndices[i]);
+    }
+}
+
+// 新增：生成底面四边形
+void AHollowPrism::GenerateBottomCapQuads(TArray<FVector>& Vertices, TArray<int32>& Indices,
+                                         const TArray<int32>& InnerIndices, const TArray<int32>& OuterIndices)
+{
+    for (int32 i = 0; i < Parameters.Sides; i++)
+    {
+        // 第一个三角形
+        Indices.Add(OuterIndices[i + 1]);
+        Indices.Add(OuterIndices[i]);
+        Indices.Add(InnerIndices[i]);
+
+        // 第二个三角形
+        Indices.Add(OuterIndices[i + 1]);
+        Indices.Add(InnerIndices[i]);
+        Indices.Add(InnerIndices[i + 1]);
     }
 }
 
@@ -480,9 +677,9 @@ void AHollowPrism::GenerateBottomCapWithQuads(FMeshSection& Section)
     {
         AddQuad(Section,
             OuterIndices[i],
-            InnerIndices[i],
+            OuterIndices[i + 1],
             InnerIndices[i + 1],
-            OuterIndices[i + 1]
+            InnerIndices[i]
         );
     }
 }
