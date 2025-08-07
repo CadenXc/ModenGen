@@ -638,8 +638,9 @@ void AFrustum::CreateEndCapTriangles(float Angle, const FVector& Normal, bool Is
                 Parameters.MinBendRadius
             );
             
-            // 从顶面半径到侧边半径
-            const float CurrentRadius = FMath::Lerp(Parameters.TopRadius, BentRadius_EndZ, Alpha);
+            // 从顶面半径到侧边半径（减去倒角半径，与主体几何体保持一致）
+            const float TopRadius = FMath::Max(0.0f, Parameters.TopRadius - Parameters.ChamferRadius);
+            const float CurrentRadius = FMath::Lerp(TopRadius, BentRadius_EndZ, Alpha);
             
             const FVector ChamferPos = FVector(CurrentRadius * FMath::Cos(Angle), CurrentRadius * FMath::Sin(Angle), CurrentZ);
             const int32 ChamferVertex = AddVertex(ChamferPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Parameters.Height), FLinearColor::White);
@@ -666,18 +667,18 @@ void AFrustum::CreateEndCapTriangles(float Angle, const FVector& Normal, bool Is
         OrderedVertices.Add(EdgeVertex);
     }
 
-    // 4. 下倒角弧线顶点（从底面到侧边）
+    // 4. 下倒角弧线顶点（从侧边到底面）
     if (Parameters.ChamferRadius > 0.0f)
     {
         const int32 BottomChamferSections = Parameters.ChamferSections;
-        for (int32 i = 0; i <= BottomChamferSections; ++i) // 从底面到侧边
+        for (int32 i = 0; i <= BottomChamferSections; ++i) // 从侧边到底面
         {
             const float Alpha = static_cast<float>(i) / BottomChamferSections;
             
-            // 从底面开始（-HalfHeight位置）到侧边（StartZ位置）
-            const float CurrentZ = FMath::Lerp(-HalfHeight, StartZ, Alpha);
+            // 从侧边开始（StartZ位置）到底面（-HalfHeight位置）
+            const float CurrentZ = FMath::Lerp(StartZ, -HalfHeight, Alpha);
             
-            // 计算侧边结束半径（在StartZ位置）
+            // 计算侧边起始半径（在StartZ位置）
             const float Alpha_StartZ = (StartZ + HalfHeight) / Parameters.Height;
             const float Radius_StartZ = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha_StartZ);
             const float BendFactor_StartZ = FMath::Sin(Alpha_StartZ * PI);
@@ -686,8 +687,9 @@ void AFrustum::CreateEndCapTriangles(float Angle, const FVector& Normal, bool Is
                 Parameters.MinBendRadius
             );
             
-            // 从底面半径到侧边半径
-            const float CurrentRadius = FMath::Lerp(Parameters.BottomRadius, BentRadius_StartZ, Alpha);
+            // 从侧边半径到底面半径（减去倒角半径，与主体几何体保持一致）
+            const float BottomRadius = FMath::Max(0.0f, Parameters.BottomRadius - Parameters.ChamferRadius);
+            const float CurrentRadius = FMath::Lerp(BentRadius_StartZ, BottomRadius, Alpha);
             
             const FVector ChamferPos = FVector(CurrentRadius * FMath::Cos(Angle), CurrentRadius * FMath::Sin(Angle), CurrentZ);
             const int32 ChamferVertex = AddVertex(ChamferPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Parameters.Height), FLinearColor::White);
