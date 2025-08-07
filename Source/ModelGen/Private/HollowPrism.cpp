@@ -341,7 +341,11 @@ void AHollowPrism::GenerateTopInnerChamfer(FMeshSection& Section, float HalfHeig
 
         for (int32 s = 0; s <= Parameters.Sides; ++s)
         {
-            const float angle = s * AngleStep;
+            // 使用与CalculateRingVertices相同的角度计算方式
+            const float ArcAngleRadians = FMath::DegreesToRadians(Parameters.ArcAngle);
+            const float StartAngle = -ArcAngleRadians / 2.0f;
+            const float LocalAngleStep = ArcAngleRadians / Parameters.Sides;
+            const float angle = StartAngle + s * LocalAngleStep;
 
             const FVector Position = FVector(
                 CurrentRadius * FMath::Cos(angle),
@@ -410,7 +414,11 @@ void AHollowPrism::GenerateTopOuterChamfer(FMeshSection& Section, float HalfHeig
 
         for (int32 s = 0; s <= Parameters.Sides; ++s)
         {
-            const float angle = s * AngleStep;
+            // 使用与CalculateRingVertices相同的角度计算方式
+            const float ArcAngleRadians = FMath::DegreesToRadians(Parameters.ArcAngle);
+            const float StartAngle = -ArcAngleRadians / 2.0f;
+            const float LocalAngleStep = ArcAngleRadians / Parameters.Sides;
+            const float angle = StartAngle + s * LocalAngleStep;
 
             const FVector Position = FVector(
                 CurrentRadius * FMath::Cos(angle),
@@ -479,7 +487,11 @@ void AHollowPrism::GenerateBottomInnerChamfer(FMeshSection& Section, float HalfH
 
         for (int32 s = 0; s <= Parameters.Sides; ++s)
         {
-            const float angle = s * AngleStep;
+            // 使用与CalculateRingVertices相同的角度计算方式
+            const float ArcAngleRadians = FMath::DegreesToRadians(Parameters.ArcAngle);
+            const float StartAngle = -ArcAngleRadians / 2.0f;
+            const float LocalAngleStep = ArcAngleRadians / Parameters.Sides;
+            const float angle = StartAngle + s * LocalAngleStep;
 
             const FVector Position = FVector(
                 CurrentRadius * FMath::Cos(angle),
@@ -548,7 +560,11 @@ void AHollowPrism::GenerateBottomOuterChamfer(FMeshSection& Section, float HalfH
 
         for (int32 s = 0; s <= Parameters.Sides; ++s)
         {
-            const float angle = s * AngleStep;
+            // 使用与CalculateRingVertices相同的角度计算方式
+            const float ArcAngleRadians = FMath::DegreesToRadians(Parameters.ArcAngle);
+            const float StartAngle = -ArcAngleRadians / 2.0f;
+            const float LocalAngleStep = ArcAngleRadians / Parameters.Sides;
+            const float angle = StartAngle + s * LocalAngleStep;
 
             const FVector Position = FVector(
                 CurrentRadius * FMath::Cos(angle),
@@ -604,96 +620,137 @@ void AHollowPrism::GenerateEndCaps(FMeshSection& Section)
     const float StartAngle = -ArcAngleRadians / 2.0f;
     const float EndAngle = ArcAngleRadians / 2.0f;
 
-    // 生成端盖顶点
-    TArray<FVector> TopVertices, BottomVertices;
-    TArray<FVector2D> TopUVs, BottomUVs;
+    // 生成起始端盖和结束端盖
+    GenerateEndCap(Section, StartAngle, FVector(-1, 0, 0), true);   // 起始端盖
+    GenerateEndCap(Section, EndAngle, FVector(1, 0, 0), false);      // 结束端盖
+}
 
-    // 顶部端盖
-    for (int32 i = 0; i <= Parameters.Sides; i++)
+void AHollowPrism::GenerateEndCap(FMeshSection& Section, float Angle, const FVector& Normal, bool IsStart)
+{
+    const float HalfHeight = Parameters.Height / 2.0f;
+    const float ChamferRadius = Parameters.ChamferRadius;
+
+    // 计算倒角高度
+    const float TopChamferHeight = FMath::Min(ChamferRadius, Parameters.OuterRadius - Parameters.InnerRadius);
+    const float BottomChamferHeight = FMath::Min(ChamferRadius, Parameters.OuterRadius - Parameters.InnerRadius);
+
+    // 调整主体几何体的范围，避免与倒角重叠
+    const float StartZ = -HalfHeight + BottomChamferHeight;
+    const float EndZ = HalfHeight - TopChamferHeight;
+
+    // 按照指定顺序存储顶点：上底中心 -> 上倒角圆弧 -> 侧边 -> 下倒角圆弧 -> 下底中心
+    TArray<int32> OrderedVertices;
+    
+    // 1. 上底中心顶点
+    const int32 TopCenterVertex = AddVertex(Section,
+        FVector(0, 0, HalfHeight),
+        Normal,
+        FVector2D(0.5f, 1.0f)
+    );
+    OrderedVertices.Add(TopCenterVertex);
+
+    // 2. 上倒角弧线顶点（从顶面到侧边）
+    if (Parameters.ChamferRadius > 0.0f)
     {
-        const float angle = StartAngle + (EndAngle - StartAngle) * i / Parameters.Sides;
-        
+        const int32 TopChamferSections = Parameters.ChamferSections;
+        for (int32 i = 0; i <= TopChamferSections; ++i) // 从顶面到侧边
+        {
+            const float Alpha = static_cast<float>(i) / TopChamferSections;
+            
+            // 从顶面开始（HalfHeight位置）到侧边（EndZ位置）
+            const float CurrentZ = FMath::Lerp(HalfHeight, EndZ, Alpha);
+            
+            // 从顶面半径到侧边半径（减去倒角半径，与主体几何体保持一致）
+            const float TopInnerRadius = Parameters.InnerRadius + Parameters.ChamferRadius;
+            const float TopOuterRadius = Parameters.OuterRadius - Parameters.ChamferRadius;
+            const float SideInnerRadius = Parameters.InnerRadius;
+            const float SideOuterRadius = Parameters.OuterRadius;
+            
+            const float CurrentInnerRadius = FMath::Lerp(TopInnerRadius, SideInnerRadius, Alpha);
+            const float CurrentOuterRadius = FMath::Lerp(TopOuterRadius, SideOuterRadius, Alpha);
+            
+            // 内环顶点
+            const FVector InnerChamferPos = FVector(CurrentInnerRadius * FMath::Cos(Angle), CurrentInnerRadius * FMath::Sin(Angle), CurrentZ);
+            const int32 InnerChamferVertex = AddVertex(Section, InnerChamferPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Parameters.Height));
+            OrderedVertices.Add(InnerChamferVertex);
+            
+            // 外环顶点
+            const FVector OuterChamferPos = FVector(CurrentOuterRadius * FMath::Cos(Angle), CurrentOuterRadius * FMath::Sin(Angle), CurrentZ);
+            const int32 OuterChamferVertex = AddVertex(Section, OuterChamferPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Parameters.Height));
+            OrderedVertices.Add(OuterChamferVertex);
+        }
+    }
+
+    // 3. 侧边顶点（从上到下）
+    for (int32 h = 1; h < 4; ++h) // 使用4个分段
+    {
+        const float Z = FMath::Lerp(EndZ, StartZ, static_cast<float>(h) / 4.0f);
+
         // 内环顶点
-        const FVector InnerVertex = FVector(
-            Parameters.InnerRadius * FMath::Cos(angle),
-            Parameters.InnerRadius * FMath::Sin(angle),
-            HalfHeight
-        );
-        TopVertices.Add(InnerVertex);
-        TopUVs.Add(FVector2D(0.0f, static_cast<float>(i) / Parameters.Sides));
-
-        // 外环顶点
-        const FVector OuterVertex = FVector(
-            Parameters.OuterRadius * FMath::Cos(angle),
-            Parameters.OuterRadius * FMath::Sin(angle),
-            HalfHeight
-        );
-        TopVertices.Add(OuterVertex);
-        TopUVs.Add(FVector2D(1.0f, static_cast<float>(i) / Parameters.Sides));
-    }
-
-    // 底部端盖
-    for (int32 i = 0; i <= Parameters.Sides; i++)
-    {
-        const float angle = StartAngle + (EndAngle - StartAngle) * i / Parameters.Sides;
+        const FVector InnerEdgePos = FVector(Parameters.InnerRadius * FMath::Cos(Angle), Parameters.InnerRadius * FMath::Sin(Angle), Z);
+        const int32 InnerEdgeVertex = AddVertex(Section, InnerEdgePos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (Z + HalfHeight) / Parameters.Height));
+        OrderedVertices.Add(InnerEdgeVertex);
         
-        // 内环顶点
-        const FVector InnerVertex = FVector(
-            Parameters.InnerRadius * FMath::Cos(angle),
-            Parameters.InnerRadius * FMath::Sin(angle),
-            -HalfHeight
-        );
-        BottomVertices.Add(InnerVertex);
-        BottomUVs.Add(FVector2D(0.0f, static_cast<float>(i) / Parameters.Sides));
-
         // 外环顶点
-        const FVector OuterVertex = FVector(
-            Parameters.OuterRadius * FMath::Cos(angle),
-            Parameters.OuterRadius * FMath::Sin(angle),
-            -HalfHeight
-        );
-        BottomVertices.Add(OuterVertex);
-        BottomUVs.Add(FVector2D(1.0f, static_cast<float>(i) / Parameters.Sides));
+        const FVector OuterEdgePos = FVector(Parameters.OuterRadius * FMath::Cos(Angle), Parameters.OuterRadius * FMath::Sin(Angle), Z);
+        const int32 OuterEdgeVertex = AddVertex(Section, OuterEdgePos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (Z + HalfHeight) / Parameters.Height));
+        OrderedVertices.Add(OuterEdgeVertex);
     }
 
-    // 添加顶部端盖顶点
-    TArray<int32> TopIndices;
-    const FVector TopNormal(0, 0, 1);
-    for (int32 i = 0; i < TopVertices.Num(); i++)
+    // 4. 下倒角弧线顶点（从侧边到底面）
+    if (Parameters.ChamferRadius > 0.0f)
     {
-        TopIndices.Add(AddVertex(Section, TopVertices[i], TopNormal, TopUVs[i]));
+        const int32 BottomChamferSections = Parameters.ChamferSections;
+        for (int32 i = 0; i <= BottomChamferSections; ++i) // 从侧边到底面
+        {
+            const float Alpha = static_cast<float>(i) / BottomChamferSections;
+            
+            // 从侧边开始（StartZ位置）到底面（-HalfHeight位置）
+            const float CurrentZ = FMath::Lerp(StartZ, -HalfHeight, Alpha);
+            
+            // 从侧边半径到底面半径（减去倒角半径，与主体几何体保持一致）
+            const float SideInnerRadius = Parameters.InnerRadius;
+            const float SideOuterRadius = Parameters.OuterRadius;
+            const float BottomInnerRadius = Parameters.InnerRadius + Parameters.ChamferRadius;
+            const float BottomOuterRadius = Parameters.OuterRadius - Parameters.ChamferRadius;
+            
+            const float CurrentInnerRadius = FMath::Lerp(SideInnerRadius, BottomInnerRadius, Alpha);
+            const float CurrentOuterRadius = FMath::Lerp(SideOuterRadius, BottomOuterRadius, Alpha);
+            
+            // 内环顶点
+            const FVector InnerChamferPos = FVector(CurrentInnerRadius * FMath::Cos(Angle), CurrentInnerRadius * FMath::Sin(Angle), CurrentZ);
+            const int32 InnerChamferVertex = AddVertex(Section, InnerChamferPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Parameters.Height));
+            OrderedVertices.Add(InnerChamferVertex);
+            
+            // 外环顶点
+            const FVector OuterChamferPos = FVector(CurrentOuterRadius * FMath::Cos(Angle), CurrentOuterRadius * FMath::Sin(Angle), CurrentZ);
+            const int32 OuterChamferVertex = AddVertex(Section, OuterChamferPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Parameters.Height));
+            OrderedVertices.Add(OuterChamferVertex);
+        }
     }
 
-    // 添加底部端盖顶点
-    TArray<int32> BottomIndices;
-    const FVector BottomNormal(0, 0, -1);
-    for (int32 i = 0; i < BottomVertices.Num(); i++)
-    {
-        BottomIndices.Add(AddVertex(Section, BottomVertices[i], BottomNormal, BottomUVs[i]));
-    }
+    // 5. 下底中心顶点
+    const int32 BottomCenterVertex = AddVertex(Section,
+        FVector(0, 0, -HalfHeight),
+        Normal,
+        FVector2D(0.5f, 0.0f)
+    );
+    OrderedVertices.Add(BottomCenterVertex);
 
-    // 生成顶部端盖面
-    for (int32 i = 0; i < Parameters.Sides; i++)
+    // 生成端盖三角形
+    for (int32 i = 0; i < OrderedVertices.Num() - 2; i += 2)
     {
-        const int32 BaseIndex = i * 2;
-        AddQuad(Section,
-            TopIndices[BaseIndex],
-            TopIndices[BaseIndex + 1],
-            TopIndices[BaseIndex + 3],
-            TopIndices[BaseIndex + 2]
-        );
-    }
-
-    // 生成底部端盖面
-    for (int32 i = 0; i < Parameters.Sides; i++)
-    {
-        const int32 BaseIndex = i * 2;
-        AddQuad(Section,
-            BottomIndices[BaseIndex + 1],
-            BottomIndices[BaseIndex],
-            BottomIndices[BaseIndex + 2],
-            BottomIndices[BaseIndex + 3]
-        );
+        // 连接相邻的顶点对，形成三角形
+        if (IsStart)
+        {
+			AddTriangle(Section, OrderedVertices[i], OrderedVertices[i + 2], OrderedVertices[i + 1]);
+			AddTriangle(Section, OrderedVertices[i + 1], OrderedVertices[i + 2], OrderedVertices[i + 3]);
+        }
+        else
+        {
+			AddTriangle(Section, OrderedVertices[i], OrderedVertices[i + 1], OrderedVertices[i + 2]);
+			AddTriangle(Section, OrderedVertices[i + 1], OrderedVertices[i + 3], OrderedVertices[i + 2]);
+        }
     }
 }
 

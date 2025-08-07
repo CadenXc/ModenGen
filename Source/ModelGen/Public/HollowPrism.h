@@ -141,6 +141,9 @@ private:
     /** 生成端盖 */
     void GenerateEndCaps(FMeshSection& Section);
 
+    /** 生成单个端盖 */
+    void GenerateEndCap(FMeshSection& Section, float Angle, const FVector& Normal, bool IsStart);
+
     /** 计算环形顶点 */
     void CalculateRingVertices(float Radius, int32 Sides, float Z, float ArcAngle,
                               TArray<FVector>& OutVertices, TArray<FVector2D>& OutUVs, float UVScale = 1.0f);
