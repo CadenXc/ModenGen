@@ -217,6 +217,9 @@ private:
     void CreateTopChamferGeometry(float StartZ);
     void CreateBottomChamferGeometry(float StartZ);
     void CreateEndCaps();
+    void CreateEndCapTriangles(float Angle, const FVector& Normal, bool IsStart);
+    void CreateChamferArcTriangles(float Angle, const FVector& Normal, bool IsStart, float Z1, float Z2, bool IsTop);
+    void CreateChamferArcTrianglesWithCaps(float Angle, const FVector& Normal, bool IsStart, float Z1, float Z2, bool IsTop, int32 CenterVertex, int32 CapCenterVertex);
 
     // 顶点管理
     int32 AddVertex(const FVector& Position, const FVector& Normal = FVector::ZeroVector, 

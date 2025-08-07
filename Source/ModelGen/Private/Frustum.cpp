@@ -558,32 +558,102 @@ void AFrustum::CreateBottomChamferGeometry(float StartZ)
     }
 }
 
-// 修正后的 CreateEndCaps 函数
+// 修正后的 CreateEndCaps 函数 - 使用三角形连接到中心点
 void AFrustum::CreateEndCaps()
 {
     const float HalfHeight = Parameters.Height / 2.0f;
     const float StartAngle = 0.0f;
     const float EndAngle = FMath::DegreesToRadians(Parameters.ArcAngle);
+    const float ChamferRadius = Parameters.ChamferRadius;
 
     // 起始端面法线：指向圆弧内部
-    const FVector StartNormal = FVector(FMath::Sin(StartAngle), -FMath::Cos(StartAngle), 0.0f);
+    const FVector StartNormal = FVector(-FMath::Sin(StartAngle), FMath::Cos(StartAngle), 0.0f);
 
     // 结束端面法线：指向圆弧内部
-    const FVector EndNormal = FVector(FMath::Sin(EndAngle), -FMath::Cos(EndAngle), 0.0f);
+    const FVector EndNormal = FVector(-FMath::Sin(EndAngle), FMath::Cos(EndAngle), 0.0f);
 
-    // 缓存每层高度的顶点，因为我们需要内外两圈
-    TArray<FVector> StartCapVerticesOuter;
-    TArray<FVector> StartCapVerticesInner;
-    TArray<FVector> EndCapVerticesOuter;
-    TArray<FVector> EndCapVerticesInner;
+    // 计算倒角高度
+    const float TopChamferHeight = FMath::Min(ChamferRadius, Parameters.TopRadius);
+    const float BottomChamferHeight = FMath::Min(ChamferRadius, Parameters.BottomRadius);
 
-    // 生成端面顶点环
-    for (int32 h = 0; h <= Parameters.HeightSegments; ++h)
+    // 调整主体几何体的范围，避免与倒角重叠
+    const float StartZ = -HalfHeight + BottomChamferHeight;
+    const float EndZ = HalfHeight - TopChamferHeight;
+
+    // 创建端面几何体 - 使用三角形连接到中心点
+    CreateEndCapTriangles(StartAngle, StartNormal, true);  // 起始端面
+    CreateEndCapTriangles(EndAngle, EndNormal, false);     // 结束端面
+}
+
+void AFrustum::CreateEndCapTriangles(float Angle, const FVector& Normal, bool IsStart)
+{
+    const float HalfHeight = Parameters.Height / 2.0f;
+    const float ChamferRadius = Parameters.ChamferRadius;
+    
+    // 计算倒角高度
+    const float TopChamferHeight = FMath::Min(ChamferRadius, Parameters.TopRadius);
+    const float BottomChamferHeight = FMath::Min(ChamferRadius, Parameters.BottomRadius);
+    
+    // 调整主体几何体的范围，避免与倒角重叠
+    const float StartZ = -HalfHeight + BottomChamferHeight;
+    const float EndZ = HalfHeight - TopChamferHeight;
+
+    // 中心点（0,0,0）
+    const int32 CenterVertex = AddVertex(
+        FVector(0, 0, 0),
+        Normal,
+        FVector2D(0.5f, 0.5f),
+        FLinearColor::White
+    );
+
+    // 按照指定顺序存储顶点：上底中心 -> 上倒角圆弧 -> 侧边 -> 下倒角圆弧 -> 下底中心
+    TArray<int32> OrderedVertices;
+    
+    // 1. 上底中心顶点
+    const int32 TopCenterVertex = AddVertex(
+        FVector(0, 0, HalfHeight),
+        Normal,
+        FVector2D(0.5f, 1.0f),
+        FLinearColor::White
+    );
+    OrderedVertices.Add(TopCenterVertex);
+
+    // 2. 上倒角弧线顶点（从顶面到侧边）
+    if (Parameters.ChamferRadius > 0.0f)
     {
-        const float Z = -HalfHeight + h * (Parameters.Height / Parameters.HeightSegments);
+        const int32 TopChamferSections = Parameters.ChamferSections;
+        for (int32 i = 0; i <= TopChamferSections; ++i) // 从顶面到侧边
+        {
+            const float Alpha = static_cast<float>(i) / TopChamferSections;
+            
+            // 从顶面开始（HalfHeight位置）到侧边（EndZ位置）
+            const float CurrentZ = FMath::Lerp(HalfHeight, EndZ, Alpha);
+            
+            // 计算侧边结束半径（在EndZ位置）
+            const float Alpha_EndZ = (EndZ + HalfHeight) / Parameters.Height;
+            const float Radius_EndZ = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha_EndZ);
+            const float BendFactor_EndZ = FMath::Sin(Alpha_EndZ * PI);
+            const float BentRadius_EndZ = FMath::Max(
+                Radius_EndZ + Parameters.BendAmount * BendFactor_EndZ * Radius_EndZ,
+                Parameters.MinBendRadius
+            );
+            
+            // 从顶面半径到侧边半径
+            const float CurrentRadius = FMath::Lerp(Parameters.TopRadius, BentRadius_EndZ, Alpha);
+            
+            const FVector ChamferPos = FVector(CurrentRadius * FMath::Cos(Angle), CurrentRadius * FMath::Sin(Angle), CurrentZ);
+            const int32 ChamferVertex = AddVertex(ChamferPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Parameters.Height), FLinearColor::White);
+            OrderedVertices.Add(ChamferVertex);
+        }
+    }
+
+    // 3. 侧边顶点（从上到下）
+    for (int32 h = 1; h < Parameters.HeightSegments; ++h)
+    {
+        const float Z = FMath::Lerp(EndZ, StartZ, static_cast<float>(h) / Parameters.HeightSegments);
         const float Alpha = (Z + HalfHeight) / Parameters.Height;
 
-        // 与侧面几何体保持一致的半径计算
+        // 计算当前高度对应的半径
         const float Radius = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha);
         const float BendFactor = FMath::Sin(Alpha * PI);
         const float BentRadius = FMath::Max(
@@ -591,55 +661,210 @@ void AFrustum::CreateEndCaps()
             Parameters.MinBendRadius
         );
 
-        // 外圈顶点（侧面边缘）
-        const FVector StartEdgePos = FVector(BentRadius * FMath::Cos(StartAngle), BentRadius * FMath::Sin(StartAngle), Z);
-        StartCapVerticesOuter.Add(StartEdgePos);
-        const FVector EndEdgePos = FVector(BentRadius * FMath::Cos(EndAngle), BentRadius * FMath::Sin(EndAngle), Z);
-        EndCapVerticesOuter.Add(EndEdgePos);
-
-        // 内圈顶点（中心轴上的点）
-        const FVector StartInnerPos = FVector(0, 0, Z);
-        StartCapVerticesInner.Add(StartInnerPos);
-        const FVector EndInnerPos = FVector(0, 0, Z);
-        EndCapVerticesInner.Add(EndInnerPos);
+        const FVector EdgePos = FVector(BentRadius * FMath::Cos(Angle), BentRadius * FMath::Sin(Angle), Z);
+        const int32 EdgeVertex = AddVertex(EdgePos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, Alpha), FLinearColor::White);
+        OrderedVertices.Add(EdgeVertex);
     }
 
-    // 构建起始端面
-    for (int32 h = 0; h < Parameters.HeightSegments; ++h)
+    // 4. 下倒角弧线顶点（从底面到侧边）
+    if (Parameters.ChamferRadius > 0.0f)
     {
-        const FVector2D UVCorners[4] = {
-            FVector2D(0, (float)h / Parameters.HeightSegments),
-            FVector2D(1, (float)h / Parameters.HeightSegments),
-            FVector2D(0, (float)(h + 1) / Parameters.HeightSegments),
-            FVector2D(1, (float)(h + 1) / Parameters.HeightSegments)
-        };
-
-        const int32 V1 = AddVertex(StartCapVerticesOuter[h], StartNormal, UVCorners[0], FLinearColor::White);
-        const int32 V2 = AddVertex(StartCapVerticesInner[h], StartNormal, UVCorners[1], FLinearColor::White);
-        const int32 V3 = AddVertex(StartCapVerticesOuter[h + 1], StartNormal, UVCorners[2], FLinearColor::White);
-        const int32 V4 = AddVertex(StartCapVerticesInner[h + 1], StartNormal, UVCorners[3], FLinearColor::White);
-
-        // 正确的四边形连接顺序
-        AddQuad(V1, V2, V4, V3, 0); // MaterialIndex 0 for end caps
+        const int32 BottomChamferSections = Parameters.ChamferSections;
+        for (int32 i = 0; i <= BottomChamferSections; ++i) // 从底面到侧边
+        {
+            const float Alpha = static_cast<float>(i) / BottomChamferSections;
+            
+            // 从底面开始（-HalfHeight位置）到侧边（StartZ位置）
+            const float CurrentZ = FMath::Lerp(-HalfHeight, StartZ, Alpha);
+            
+            // 计算侧边结束半径（在StartZ位置）
+            const float Alpha_StartZ = (StartZ + HalfHeight) / Parameters.Height;
+            const float Radius_StartZ = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha_StartZ);
+            const float BendFactor_StartZ = FMath::Sin(Alpha_StartZ * PI);
+            const float BentRadius_StartZ = FMath::Max(
+                Radius_StartZ + Parameters.BendAmount * BendFactor_StartZ * Radius_StartZ,
+                Parameters.MinBendRadius
+            );
+            
+            // 从底面半径到侧边半径
+            const float CurrentRadius = FMath::Lerp(Parameters.BottomRadius, BentRadius_StartZ, Alpha);
+            
+            const FVector ChamferPos = FVector(CurrentRadius * FMath::Cos(Angle), CurrentRadius * FMath::Sin(Angle), CurrentZ);
+            const int32 ChamferVertex = AddVertex(ChamferPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Parameters.Height), FLinearColor::White);
+            OrderedVertices.Add(ChamferVertex);
+        }
     }
 
-    // 构建结束端面
-    for (int32 h = 0; h < Parameters.HeightSegments; ++h)
+    // 5. 下底中心顶点
+    const int32 BottomCenterVertex = AddVertex(
+        FVector(0, 0, -HalfHeight),
+        Normal,
+        FVector2D(0.5f, 0.0f),
+        FLinearColor::White
+    );
+    OrderedVertices.Add(BottomCenterVertex);
+
+    // 生成三角形：每两个相邻顶点与中心点形成三角形
+    for (int32 i = 0; i < OrderedVertices.Num() - 1; ++i)
     {
-        const FVector2D UVCorners[4] = {
-            FVector2D(0, (float)h / Parameters.HeightSegments),
-            FVector2D(1, (float)h / Parameters.HeightSegments),
-            FVector2D(0, (float)(h + 1) / Parameters.HeightSegments),
-            FVector2D(1, (float)(h + 1) / Parameters.HeightSegments)
-        };
+        const int32 V1 = OrderedVertices[i];
+        const int32 V2 = OrderedVertices[i + 1];
+        
+        // 创建三角形：V1 -> V2 -> 中心点
+        AddTriangle(V1, V2, CenterVertex, 0);
+    }
+}
 
-        const int32 V1 = AddVertex(EndCapVerticesOuter[h], EndNormal, UVCorners[0], FLinearColor::White);
-        const int32 V2 = AddVertex(EndCapVerticesInner[h], EndNormal, UVCorners[1], FLinearColor::White);
-        const int32 V3 = AddVertex(EndCapVerticesOuter[h + 1], EndNormal, UVCorners[2], FLinearColor::White);
-        const int32 V4 = AddVertex(EndCapVerticesInner[h + 1], EndNormal, UVCorners[3], FLinearColor::White);
+void AFrustum::CreateChamferArcTriangles(float Angle, const FVector& Normal, bool IsStart, float Z1, float Z2, bool IsTop)
+{
+    const float HalfHeight = Parameters.Height / 2.0f;
+    const float ChamferRadius = Parameters.ChamferRadius;
+    const int32 ChamferSections = Parameters.ChamferSections;
+    
+    // 中心点（0,0,0）
+    const int32 CenterVertex = AddVertex(
+        FVector(0, 0, 0),
+        Normal,
+        FVector2D(0.5f, 0.5f),
+        FLinearColor::White
+    );
 
-        // 正确的四边形连接顺序
-        AddQuad(V1, V3, V4, V2, 0); // MaterialIndex 0 for end caps
+    // 计算倒角弧线的起点和终点半径
+    float StartRadius, EndRadius;
+    if (IsTop)
+    {
+        // 顶部倒角：从侧面边缘到顶面边缘
+        const float Alpha_Start = (Z1 + HalfHeight) / Parameters.Height;
+        const float Radius_Start = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha_Start);
+        const float BendFactor_Start = FMath::Sin(Alpha_Start * PI);
+        StartRadius = FMath::Max(
+            Radius_Start + Parameters.BendAmount * BendFactor_Start * Radius_Start,
+            Parameters.MinBendRadius
+        );
+        EndRadius = FMath::Max(0.0f, Parameters.TopRadius - Parameters.ChamferRadius);
+    }
+    else
+    {
+        // 底部倒角：从侧面边缘到底面边缘
+        const float Alpha_Start = (Z1 + HalfHeight) / Parameters.Height;
+        const float Radius_Start = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha_Start);
+        const float BendFactor_Start = FMath::Sin(Alpha_Start * PI);
+        StartRadius = FMath::Max(
+            Radius_Start + Parameters.BendAmount * BendFactor_Start * Radius_Start,
+            Parameters.MinBendRadius
+        );
+        EndRadius = FMath::Max(0.0f, Parameters.BottomRadius - Parameters.ChamferRadius);
+    }
+
+    // 生成倒角弧线的三角形
+    for (int32 i = 0; i < ChamferSections; ++i)
+    {
+        const float Alpha = static_cast<float>(i) / ChamferSections;
+        const float CurrentRadius = FMath::Lerp(StartRadius, EndRadius, Alpha);
+        const float CurrentZ = FMath::Lerp(Z1, Z2, Alpha);
+
+        // 当前倒角弧线点
+        const FVector ArcPos = FVector(CurrentRadius * FMath::Cos(Angle), CurrentRadius * FMath::Sin(Angle), CurrentZ);
+        const int32 ArcVertex = AddVertex(ArcPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Parameters.Height), FLinearColor::White);
+
+        // 下一个倒角弧线点
+        const float NextAlpha = static_cast<float>(i + 1) / ChamferSections;
+        const float NextRadius = FMath::Lerp(StartRadius, EndRadius, NextAlpha);
+        const float NextZ = FMath::Lerp(Z1, Z2, NextAlpha);
+
+        const FVector NextArcPos = FVector(NextRadius * FMath::Cos(Angle), NextRadius * FMath::Sin(Angle), NextZ);
+        const int32 NextArcVertex = AddVertex(NextArcPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (NextZ + HalfHeight) / Parameters.Height), FLinearColor::White);
+
+        // 创建三角形：当前弧线点 -> 下一个弧线点 -> 中心点
+        AddTriangle(ArcVertex, NextArcVertex, CenterVertex, 0);
+    }
+}
+
+void AFrustum::CreateChamferArcTrianglesWithCaps(float Angle, const FVector& Normal, bool IsStart, float Z1, float Z2, bool IsTop, int32 CenterVertex, int32 CapCenterVertex)
+{
+    const float HalfHeight = Parameters.Height / 2.0f;
+    const float ChamferRadius = Parameters.ChamferRadius;
+    const int32 ChamferSections = Parameters.ChamferSections;
+    
+    // 计算倒角弧线的起点和终点半径
+    float StartRadius, EndRadius;
+    if (IsTop)
+    {
+        // 顶部倒角：从侧面边缘到顶面边缘
+        const float Alpha_Start = (Z1 + HalfHeight) / Parameters.Height;
+        const float Radius_Start = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha_Start);
+        const float BendFactor_Start = FMath::Sin(Alpha_Start * PI);
+        StartRadius = FMath::Max(
+            Radius_Start + Parameters.BendAmount * BendFactor_Start * Radius_Start,
+            Parameters.MinBendRadius
+        );
+        EndRadius = FMath::Max(0.0f, Parameters.TopRadius - Parameters.ChamferRadius);
+    }
+    else
+    {
+        // 底部倒角：从侧面边缘到底面边缘
+        const float Alpha_Start = (Z1 + HalfHeight) / Parameters.Height;
+        const float Radius_Start = FMath::Lerp(Parameters.BottomRadius, Parameters.TopRadius, Alpha_Start);
+        const float BendFactor_Start = FMath::Sin(Alpha_Start * PI);
+        StartRadius = FMath::Max(
+            Radius_Start + Parameters.BendAmount * BendFactor_Start * Radius_Start,
+            Parameters.MinBendRadius
+        );
+        EndRadius = FMath::Max(0.0f, Parameters.BottomRadius - Parameters.ChamferRadius);
+    }
+
+    // 生成倒角弧线的三角形
+    for (int32 i = 0; i < ChamferSections; ++i)
+    {
+        const float Alpha = static_cast<float>(i) / ChamferSections;
+        const float CurrentRadius = FMath::Lerp(StartRadius, EndRadius, Alpha);
+        const float CurrentZ = FMath::Lerp(Z1, Z2, Alpha);
+
+        // 当前倒角弧线点
+        const FVector ArcPos = FVector(CurrentRadius * FMath::Cos(Angle), CurrentRadius * FMath::Sin(Angle), CurrentZ);
+        const int32 ArcVertex = AddVertex(ArcPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Parameters.Height), FLinearColor::White);
+
+        // 下一个倒角弧线点
+        const float NextAlpha = static_cast<float>(i + 1) / ChamferSections;
+        const float NextRadius = FMath::Lerp(StartRadius, EndRadius, NextAlpha);
+        const float NextZ = FMath::Lerp(Z1, Z2, NextAlpha);
+
+        const FVector NextArcPos = FVector(NextRadius * FMath::Cos(Angle), NextRadius * FMath::Sin(Angle), NextZ);
+        const int32 NextArcVertex = AddVertex(NextArcPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (NextZ + HalfHeight) / Parameters.Height), FLinearColor::White);
+
+        // 创建三角形：当前弧线点 -> 下一个弧线点 -> 中心点（0,0,0）
+        AddTriangle(ArcVertex, NextArcVertex, CenterVertex, 0);
+    }
+
+    // 连接最边缘的点到上/下底中心点
+    // 最边缘的点是倒角弧线的起点（i=0）
+    const float StartAlpha = 0.0f;
+    const float StartRadius_Edge = FMath::Lerp(StartRadius, EndRadius, StartAlpha);
+    const float StartZ_Edge = FMath::Lerp(Z1, Z2, StartAlpha);
+    const FVector StartEdgePos = FVector(StartRadius_Edge * FMath::Cos(Angle), StartRadius_Edge * FMath::Sin(Angle), StartZ_Edge);
+    const int32 StartEdgeVertex = AddVertex(StartEdgePos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (StartZ_Edge + HalfHeight) / Parameters.Height), FLinearColor::White);
+
+    // 最边缘的点是倒角弧线的终点（i=ChamferSections）
+    const float EndAlpha = 1.0f;
+    const float EndRadius_Edge = FMath::Lerp(StartRadius, EndRadius, EndAlpha);
+    const float EndZ_Edge = FMath::Lerp(Z1, Z2, EndAlpha);
+    const FVector EndEdgePos = FVector(EndRadius_Edge * FMath::Cos(Angle), EndRadius_Edge * FMath::Sin(Angle), EndZ_Edge);
+    const int32 EndEdgeVertex = AddVertex(EndEdgePos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (EndZ_Edge + HalfHeight) / Parameters.Height), FLinearColor::White);
+
+    // 创建三角形：最边缘点 -> 上/下底中心点 -> 中心点（0,0,0）    // 注意顶点顺序，确保法线方向正确
+    if (IsTop)
+    {
+        // 顶部：StartEdgeVertex -> CapCenterVertex -> CenterVertex
+        AddTriangle(StartEdgeVertex, CapCenterVertex, CenterVertex, 0);
+        // 顶部：EndEdgeVertex -> CapCenterVertex -> CenterVertex
+        AddTriangle(EndEdgeVertex, CapCenterVertex, CenterVertex, 0);
+    }
+    else
+    {
+        // 底部：StartEdgeVertex -> CenterVertex -> CapCenterVertex（修正顶点顺序）
+        AddTriangle(StartEdgeVertex, CenterVertex, CapCenterVertex, 0);
+        // 底部：EndEdgeVertex -> CenterVertex -> CapCenterVertex（修正顶点顺序）
+        AddTriangle(EndEdgeVertex, CenterVertex, CapCenterVertex, 0);
     }
 }
 
