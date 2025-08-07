@@ -69,7 +69,13 @@ struct FPrismParameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Prism", meta = (ClampMin = "0.0", ClampMax = "360.0"))
     float ArcAngle = 360.0f;
 
+    /** 倒角半径 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chamfer", meta = (ClampMin = "0.0"))
+    float ChamferRadius = 5.0f;
 
+    /** 倒角分段数 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chamfer", meta = (ClampMin = "1"))
+    int32 ChamferSections = 4;
 };
 
 UCLASS()
@@ -112,6 +118,12 @@ private:
 
     /** 生成底面 */
     void GenerateBottomCapWithQuads(FMeshSection& Section);
+
+    /** 生成顶部倒角几何 */
+    void GenerateTopChamferGeometry(FMeshSection& Section, float StartZ);
+
+    /** 生成底部倒角几何 */
+    void GenerateBottomChamferGeometry(FMeshSection& Section, float StartZ);
 
     /** 生成端盖 */
     void GenerateEndCaps(FMeshSection& Section);

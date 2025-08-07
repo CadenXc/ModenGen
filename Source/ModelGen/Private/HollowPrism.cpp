@@ -64,6 +64,8 @@ void AHollowPrism::GenerateGeometry()
     Parameters.Height = FMath::Max(0.01f, Parameters.Height);
     Parameters.Sides = FMath::Max(3, Parameters.Sides);
     Parameters.ArcAngle = FMath::Clamp(Parameters.ArcAngle, 0.0f, 360.0f);
+    Parameters.ChamferRadius = FMath::Max(0.0f, Parameters.ChamferRadius);
+    Parameters.ChamferSections = FMath::Max(1, Parameters.ChamferSections);
 
     // 确保外半径大于内半径
     if (Parameters.OuterRadius <= Parameters.InnerRadius)
@@ -142,14 +144,14 @@ void AHollowPrism::GenerateSideWalls(FMeshSection& Section)
     // 生成内环顶点（顶部和底部）
     TArray<FVector> InnerTopVertices, InnerBottomVertices;
     TArray<FVector2D> InnerTopUVs, InnerBottomUVs;
-    CalculateRingVertices(Parameters.InnerRadius, Parameters.Sides, HalfHeight, ArcAngle, InnerTopVertices, InnerTopUVs);
-    CalculateRingVertices(Parameters.InnerRadius, Parameters.Sides, -HalfHeight, ArcAngle, InnerBottomVertices, InnerBottomUVs);
+    CalculateRingVertices(Parameters.InnerRadius, Parameters.Sides, HalfHeight - Parameters.ChamferRadius, ArcAngle, InnerTopVertices, InnerTopUVs);
+    CalculateRingVertices(Parameters.InnerRadius, Parameters.Sides, -HalfHeight + Parameters.ChamferRadius, ArcAngle, InnerBottomVertices, InnerBottomUVs);
 
     // 生成外环顶点（顶部和底部）
     TArray<FVector> OuterTopVertices, OuterBottomVertices;
     TArray<FVector2D> OuterTopUVs, OuterBottomUVs;
-    CalculateRingVertices(Parameters.OuterRadius, Parameters.Sides, HalfHeight, ArcAngle, OuterTopVertices, OuterTopUVs, 0.5f);
-    CalculateRingVertices(Parameters.OuterRadius, Parameters.Sides, -HalfHeight, ArcAngle, OuterBottomVertices, OuterBottomUVs, 0.5f);
+    CalculateRingVertices(Parameters.OuterRadius, Parameters.Sides, HalfHeight - Parameters.ChamferRadius, ArcAngle, OuterTopVertices, OuterTopUVs, 0.5f);
+    CalculateRingVertices(Parameters.OuterRadius, Parameters.Sides, -HalfHeight + Parameters.ChamferRadius, ArcAngle, OuterBottomVertices, OuterBottomUVs, 0.5f);
 
     // 添加顶点到网格并记录索引
     TArray<int32> InnerTopIndices, InnerBottomIndices;
@@ -205,12 +207,12 @@ void AHollowPrism::GenerateTopCapWithQuads(FMeshSection& Section)
     // 生成内环顶点
     TArray<FVector> InnerVertices;
     TArray<FVector2D> InnerUVs;
-    CalculateRingVertices(Parameters.InnerRadius, Parameters.Sides, HalfHeight, ArcAngle, InnerVertices, InnerUVs);
+    CalculateRingVertices(Parameters.InnerRadius + Parameters.ChamferRadius, Parameters.Sides, HalfHeight, ArcAngle, InnerVertices, InnerUVs);
 
     // 生成外环顶点
     TArray<FVector> OuterVertices;
     TArray<FVector2D> OuterUVs;
-    CalculateRingVertices(Parameters.OuterRadius, Parameters.Sides, HalfHeight, ArcAngle, OuterVertices, OuterUVs);
+    CalculateRingVertices(Parameters.OuterRadius - Parameters.ChamferRadius, Parameters.Sides, HalfHeight, ArcAngle, OuterVertices, OuterUVs);
 
     // 添加顶点到网格并记录索引
     TArray<int32> InnerIndices, OuterIndices;
@@ -257,12 +259,12 @@ void AHollowPrism::GenerateBottomCapWithQuads(FMeshSection& Section)
     // 生成内环顶点
     TArray<FVector> InnerVertices;
     TArray<FVector2D> InnerUVs;
-    CalculateRingVertices(Parameters.InnerRadius, Parameters.Sides, -HalfHeight, ArcAngle, InnerVertices, InnerUVs);
+    CalculateRingVertices(Parameters.InnerRadius + Parameters.ChamferRadius, Parameters.Sides, -HalfHeight, ArcAngle, InnerVertices, InnerUVs);
 
     // 生成外环顶点
     TArray<FVector> OuterVertices;
     TArray<FVector2D> OuterUVs;
-    CalculateRingVertices(Parameters.OuterRadius, Parameters.Sides, -HalfHeight, ArcAngle, OuterVertices, OuterUVs);
+    CalculateRingVertices(Parameters.OuterRadius - Parameters.ChamferRadius, Parameters.Sides, -HalfHeight, ArcAngle, OuterVertices, OuterUVs);
 
     // 添加顶点到网格并记录索引
     TArray<int32> InnerIndices, OuterIndices;
@@ -298,6 +300,20 @@ void AHollowPrism::GenerateBottomCapWithQuads(FMeshSection& Section)
             InnerIndices[i]
         );
     }
+}
+
+// 生成顶部倒角几何
+void AHollowPrism::GenerateTopChamferGeometry(FMeshSection& Section, float StartZ)
+{
+    // 暂时不实现倒角几何生成，保持标准几何
+    // 这个方法保留用于将来的倒角功能实现
+}
+
+// 生成底部倒角几何
+void AHollowPrism::GenerateBottomChamferGeometry(FMeshSection& Section, float StartZ)
+{
+    // 暂时不实现倒角几何生成，保持标准几何
+    // 这个方法保留用于将来的倒角功能实现
 }
 
 // 生成端盖
