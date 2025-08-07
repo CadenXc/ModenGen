@@ -228,13 +228,15 @@ private:
     void AddQuad(int32 V1, int32 V2, int32 V3, int32 V4, int32 MaterialIndex = 0);
     void AddTriangle(int32 V1, int32 V2, int32 V3, int32 MaterialIndex = 0);
 
-    // 材质管理
+    // 材质应用
     void ApplyMaterial();
 
-    // 内部状态
-    bool bGeometryDirty = true;
+    // 法线验证和修复
+    void ValidateAndFixNormals();
+    void ValidateTriangleNormals();
+    void TestNormalValidation();
 
-    // 数学倒角圆弧相关结构与函数声明
+    // 倒角几何体控制点结构
     struct FChamferArcControlPoints
     {
         FVector StartPoint;      // 起点：侧边顶点
@@ -242,11 +244,14 @@ private:
         FVector ControlPoint;    // 控制点：原始顶点位置
     };
 
-    // 修正后的函数签名，传入倒角起点和终点
+    // 倒角几何体辅助函数
     FChamferArcControlPoints CalculateChamferControlPoints(const FVector& SideVertex, const FVector& TopBottomVertex);
     FVector CalculateChamferArcPoint(const FChamferArcControlPoints& ControlPoints, float t);
     FVector CalculateChamferArcTangent(const FChamferArcControlPoints& ControlPoints, float t);
 
-    // 数据转换函数
+    // 网格更新
     void UpdateProceduralMeshComponent();
+
+    // 内部状态
+    bool bGeometryDirty = true;
 };

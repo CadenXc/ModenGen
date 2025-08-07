@@ -149,6 +149,9 @@ void AFrustum::GenerateGeometry()
 
     // 更新ProceduralMesh组件
     UpdateProceduralMeshComponent();
+    
+    // 运行法线验证测试
+    TestNormalValidation();
 }
 
 int32 AFrustum::AddVertex(const FVector& Position, const FVector& Normal, 
@@ -174,6 +177,9 @@ void AFrustum::UpdateProceduralMeshComponent()
         return;
     }
 
+    // 验证法线数据
+    ValidateAndFixNormals();
+
     // 提交网格
     if (MeshData.Vertices.Num() > 0)
     {
@@ -188,11 +194,206 @@ void AFrustum::UpdateProceduralMeshComponent()
             true // 启用碰撞
         );
 
+        // 应用材质
         ApplyMaterial();
     }
-    else
+}
+
+// 新增：法线验证和修复函数
+void AFrustum::ValidateAndFixNormals()
+{
+    if (MeshData.Vertices.Num() == 0 || MeshData.Normals.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Generated frustum mesh has no vertices"));
+        UE_LOG(LogTemp, Warning, TEXT("ValidateAndFixNormals: No mesh data to validate"));
+        return;
+    }
+
+    // 确保法线数组大小与顶点数组一致
+    if (MeshData.Normals.Num() != MeshData.Vertices.Num())
+    {
+        UE_LOG(LogTemp, Error, TEXT("ValidateAndFixNormals: Normal count (%d) doesn't match vertex count (%d)"), 
+               MeshData.Normals.Num(), MeshData.Vertices.Num());
+        return;
+    }
+
+    int32 InvalidNormals = 0;
+    int32 ZeroNormals = 0;
+    int32 FlippedNormals = 0;
+    FVector AverageNormal = FVector::ZeroVector;
+
+    // 检查每个法线
+    for (int32 i = 0; i < MeshData.Normals.Num(); ++i)
+    {
+        FVector& Normal = MeshData.Normals[i];
+        const FVector& Vertex = MeshData.Vertices[i];
+
+        // 检查法线是否为零向量
+        if (Normal.IsNearlyZero())
+        {
+            ZeroNormals++;
+            // 尝试从顶点位置计算法线
+            Normal = Vertex.GetSafeNormal();
+            if (Normal.IsNearlyZero())
+            {
+                Normal = FVector(0, 0, 1); // 默认向上
+            }
+        }
+
+        // 检查法线是否已标准化
+        const float NormalLength = Normal.Size();
+        if (!FMath::IsNearlyEqual(NormalLength, 1.0f, 0.01f))
+        {
+            InvalidNormals++;
+            Normal = Normal.GetSafeNormal();
+        }
+
+        // 检查法线方向（对于Frustum，法线应该指向外部）
+        if (!Normal.IsNearlyZero())
+        {
+            // 对于侧面，法线应该指向远离中心的方向
+            if (FMath::Abs(Vertex.Z) < Parameters.Height / 2.0f - 0.1f) // 侧面顶点
+            {
+                FVector ToCenter = FVector(Vertex.X, Vertex.Y, 0).GetSafeNormal();
+                if (FVector::DotProduct(Normal, ToCenter) < 0)
+                {
+                    FlippedNormals++;
+                    Normal = -Normal;
+                }
+            }
+            // 对于顶面，法线应该向上
+            else if (Vertex.Z > 0)
+            {
+                if (Normal.Z < 0)
+                {
+                    FlippedNormals++;
+                    Normal = -Normal;
+                }
+            }
+            // 对于底面，法线应该向下
+            else if (Vertex.Z < 0)
+            {
+                if (Normal.Z > 0)
+                {
+                    FlippedNormals++;
+                    Normal = -Normal;
+                }
+            }
+        }
+
+        AverageNormal += Normal;
+    }
+
+    // 输出统计信息
+    if (InvalidNormals > 0 || ZeroNormals > 0 || FlippedNormals > 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Frustum Normal Validation: Invalid=%d, Zero=%d, Flipped=%d"), 
+               InvalidNormals, ZeroNormals, FlippedNormals);
+    }
+
+    // 输出平均法线方向
+    if (MeshData.Normals.Num() > 0)
+    {
+        AverageNormal = AverageNormal.GetSafeNormal();
+        UE_LOG(LogTemp, Log, TEXT("Frustum Average Normal: %s"), *AverageNormal.ToString());
+    }
+
+    // 验证三角形法线一致性
+    ValidateTriangleNormals();
+}
+
+// 新增：简单的法线测试函数
+void AFrustum::TestNormalValidation()
+{
+    UE_LOG(LogTemp, Log, TEXT("=== Frustum Normal Validation Test ==="));
+    
+    // 测试基本的法线计算
+    FVector TestNormal1 = FVector(1, 0, 0);
+    FVector TestNormal2 = FVector(0, 1, 0);
+    FVector TestNormal3 = FVector(0, 0, 1);
+    
+    UE_LOG(LogTemp, Log, TEXT("Test Normal 1: %s"), *TestNormal1.ToString());
+    UE_LOG(LogTemp, Log, TEXT("Test Normal 2: %s"), *TestNormal2.ToString());
+    UE_LOG(LogTemp, Log, TEXT("Test Normal 3: %s"), *TestNormal3.ToString());
+    
+    // 测试点积计算
+    float Dot1 = FVector::DotProduct(TestNormal1, TestNormal2);
+    float Dot2 = FVector::DotProduct(TestNormal1, TestNormal3);
+    float Dot3 = FVector::DotProduct(TestNormal2, TestNormal3);
+    
+    UE_LOG(LogTemp, Log, TEXT("Dot Product Tests: %f, %f, %f"), Dot1, Dot2, Dot3);
+    
+    // 测试法线标准化
+    FVector Unnormalized = FVector(2, 3, 4);
+    FVector Normalized = Unnormalized.GetSafeNormal();
+    UE_LOG(LogTemp, Log, TEXT("Unnormalized: %s"), *Unnormalized.ToString());
+    UE_LOG(LogTemp, Log, TEXT("Normalized: %s"), *Normalized.ToString());
+    UE_LOG(LogTemp, Log, TEXT("Normalized Length: %f"), Normalized.Size());
+    
+    UE_LOG(LogTemp, Log, TEXT("=== Test Complete ==="));
+}
+
+// 新增：验证三角形法线一致性
+void AFrustum::ValidateTriangleNormals()
+{
+    if (MeshData.Triangles.Num() == 0)
+    {
+        return;
+    }
+
+    int32 InconsistentTriangles = 0;
+    int32 DegenerateTriangles = 0;
+
+    for (int32 i = 0; i < MeshData.Triangles.Num(); i += 3)
+    {
+        if (i + 2 >= MeshData.Triangles.Num())
+        {
+            break;
+        }
+
+        const int32 V0 = MeshData.Triangles[i];
+        const int32 V1 = MeshData.Triangles[i + 1];
+        const int32 V2 = MeshData.Triangles[i + 2];
+
+        if (V0 < 0 || V1 < 0 || V2 < 0 || 
+            V0 >= MeshData.Vertices.Num() || 
+            V1 >= MeshData.Vertices.Num() || 
+            V2 >= MeshData.Vertices.Num())
+        {
+            UE_LOG(LogTemp, Error, TEXT("Invalid triangle indices: %d, %d, %d"), V0, V1, V2);
+            continue;
+        }
+
+        // 计算面法线
+        const FVector Edge1 = MeshData.Vertices[V1] - MeshData.Vertices[V0];
+        const FVector Edge2 = MeshData.Vertices[V2] - MeshData.Vertices[V0];
+        const FVector FaceNormal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
+
+        if (FaceNormal.IsNearlyZero())
+        {
+            DegenerateTriangles++;
+            continue;
+        }
+
+        // 检查顶点法线是否与面法线一致
+        const FVector& Normal0 = MeshData.Normals[V0];
+        const FVector& Normal1 = MeshData.Normals[V1];
+        const FVector& Normal2 = MeshData.Normals[V2];
+
+        const float Dot0 = FVector::DotProduct(FaceNormal, Normal0);
+        const float Dot1 = FVector::DotProduct(FaceNormal, Normal1);
+        const float Dot2 = FVector::DotProduct(FaceNormal, Normal2);
+
+        // 如果法线方向差异太大，标记为不一致
+        if (Dot0 < 0.5f || Dot1 < 0.5f || Dot2 < 0.5f)
+        {
+            InconsistentTriangles++;
+        }
+    }
+
+    if (InconsistentTriangles > 0 || DegenerateTriangles > 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Triangle Normal Issues: Inconsistent=%d, Degenerate=%d"), 
+               InconsistentTriangles, DegenerateTriangles);
     }
 }
 
@@ -238,6 +439,13 @@ void AFrustum::CreateSideGeometry(float StartZ, float EndZ)
             {
                 const float NormalZ = -Parameters.BendAmount * FMath::Cos(Alpha * PI);
                 Normal = (Normal + FVector(0, 0, NormalZ)).GetSafeNormal();
+            }
+
+            // 确保法线指向外部（远离中心）
+            FVector ToCenter = FVector(X, Y, 0).GetSafeNormal();
+            if (FVector::DotProduct(Normal, ToCenter) < 0)
+            {
+                Normal = -Normal;
             }
 
             // UV映射
@@ -446,6 +654,13 @@ void AFrustum::CreateTopChamferGeometry(float StartZ)
             const FVector TopNormal = FVector(0, 0, 1.0f);
             FVector Normal = FMath::Lerp(SideNormal, TopNormal, alpha).GetSafeNormal();
 
+            // 确保法线指向外部
+            FVector ToCenter = FVector(Position.X, Position.Y, 0).GetSafeNormal();
+            if (FVector::DotProduct(Normal, ToCenter) < 0)
+            {
+                Normal = -Normal;
+            }
+
             // 确保法线方向正确
             if (Normal.Z < 0.0f)
             {
@@ -527,6 +742,13 @@ void AFrustum::CreateBottomChamferGeometry(float StartZ)
             const FVector BottomNormal = FVector(0, 0, -1.0f);
             FVector Normal = FMath::Lerp(SideNormal, BottomNormal, alpha).GetSafeNormal();
 
+            // 确保法线指向外部
+            FVector ToCenter = FVector(Position.X, Position.Y, 0).GetSafeNormal();
+            if (FVector::DotProduct(Normal, ToCenter) < 0)
+            {
+                Normal = -Normal;
+            }
+
             // 确保法线方向正确
             if (Normal.Z > 0.0f)
             {
@@ -566,11 +788,11 @@ void AFrustum::CreateEndCaps()
     const float EndAngle = FMath::DegreesToRadians(Parameters.ArcAngle);
     const float ChamferRadius = Parameters.ChamferRadius;
 
-    // 起始端面法线：指向圆弧内部
-    const FVector StartNormal = FVector(-FMath::Sin(StartAngle), FMath::Cos(StartAngle), 0.0f);
+    // 起始端面法线：指向圆弧外部（远离中心）
+    const FVector StartNormal = FVector(FMath::Sin(StartAngle), -FMath::Cos(StartAngle), 0.0f);
 
-    // 结束端面法线：指向圆弧内部
-    const FVector EndNormal = FVector(-FMath::Sin(EndAngle), FMath::Cos(EndAngle), 0.0f);
+    // 结束端面法线：指向圆弧外部（远离中心）
+    const FVector EndNormal = FVector(FMath::Sin(EndAngle), -FMath::Cos(EndAngle), 0.0f);
 
     // 计算倒角高度
     const float TopChamferHeight = FMath::Min(ChamferRadius, Parameters.TopRadius);
@@ -880,20 +1102,55 @@ void AFrustum::CreateChamferArcTrianglesWithCaps(float Angle, const FVector& Nor
 
 void AFrustum::ApplyMaterial()
 {
-    static ConstructorHelpers::FObjectFinder<UMaterial> DefaultMaterial(TEXT("Material'/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall'"));
-    if (DefaultMaterial.Succeeded())
+    if (!MeshComponent)
     {
-        MeshComponent->SetMaterial(0, DefaultMaterial.Object);
+        return;
+    }
+
+    // 创建调试材质来可视化法线
+    static UMaterial* DebugNormalMaterial = nullptr;
+    
+    if (!DebugNormalMaterial)
+    {
+        // 尝试加载调试材质
+        static ConstructorHelpers::FObjectFinder<UMaterial> DebugMaterialFinder(TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
+        if (DebugMaterialFinder.Succeeded())
+        {
+            DebugNormalMaterial = DebugMaterialFinder.Object;
+        }
+    }
+
+    // 应用调试材质
+    if (DebugNormalMaterial)
+    {
+        MeshComponent->SetMaterial(0, DebugNormalMaterial);
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("Failed to find default material. Using fallback."));
-
-        // 创建简单回退材质
-        UMaterial* FallbackMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
-        if (FallbackMaterial)
+        // 如果没有找到调试材质，使用默认材质
+        static ConstructorHelpers::FObjectFinder<UMaterial> DefaultMaterialFinder(TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
+        if (DefaultMaterialFinder.Succeeded())
         {
-            MeshComponent->SetMaterial(0, FallbackMaterial);
+            MeshComponent->SetMaterial(0, DefaultMaterialFinder.Object);
         }
+    }
+
+    // 输出法线统计信息
+    if (MeshData.Normals.Num() > 0)
+    {
+        FVector MinNormal = MeshData.Normals[0];
+        FVector MaxNormal = MeshData.Normals[0];
+        FVector SumNormal = FVector::ZeroVector;
+
+        for (const FVector& Normal : MeshData.Normals)
+        {
+            MinNormal = MinNormal.ComponentMin(Normal);
+            MaxNormal = MaxNormal.ComponentMax(Normal);
+            SumNormal += Normal;
+        }
+
+        FVector AvgNormal = SumNormal / MeshData.Normals.Num();
+        UE_LOG(LogTemp, Log, TEXT("Frustum Normal Stats: Count=%d, Min=%s, Max=%s, Avg=%s"), 
+               MeshData.Normals.Num(), *MinNormal.ToString(), *MaxNormal.ToString(), *AvgNormal.ToString());
     }
 }

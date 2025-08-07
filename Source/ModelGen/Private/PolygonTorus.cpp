@@ -19,312 +19,729 @@ APolygonTorus::APolygonTorus()
         ProceduralMesh->SetMaterial(0, MaterialFinder.Object);
     }
 
-    GeneratePolygonTorus(MajorRadius, MinorRadius, MajorSegments, MinorSegments, TorusAngle, bSmoothCrossSection, bSmoothVerticalSection);
+    GenerateTorusWithSmoothing(ETorusSmoothMode::Both, 30.0f);
 }
 
 void APolygonTorus::BeginPlay()
 {
     Super::BeginPlay();
-    GeneratePolygonTorus(MajorRadius, MinorRadius, MajorSegments, MinorSegments, TorusAngle, bSmoothCrossSection, bSmoothVerticalSection);
+    GenerateTorusWithSmoothing(ETorusSmoothMode::Both, 30.0f);
 }
 
 void APolygonTorus::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
-    GeneratePolygonTorus(MajorRadius, MinorRadius, MajorSegments, MinorSegments, TorusAngle, bSmoothCrossSection, bSmoothVerticalSection);
+    GenerateTorusWithSmoothing(ETorusSmoothMode::Both, 30.0f);
 }
 
-// 生成多边形截面顶点
-void APolygonTorus::GeneratePolygonVertices(
-    TArray<FVector>& Vertices,
-    TArray<FVector>& Normals,
-    TArray<FVector2D>& UVs,
-    TArray<FProcMeshTangent>& Tangents,
-    const FVector& Center,
-    const FVector& Direction,
-    const FVector& UpVector,
-    float Radius,
-    int32 Segments,
-    float UOffset)
+// 优化的参数验证和约束
+void APolygonTorus::ValidateAndClampParameters(float& MajorRad, float& MinorRad, int32& MajorSegs, 
+                                              int32& MinorSegs, float& Angle)
 {
-    // 计算垂直向量
-    FVector RightVector = FVector::CrossProduct(Direction, UpVector).GetSafeNormal();
-
-    for (int32 i = 0; i < Segments; i++)
-    {
-        float Angle = 2 * PI * i / Segments;
-        float CosA = FMath::Cos(Angle);
-        float SinA = FMath::Sin(Angle);
-
-        // 计算顶点位置
-        FVector VertexPos = Center +
-            (RightVector * CosA * Radius) +
-            (UpVector * SinA * Radius);
-
-        // 计算法线（从中心指向顶点，确保指向外部）
-        FVector Normal = (VertexPos - Center).GetSafeNormal();
-        
-        // 确保法线指向外部（对于圆环，法线应该指向远离中心的方向）
-        // 这里我们检查法线是否指向正确的方向
-        FVector ExpectedDirection = (VertexPos - Center);
-        if (FVector::DotProduct(ExpectedDirection, Normal) < 0)
-        {
-            Normal = -Normal;
-        }
-
-        // 设置UV坐标
-        FVector2D UV(UOffset + static_cast<float>(i) / Segments, 0.0f);
-
-        // 切线方向（沿圆环方向）
-        FVector Tangent = Direction;
-
-        // 添加顶点
-        Vertices.Add(VertexPos);
-        Normals.Add(Normal);
-        UVs.Add(UV);
-        Tangents.Add(FProcMeshTangent(Tangent, false));
-    }
-}
-
-void APolygonTorus::AddQuad(TArray<int32>& Triangles, int32 V0, int32 V1, int32 V2, int32 V3)
-{
-    Triangles.Add(V0); Triangles.Add(V1); Triangles.Add(V2);
-    Triangles.Add(V0); Triangles.Add(V2); Triangles.Add(V3);
-}
-
-// 验证和约束参数
-void APolygonTorus::ValidateParameters(float& MajorRad, float& MinorRad, int32& MajorSegs, int32& MinorSegs, float& Angle)
-{
-    MajorSegs = FMath::Max(3, MajorSegs);
-    MinorSegs = FMath::Max(3, MinorSegs);
-    MajorRad = FMath::Max(1.0f, MajorRad);
+    // 约束分段数
+    MajorSegs = FMath::Clamp(MajorSegs, 3, 256);
+    MinorSegs = FMath::Clamp(MinorSegs, 3, 256);
+    
+    // 约束半径
+    MajorRad = FMath::Max(MajorRad, 1.0f);
     MinorRad = FMath::Clamp(MinorRad, 1.0f, MajorRad * 0.9f);
+    
+    // 约束角度
     Angle = FMath::Clamp(Angle, 1.0f, 360.0f);
 }
 
-// 生成截面顶点
-void APolygonTorus::GenerateSectionVertices(
+// 优化的顶点生成（基于Blender的实现）
+void APolygonTorus::GenerateOptimizedVertices(
     TArray<FVector>& Vertices,
     TArray<FVector>& Normals,
     TArray<FVector2D>& UVs,
     TArray<FProcMeshTangent>& Tangents,
-    TArray<int32>& SectionStartIndices,
     float MajorRad,
     float MinorRad,
     int32 MajorSegs,
     int32 MinorSegs,
-    float AngleStep)
+    float AngleRad)
 {
-    for (int32 i = 0; i <= MajorSegs; i++)
+    Vertices.Empty();
+    Normals.Empty();
+    UVs.Empty();
+    Tangents.Empty();
+
+    const float MajorStep = AngleRad / MajorSegs;
+    const float MinorStep = 2.0f * PI / MinorSegs;
+
+    for (int32 majorIndex = 0; majorIndex <= MajorSegs; ++majorIndex)
     {
-        float CurrentAngle = i * AngleStep;
-        float UOffset = static_cast<float>(i) / MajorSegs;
+        const float majorAngle = majorIndex * MajorStep;
+        const float majorCos = FMath::Cos(majorAngle);
+        const float majorSin = FMath::Sin(majorAngle);
 
         // 计算当前截面的中心位置
-        FVector SectionCenter(
-            FMath::Cos(CurrentAngle) * MajorRad,
-            FMath::Sin(CurrentAngle) * MajorRad,
-            0.0f
-        );
-
+        const FVector sectionCenter(majorCos * MajorRad, majorSin * MajorRad, 0.0f);
+        
         // 计算当前截面的方向（圆环的切线方向）
-        FVector SectionDirection(
-            -FMath::Sin(CurrentAngle),
-            FMath::Cos(CurrentAngle),
-            0.0f
-        );
+        const FVector sectionDirection(-majorSin, majorCos, 0.0f);
 
-        // 记录当前截面的起始顶点索引
-        SectionStartIndices.Add(Vertices.Num());
-
-        // 生成多边形截面
-        GeneratePolygonVertices(
-            Vertices, Normals, UVs, Tangents,
-            SectionCenter,
-            SectionDirection,
-            FVector::UpVector,
-            MinorRad,
-            MinorSegs,
-            UOffset
-        );
-    }
-}
-
-// 生成侧面三角形
-void APolygonTorus::GenerateSideTriangles(
-    TArray<int32>& Triangles,
-    const TArray<int32>& SectionStartIndices,
-    int32 MajorSegs,
-    int32 MinorSegs)
-{
-    for (int32 i = 0; i < MajorSegs; i++)
-    {
-        int32 CurrentSectionStart = SectionStartIndices[i];
-        int32 NextSectionStart = SectionStartIndices[i + 1];
-
-        for (int32 j = 0; j < MinorSegs; j++)
+        for (int32 minorIndex = 0; minorIndex < MinorSegs; ++minorIndex)
         {
-            int32 NextJ = (j + 1) % MinorSegs;
+            const float minorAngle = minorIndex * MinorStep;
+            const float minorCos = FMath::Cos(minorAngle);
+            const float minorSin = FMath::Sin(minorAngle);
 
-            int32 V0 = CurrentSectionStart + j;
-            int32 V1 = CurrentSectionStart + NextJ;
-            int32 V2 = NextSectionStart + NextJ;
-            int32 V3 = NextSectionStart + j;
+            // 计算顶点位置（基于Blender的算法）
+            const FVector vertexPos = sectionCenter + 
+                FVector(minorCos * MinorRad * majorCos, 
+                       minorCos * MinorRad * majorSin, 
+                       minorSin * MinorRad);
 
-            AddQuad(Triangles, V0, V1, V2, V3);
+            // 计算法线（从截面中心指向顶点）
+            const FVector normal = (vertexPos - sectionCenter).GetSafeNormal();
+
+            // 计算UV坐标
+            const float u = static_cast<float>(majorIndex) / MajorSegs;
+            const float v = static_cast<float>(minorIndex) / MinorSegs;
+            const FVector2D uv(u, v);
+
+            // 计算切线（沿圆环方向）
+            const FVector tangent = sectionDirection;
+
+            Vertices.Add(vertexPos);
+            Normals.Add(normal);
+            UVs.Add(uv);
+            Tangents.Add(FProcMeshTangent(tangent, false));
         }
     }
 }
 
-// 生成端面
-void APolygonTorus::GenerateEndCaps(
+// 优化的三角形生成
+void APolygonTorus::GenerateOptimizedTriangles(
+    TArray<int32>& Triangles,
+    int32 MajorSegs,
+    int32 MinorSegs,
+    bool bIsFullCircle)
+{
+    Triangles.Empty();
+
+    for (int32 majorIndex = 0; majorIndex < MajorSegs; ++majorIndex)
+    {
+        for (int32 minorIndex = 0; minorIndex < MinorSegs; ++minorIndex)
+        {
+            const int32 currentMajor = majorIndex;
+            const int32 nextMajor = (majorIndex + 1) % (MajorSegs + 1);
+            const int32 currentMinor = minorIndex;
+            const int32 nextMinor = (minorIndex + 1) % MinorSegs;
+
+            const int32 v0 = currentMajor * MinorSegs + currentMinor;
+            const int32 v1 = currentMajor * MinorSegs + nextMinor;
+            const int32 v2 = nextMajor * MinorSegs + nextMinor;
+            const int32 v3 = nextMajor * MinorSegs + currentMinor;
+
+            // 添加四边形（两个三角形）
+            Triangles.Add(v0); Triangles.Add(v1); Triangles.Add(v2);
+            Triangles.Add(v0); Triangles.Add(v2); Triangles.Add(v3);
+        }
+    }
+}
+
+// 优化的端面生成
+void APolygonTorus::GenerateEndCapsOptimized(
     TArray<FVector>& Vertices,
     TArray<FVector>& Normals,
     TArray<FVector2D>& UVs,
     TArray<FProcMeshTangent>& Tangents,
     TArray<int32>& Triangles,
-    const TArray<int32>& SectionStartIndices,
     float MajorRad,
+    float MinorRad,
     float AngleRad,
     int32 MajorSegs,
-    int32 MinorSegs)
+    int32 MinorSegs,
+    ETorusFillType InFillType)
 {
-    // 添加端盖中心顶点并记录索引
-    int32 StartCenterIndex = Vertices.Num();
-    FVector StartCenter(FMath::Cos(0) * MajorRad, FMath::Sin(0) * MajorRad, 0);
-    Vertices.Add(StartCenter);
-    Normals.Add(-FVector(-FMath::Sin(0), FMath::Cos(0), 0)); // 法线指向内侧
-    UVs.Add(FVector2D(0.5f, 0.5f));
-    Tangents.Add(FProcMeshTangent(FVector(1, 0, 0), false));
-
-    int32 EndCenterIndex = Vertices.Num();
-    FVector EndCenter(FMath::Cos(AngleRad) * MajorRad, FMath::Sin(AngleRad) * MajorRad, 0);
-    Vertices.Add(EndCenter);
-    Normals.Add(FVector(-FMath::Sin(AngleRad), FMath::Cos(AngleRad), 0)); // 法线指向外侧
-    UVs.Add(FVector2D(0.5f, 0.5f));
-    Tangents.Add(FProcMeshTangent(FVector(1, 0, 0), false));
-
-    // 生成起始端盖
-    int32 StartSection = SectionStartIndices[0];
-    for (int32 j = 0; j < MinorSegs; j++)
+    if (FMath::IsNearlyEqual(AngleRad, 2.0f * PI))
     {
-        int32 NextJ = (j + 1) % MinorSegs;
-
-        Triangles.Add(StartSection + j);
-        Triangles.Add(StartCenterIndex);
-        Triangles.Add(StartSection + NextJ);
+        return; // 完整圆环不需要端面
     }
 
-    // 生成结束端盖
-    int32 EndSection = SectionStartIndices[MajorSegs];
-    for (int32 j = 0; j < MinorSegs; j++)
-    {
-        int32 NextJ = (j + 1) % MinorSegs;
+    const int32 startCenterIndex = Vertices.Num();
+    const int32 endCenterIndex = startCenterIndex + 1;
 
-        Triangles.Add(EndSection + j);
-        Triangles.Add(EndSection + NextJ);
-        Triangles.Add(EndCenterIndex);
+    // 计算起始和结束角度
+    const float startAngle = 0.0f;
+    const float endAngle = AngleRad;
+
+    // 计算端面中心点
+    const FVector startCenter(
+        FMath::Cos(startAngle) * MajorRad,
+        FMath::Sin(startAngle) * MajorRad,
+        0.0f
+    );
+    
+    const FVector endCenter(
+        FMath::Cos(endAngle) * MajorRad,
+        FMath::Sin(endAngle) * MajorRad,
+        0.0f
+    );
+
+    // 计算端面法线（指向圆环内部）
+    const FVector startNormal = FVector(-FMath::Sin(startAngle), FMath::Cos(startAngle), 0.0f);
+    const FVector endNormal = FVector(-FMath::Sin(endAngle), FMath::Cos(endAngle), 0.0f);
+
+    // 添加端面中心顶点
+    Vertices.Add(startCenter);
+    Normals.Add(startNormal);
+    UVs.Add(FVector2D(0.5f, 0.5f));
+    Tangents.Add(FProcMeshTangent(FVector(1, 0, 0), false));
+
+    Vertices.Add(endCenter);
+    Normals.Add(endNormal);
+    UVs.Add(FVector2D(0.5f, 0.5f));
+    Tangents.Add(FProcMeshTangent(FVector(1, 0, 0), false));
+
+    // 生成端面三角形
+    const int32 startSection = 0;
+    const int32 endSection = MajorSegs * MinorSegs;
+
+    // 根据填充类型生成端面
+    switch (InFillType)
+    {
+    case ETorusFillType::NGon:
+        {
+            // NGon填充：使用扇形三角形
+            for (int32 i = 0; i < MinorSegs; ++i)
+            {
+                const int32 nextI = (i + 1) % MinorSegs;
+                
+                // 起始端面（扇形三角形）
+                Triangles.Add(startSection + i);
+                Triangles.Add(startCenterIndex);
+                Triangles.Add(startSection + nextI);
+
+                // 结束端面（扇形三角形）
+                Triangles.Add(endSection + i);
+                Triangles.Add(endSection + nextI);
+                Triangles.Add(endCenterIndex);
+            }
+        }
+        break;
+
+    case ETorusFillType::Triangles:
+        {
+            // 三角形填充：使用三角形网格
+            // 对于起始端面
+            for (int32 i = 0; i < MinorSegs - 2; ++i)
+            {
+                // 创建三角形扇形
+                Triangles.Add(startSection + 0);
+                Triangles.Add(startSection + i + 1);
+                Triangles.Add(startSection + i + 2);
+            }
+
+            // 对于结束端面
+            for (int32 i = 0; i < MinorSegs - 2; ++i)
+            {
+                // 创建三角形扇形
+                Triangles.Add(endSection + 0);
+                Triangles.Add(endSection + i + 1);
+                Triangles.Add(endSection + i + 2);
+            }
+        }
+        break;
+
+    case ETorusFillType::None:
+        {
+            // 不填充端面，只添加边缘三角形
+            for (int32 i = 0; i < MinorSegs; ++i)
+            {
+                const int32 nextI = (i + 1) % MinorSegs;
+                
+                // 起始端面边缘
+                Triangles.Add(startSection + i);
+                Triangles.Add(startCenterIndex);
+                Triangles.Add(startSection + nextI);
+
+                // 结束端面边缘
+                Triangles.Add(endSection + i);
+                Triangles.Add(endSection + nextI);
+                Triangles.Add(endCenterIndex);
+            }
+        }
+        break;
+    }
+
+    // 为端面顶点生成UV坐标
+    for (int32 i = 0; i < MinorSegs; ++i)
+    {
+        const float angle = static_cast<float>(i) / MinorSegs * 2.0f * PI;
+        const float u = 0.5f + 0.5f * FMath::Cos(angle);
+        const float v = 0.5f + 0.5f * FMath::Sin(angle);
+        
+        // 更新起始端面顶点的UV
+        if (startSection + i < UVs.Num())
+        {
+            UVs[startSection + i] = FVector2D(u, v);
+        }
+        
+        // 更新结束端面顶点的UV
+        if (endSection + i < UVs.Num())
+        {
+            UVs[endSection + i] = FVector2D(u, v);
+        }
     }
 }
 
-// 计算平滑法线
-void APolygonTorus::CalculateSmoothNormals(
+// 高级端盖生成函数
+void APolygonTorus::GenerateAdvancedEndCaps(
+    TArray<FVector>& Vertices,
+    TArray<FVector>& Normals,
+    TArray<FVector2D>& UVs,
+    TArray<FProcMeshTangent>& Tangents,
+    TArray<int32>& Triangles,
+    float MajorRad,
+    float MinorRad,
+    float AngleRad,
+    int32 MajorSegs,
+    int32 MinorSegs,
+    ETorusFillType InFillType,
+    bool bGenerateInnerCaps,
+    bool bGenerateOuterCaps)
+{
+    // 如果是完整圆环，不需要端面
+    if (FMath::IsNearlyEqual(AngleRad, 2.0f * PI))
+    {
+        return;
+    }
+
+    // 计算起始和结束角度
+    const float startAngle = 0.0f;
+    const float endAngle = AngleRad;
+
+    // 计算端面中心点
+    const FVector startCenter(
+        FMath::Cos(startAngle) * MajorRad,
+        FMath::Sin(startAngle) * MajorRad,
+        0.0f
+    );
+    
+    const FVector endCenter(
+        FMath::Cos(endAngle) * MajorRad,
+        FMath::Sin(endAngle) * MajorRad,
+        0.0f
+    );
+
+    // 计算端面法线（指向圆环内部）
+    const FVector startNormal = FVector(-FMath::Sin(startAngle), FMath::Cos(startAngle), 0.0f);
+    const FVector endNormal = FVector(-FMath::Sin(endAngle), FMath::Cos(endAngle), 0.0f);
+
+    // 添加端面中心顶点
+    const int32 startCenterIndex = Vertices.Num();
+    const int32 endCenterIndex = startCenterIndex + 1;
+
+    Vertices.Add(startCenter);
+    Normals.Add(startNormal);
+    UVs.Add(FVector2D(0.5f, 0.5f));
+    Tangents.Add(FProcMeshTangent(FVector(1, 0, 0), false));
+
+    Vertices.Add(endCenter);
+    Normals.Add(endNormal);
+    UVs.Add(FVector2D(0.5f, 0.5f));
+    Tangents.Add(FProcMeshTangent(FVector(1, 0, 0), false));
+
+    // 获取端面边缘顶点的索引
+    const int32 startSectionStart = 0;
+    const int32 startSectionEnd = MinorSegs;
+    const int32 endSectionStart = MajorSegs * MinorSegs;
+    const int32 endSectionEnd = endSectionStart + MinorSegs;
+
+    // 根据填充类型生成端面
+    switch (InFillType)
+    {
+    case ETorusFillType::NGon:
+        {
+            // NGon填充：使用扇形三角形
+            for (int32 i = 0; i < MinorSegs; ++i)
+            {
+                const int32 nextI = (i + 1) % MinorSegs;
+                
+                // 起始端面（扇形三角形）
+                if (bGenerateInnerCaps)
+                {
+                    Triangles.Add(startSectionStart + i);
+                    Triangles.Add(startCenterIndex);
+                    Triangles.Add(startSectionStart + nextI);
+                }
+
+                // 结束端面（扇形三角形）
+                if (bGenerateOuterCaps)
+                {
+                    Triangles.Add(endSectionStart + i);
+                    Triangles.Add(endSectionStart + nextI);
+                    Triangles.Add(endCenterIndex);
+                }
+            }
+        }
+        break;
+
+    case ETorusFillType::Triangles:
+        {
+            // 三角形填充：使用三角形网格
+            if (bGenerateInnerCaps)
+            {
+                // 对于起始端面
+                for (int32 i = 0; i < MinorSegs - 2; ++i)
+                {
+                    // 创建三角形扇形
+                    Triangles.Add(startSectionStart + 0);
+                    Triangles.Add(startSectionStart + i + 1);
+                    Triangles.Add(startSectionStart + i + 2);
+                }
+            }
+
+            if (bGenerateOuterCaps)
+            {
+                // 对于结束端面
+                for (int32 i = 0; i < MinorSegs - 2; ++i)
+                {
+                    // 创建三角形扇形
+                    Triangles.Add(endSectionStart + 0);
+                    Triangles.Add(endSectionStart + i + 1);
+                    Triangles.Add(endSectionStart + i + 2);
+                }
+            }
+        }
+        break;
+
+    case ETorusFillType::None:
+        {
+            // 不填充端面，只添加边缘三角形
+            for (int32 i = 0; i < MinorSegs; ++i)
+            {
+                const int32 nextI = (i + 1) % MinorSegs;
+                
+                // 起始端面边缘
+                if (bGenerateInnerCaps)
+                {
+                    Triangles.Add(startSectionStart + i);
+                    Triangles.Add(startCenterIndex);
+                    Triangles.Add(startSectionStart + nextI);
+                }
+
+                // 结束端面边缘
+                if (bGenerateOuterCaps)
+                {
+                    Triangles.Add(endSectionStart + i);
+                    Triangles.Add(endSectionStart + nextI);
+                    Triangles.Add(endCenterIndex);
+                }
+            }
+        }
+        break;
+    }
+
+    // 为端面顶点生成UV坐标
+    for (int32 i = 0; i < MinorSegs; ++i)
+    {
+        const float angle = static_cast<float>(i) / MinorSegs * 2.0f * PI;
+        const float u = 0.5f + 0.5f * FMath::Cos(angle);
+        const float v = 0.5f + 0.5f * FMath::Sin(angle);
+        
+        // 更新起始端面顶点的UV
+        if (startSectionStart + i < UVs.Num())
+        {
+            UVs[startSectionStart + i] = FVector2D(u, v);
+        }
+        
+        // 更新结束端面顶点的UV
+        if (endSectionStart + i < UVs.Num())
+        {
+            UVs[endSectionStart + i] = FVector2D(u, v);
+        }
+    }
+}
+
+// 生成圆形端盖（用于特殊形状）
+void APolygonTorus::GenerateCircularEndCaps(
+    TArray<FVector>& Vertices,
+    TArray<FVector>& Normals,
+    TArray<FVector2D>& UVs,
+    TArray<FProcMeshTangent>& Tangents,
+    TArray<int32>& Triangles,
+    float MajorRad,
+    float MinorRad,
+    float AngleRad,
+    int32 MajorSegs,
+    int32 MinorSegs,
+    int32 InCapSegments,
+    bool bInGenerateStartCap,
+    bool bInGenerateEndCap)
+{
+    // 如果是完整圆环，不需要端面
+    if (FMath::IsNearlyEqual(AngleRad, 2.0f * PI))
+    {
+        return;
+    }
+
+    // 计算起始和结束角度
+    const float startAngle = 0.0f;
+    const float endAngle = AngleRad;
+
+    // 计算端面中心点
+    const FVector startCenter(
+        FMath::Cos(startAngle) * MajorRad,
+        FMath::Sin(startAngle) * MajorRad,
+        0.0f
+    );
+    
+    const FVector endCenter(
+        FMath::Cos(endAngle) * MajorRad,
+        FMath::Sin(endAngle) * MajorRad,
+        0.0f
+    );
+
+    // 计算端面法线
+    const FVector startNormal = FVector(-FMath::Sin(startAngle), FMath::Cos(startAngle), 0.0f);
+    const FVector endNormal = FVector(-FMath::Sin(endAngle), FMath::Cos(endAngle), 0.0f);
+
+    // 添加端面中心顶点
+    const int32 startCenterIndex = Vertices.Num();
+    const int32 endCenterIndex = startCenterIndex + 1;
+
+    if (bInGenerateStartCap)
+    {
+        Vertices.Add(startCenter);
+        Normals.Add(startNormal);
+        UVs.Add(FVector2D(0.5f, 0.5f));
+        Tangents.Add(FProcMeshTangent(FVector(1, 0, 0), false));
+    }
+
+    if (bInGenerateEndCap)
+    {
+        Vertices.Add(endCenter);
+        Normals.Add(endNormal);
+        UVs.Add(FVector2D(0.5f, 0.5f));
+        Tangents.Add(FProcMeshTangent(FVector(1, 0, 0), false));
+    }
+
+    // 生成圆形端盖顶点
+    if (bInGenerateStartCap)
+    {
+        for (int32 i = 0; i < InCapSegments; ++i)
+        {
+            const float angle = static_cast<float>(i) / InCapSegments * 2.0f * PI;
+            const float cosAngle = FMath::Cos(angle);
+            const float sinAngle = FMath::Sin(angle);
+            
+            const FVector capVertex(
+                startCenter.X + cosAngle * MinorRad,
+                startCenter.Y + sinAngle * MinorRad,
+                0.0f
+            );
+
+            Vertices.Add(capVertex);
+            Normals.Add(startNormal);
+            UVs.Add(FVector2D(0.5f + 0.5f * cosAngle, 0.5f + 0.5f * sinAngle));
+            Tangents.Add(FProcMeshTangent(FVector(1, 0, 0), false));
+        }
+    }
+
+    if (bInGenerateEndCap)
+    {
+        for (int32 i = 0; i < InCapSegments; ++i)
+        {
+            const float angle = static_cast<float>(i) / InCapSegments * 2.0f * PI;
+            const float cosAngle = FMath::Cos(angle);
+            const float sinAngle = FMath::Sin(angle);
+            
+            const FVector capVertex(
+                endCenter.X + cosAngle * MinorRad,
+                endCenter.Y + sinAngle * MinorRad,
+                0.0f
+            );
+
+            Vertices.Add(capVertex);
+            Normals.Add(endNormal);
+            UVs.Add(FVector2D(0.5f + 0.5f * cosAngle, 0.5f + 0.5f * sinAngle));
+            Tangents.Add(FProcMeshTangent(FVector(1, 0, 0), false));
+        }
+    }
+
+    // 生成端盖三角形
+    if (bInGenerateStartCap)
+    {
+        const int32 startCapStartIndex = startCenterIndex + 1;
+        for (int32 i = 0; i < InCapSegments; ++i)
+        {
+            const int32 nextI = (i + 1) % InCapSegments;
+            
+            Triangles.Add(startCenterIndex);
+            Triangles.Add(startCapStartIndex + i);
+            Triangles.Add(startCapStartIndex + nextI);
+        }
+    }
+
+    if (bInGenerateEndCap)
+    {
+        const int32 endCapStartIndex = endCenterIndex + 1;
+        for (int32 i = 0; i < InCapSegments; ++i)
+        {
+            const int32 nextI = (i + 1) % InCapSegments;
+            
+            Triangles.Add(endCenterIndex);
+            Triangles.Add(endCapStartIndex + nextI);
+            Triangles.Add(endCapStartIndex + i);
+        }
+    }
+}
+
+// 优化的法线计算
+void APolygonTorus::CalculateOptimizedNormals(
     TArray<FVector>& Normals,
     const TArray<FVector>& Vertices,
     const TArray<int32>& Triangles,
-    const TArray<int32>& SectionStartIndices,
     float MajorRad,
-    float AngleStep,
+    float MinorRad,
     int32 MajorSegs,
     int32 MinorSegs,
     bool bSmoothCross,
     bool bSmoothVertical)
 {
-    // 重新计算所有顶点的法线
-    TArray<FVector> NewNormals;
-    NewNormals.SetNum(Vertices.Num());
-    
-    // 初始化法线为零向量
-    for (int32 i = 0; i < NewNormals.Num(); i++)
+    if (!bGenerateNormals)
     {
-        NewNormals[i] = FVector::ZeroVector;
+        return;
     }
 
-    // 计算每个三角形的法线并累加到顶点
+    TArray<FVector> newNormals;
+    newNormals.SetNum(Vertices.Num());
+    
+    // 初始化法线为零向量
+    for (int32 i = 0; i < newNormals.Num(); i++)
+    {
+        newNormals[i] = FVector::ZeroVector;
+    }
+
+    // 计算面法线并累加到顶点
     for (int32 i = 0; i < Triangles.Num(); i += 3)
     {
-        int32 V0 = Triangles[i];
-        int32 V1 = Triangles[i + 1];
-        int32 V2 = Triangles[i + 2];
+        const int32 v0 = Triangles[i];
+        const int32 v1 = Triangles[i + 1];
+        const int32 v2 = Triangles[i + 2];
 
-        FVector Edge1 = Vertices[V1] - Vertices[V0];
-        FVector Edge2 = Vertices[V2] - Vertices[V0];
-        FVector FaceNormal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
-        
+        const FVector edge1 = Vertices[v1] - Vertices[v0];
+        const FVector edge2 = Vertices[v2] - Vertices[v0];
+        FVector faceNormal = FVector::CrossProduct(edge1, edge2).GetSafeNormal();
+
         // 确保面法线指向外部
-        // 对于圆环，法线应该指向远离圆环中心的方向
-        FVector FaceCenter = (Vertices[V0] + Vertices[V1] + Vertices[V2]) / 3.0f;
-        FVector ToCenter = FVector(FaceCenter.X, FaceCenter.Y, 0.0f).GetSafeNormal();
+        const FVector faceCenter = (Vertices[v0] + Vertices[v1] + Vertices[v2]) / 3.0f;
+        const FVector toCenter = FVector(faceCenter.X, faceCenter.Y, 0.0f).GetSafeNormal();
         
-        // 如果面法线与指向中心的方向夹角小于90度，则翻转法线
-        if (FVector::DotProduct(FaceNormal, ToCenter) > 0)
+        if (FVector::DotProduct(faceNormal, toCenter) > 0)
         {
-            FaceNormal = -FaceNormal;
+            faceNormal = -faceNormal;
         }
 
-        NewNormals[V0] += FaceNormal;
-        NewNormals[V1] += FaceNormal;
-        NewNormals[V2] += FaceNormal;
+        newNormals[v0] += faceNormal;
+        newNormals[v1] += faceNormal;
+        newNormals[v2] += faceNormal;
     }
 
     // 标准化所有法线
-    for (int32 i = 0; i < NewNormals.Num(); i++)
+    for (int32 i = 0; i < newNormals.Num(); i++)
     {
-        NewNormals[i] = NewNormals[i].GetSafeNormal();
+        newNormals[i] = newNormals[i].GetSafeNormal();
     }
 
     // 根据平滑设置调整法线
-    for (int32 i = 0; i <= MajorSegs; i++)
+    if (!bSmoothCross || !bSmoothVertical)
     {
-        int32 SectionStart = SectionStartIndices[i];
-        
-        for (int32 j = 0; j < MinorSegs; j++)
+        for (int32 majorIndex = 0; majorIndex <= MajorSegs; ++majorIndex)
         {
-            int32 VertexIndex = SectionStart + j;
-            
-            if (!bSmoothCross)
+            for (int32 minorIndex = 0; minorIndex < MinorSegs; ++minorIndex)
             {
-                // 横切面不平滑：使用原始法线（从中心指向顶点）
-                FVector OriginalNormal = (Vertices[VertexIndex] - FVector(
-                    FMath::Cos(i * AngleStep) * MajorRad,
-                    FMath::Sin(i * AngleStep) * MajorRad,
-                    0.0f
-                )).GetSafeNormal();
-                NewNormals[VertexIndex] = OriginalNormal;
-            }
-            
-            if (!bSmoothVertical)
-            {
-                // 竖面不平滑：使用截面法线
-                FVector SectionNormal = FVector(
-                    FMath::Cos(i * AngleStep),
-                    FMath::Sin(i * AngleStep),
-                    0.0f
-                );
-                NewNormals[VertexIndex] = SectionNormal;
+                const int32 vertexIndex = majorIndex * MinorSegs + minorIndex;
+                if (vertexIndex >= Vertices.Num()) continue;
+
+                if (!bSmoothCross)
+                {
+                    // 横切面不平滑：使用截面法线
+                    const float majorAngle = static_cast<float>(majorIndex) * 2.0f * PI / MajorSegs;
+                    const FVector sectionCenter(
+                        FMath::Cos(majorAngle) * MajorRad,
+                        FMath::Sin(majorAngle) * MajorRad,
+                        0.0f
+                    );
+                    const FVector crossNormal = (Vertices[vertexIndex] - sectionCenter).GetSafeNormal();
+                    newNormals[vertexIndex] = crossNormal;
+                }
+
+                if (!bSmoothVertical)
+                {
+                    // 竖面不平滑：使用径向法线
+                    const FVector radialNormal = FVector(
+                        Vertices[vertexIndex].X,
+                        Vertices[vertexIndex].Y,
+                        0.0f
+                    ).GetSafeNormal();
+                    newNormals[vertexIndex] = radialNormal;
+                }
             }
         }
     }
 
-    // 更新法线数组
-    Normals = NewNormals;
-    
-    // 验证法线方向
-    ValidateNormalDirections(Vertices, Normals, SectionStartIndices, MajorRad, MajorSegs, MinorSegs);
+    Normals = newNormals;
 }
 
-// 主要的网格生成函数
-void APolygonTorus::GeneratePolygonTorus(float MajorRad, float MinorRad, int32 MajorSegs, int32 MinorSegs, float Angle, bool bSmoothCross, bool bSmoothVertical)
+// 优化的UV生成
+void APolygonTorus::GenerateUVsOptimized(
+    TArray<FVector2D>& UVs,
+    int32 MajorSegs,
+    int32 MinorSegs,
+    float AngleRad,
+    ETorusUVMode InUVMode)
+{
+    if (!bGenerateUVs)
+    {
+        return;
+    }
+
+    UVs.Empty();
+    const int32 totalVertices = (MajorSegs + 1) * MinorSegs;
+
+    for (int32 majorIndex = 0; majorIndex <= MajorSegs; ++majorIndex)
+    {
+        for (int32 minorIndex = 0; minorIndex < MinorSegs; ++minorIndex)
+        {
+            FVector2D uv;
+
+            switch (InUVMode)
+            {
+            case ETorusUVMode::Standard:
+                uv = FVector2D(
+                    static_cast<float>(majorIndex) / MajorSegs,
+                    static_cast<float>(minorIndex) / MinorSegs
+                );
+                break;
+
+            case ETorusUVMode::Cylindrical:
+                uv = FVector2D(
+                    static_cast<float>(majorIndex) / MajorSegs,
+                    static_cast<float>(minorIndex) / MinorSegs
+                );
+                break;
+
+            case ETorusUVMode::Spherical:
+                uv = FVector2D(
+                    static_cast<float>(majorIndex) / MajorSegs,
+                    static_cast<float>(minorIndex) / MinorSegs
+                );
+                break;
+            }
+
+            UVs.Add(uv);
+        }
+    }
+}
+
+// 优化的主要生成函数
+void APolygonTorus::GenerateOptimizedTorus()
 {
     if (!ProceduralMesh)
     {
@@ -335,128 +752,697 @@ void APolygonTorus::GeneratePolygonTorus(float MajorRad, float MinorRad, int32 M
     // 清除之前的网格
     ProceduralMesh->ClearAllMeshSections();
 
-    // 验证参数
-    ValidateParameters(MajorRad, MinorRad, MajorSegs, MinorSegs, Angle);
+    // 验证和约束参数
+    float majorRad = MajorRadius;
+    float minorRad = MinorRadius;
+    int32 majorSegs = MajorSegments;
+    int32 minorSegs = MinorSegments;
+    float angle = TorusAngle;
+
+    ValidateAndClampParameters(majorRad, minorRad, majorSegs, minorSegs, angle);
 
     // 准备网格数据
-    TArray<FVector> Vertices;
-    TArray<int32> Triangles;
-    TArray<FVector> Normals;
-    TArray<FVector2D> UVs;
-    TArray<FLinearColor> VertexColors;
-    TArray<FProcMeshTangent> Tangents;
+    TArray<FVector> vertices;
+    TArray<int32> triangles;
+    TArray<FVector> normals;
+    TArray<FVector2D> uvs;
+    TArray<FLinearColor> vertexColors;
+    TArray<FProcMeshTangent> tangents;
 
-    // 计算角度步长
-    const float AngleRad = FMath::DegreesToRadians(Angle);
-    const float AngleStep = AngleRad / MajorSegs;
-    const bool bIsFullCircle = FMath::IsNearlyEqual(Angle, 360.0f);
+    const float angleRad = FMath::DegreesToRadians(angle);
+    const bool bIsFullCircle = FMath::IsNearlyEqual(angle, 360.0f);
 
-    // 存储每个截面的顶点起始索引
-    TArray<int32> SectionStartIndices;
+    // 生成优化的顶点
+    GenerateOptimizedVertices(vertices, normals, uvs, tangents,
+                             majorRad, minorRad, majorSegs, minorSegs, angleRad);
 
-    // 生成所有截面的顶点
-    GenerateSectionVertices(Vertices, Normals, UVs, Tangents, SectionStartIndices, 
-                           MajorRad, MinorRad, MajorSegs, MinorSegs, AngleStep);
+    // 生成优化的三角形
+    GenerateOptimizedTriangles(triangles, majorSegs, minorSegs, bIsFullCircle);
 
-    // 生成侧面（连接相邻截面）
-    GenerateSideTriangles(Triangles, SectionStartIndices, MajorSegs, MinorSegs);
-
-    // 生成端面（如果角度小于360度）
+    // 生成端面（如果不是完整圆环）
     if (!bIsFullCircle)
     {
-        GenerateEndCaps(Vertices, Normals, UVs, Tangents, Triangles, 
-                       SectionStartIndices, MajorRad, AngleRad, MajorSegs, MinorSegs);
+        if (bUseCircularCaps)
+        {
+            // 使用圆形端盖
+            GenerateCircularEndCaps(vertices, normals, uvs, tangents, triangles,
+                                   majorRad, minorRad, angleRad, majorSegs, minorSegs, 
+                                   CapSegments, bGenerateStartCap, bGenerateEndCap);
+        }
+        else
+        {
+            // 使用标准端盖
+            GenerateAdvancedEndCaps(vertices, normals, uvs, tangents, triangles,
+                                   majorRad, minorRad, angleRad, majorSegs, minorSegs, 
+                                   this->FillType, bGenerateStartCap, bGenerateEndCap);
+        }
     }
 
-    // 重新计算法线以支持平滑着色
-    if (bSmoothCross || bSmoothVertical)
+    // 重新计算法线
+    CalculateOptimizedNormals(normals, vertices, triangles,
+                             majorRad, minorRad, majorSegs, minorSegs,
+                             bSmoothCrossSection, bSmoothVerticalSection);
+
+    // 重新生成UV（如果需要）
+    if (bGenerateUVs)
     {
-        CalculateSmoothNormals(Normals, Vertices, Triangles, SectionStartIndices,
-                              MajorRad, AngleStep, MajorSegs, MinorSegs,
-                              bSmoothCross, bSmoothVertical);
+        GenerateUVsOptimized(uvs, majorSegs, minorSegs, angleRad, this->UVMode);
     }
-    // 如果两个参数都为false，保持原始法线不变（GeneratePolygonVertices生成的硬边法线）
 
-    // 验证法线方向（仅在调试模式下）
-    #if WITH_EDITOR
-    ValidateNormalDirections(Vertices, Normals, SectionStartIndices, MajorRad, MajorSegs, MinorSegs);
-    #endif
+    // 验证网格拓扑
+    ValidateMeshTopology(vertices, triangles);
+
+    // 记录网格统计信息
+    LogMeshStatistics(vertices, triangles);
 
     // 创建网格
     ProceduralMesh->CreateMeshSection_LinearColor(
-        0, Vertices, Triangles, Normals, UVs, VertexColors, Tangents, true
+        0, vertices, triangles, normals, uvs, vertexColors, tangents, true
     );
-    
-    // 调试信息：输出法线统计
-    if (Vertices.Num() > 0)
+}
+
+// 网格拓扑验证
+void APolygonTorus::ValidateMeshTopology(const TArray<FVector>& Vertices, const TArray<int32>& Triangles)
+{
+    if (Vertices.Num() == 0 || Triangles.Num() == 0)
     {
-        FVector AvgNormal = FVector::ZeroVector;
-        for (const FVector& Normal : Normals)
+        UE_LOG(LogTemp, Warning, TEXT("ValidateMeshTopology: Empty mesh data"));
+        return;
+    }
+
+    // 检查三角形索引是否有效
+    for (int32 i = 0; i < Triangles.Num(); ++i)
+    {
+        if (Triangles[i] < 0 || Triangles[i] >= Vertices.Num())
         {
-            AvgNormal += Normal;
+            UE_LOG(LogTemp, Error, TEXT("Invalid triangle index: %d (vertex count: %d)"), 
+                   Triangles[i], Vertices.Num());
         }
-        AvgNormal = AvgNormal.GetSafeNormal();
-        
-        UE_LOG(LogTemp, Log, TEXT("PolygonTorus: Generated %d vertices, %d triangles, Average Normal: %s"), 
-               Vertices.Num(), Triangles.Num() / 3, *AvgNormal.ToString());
+    }
+
+    // 检查三角形数量是否为3的倍数
+    if (Triangles.Num() % 3 != 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Triangle count is not divisible by 3: %d"), Triangles.Num());
     }
 }
 
-// 验证法线方向
-void APolygonTorus::ValidateNormalDirections(
-    const TArray<FVector>& Vertices,
-    const TArray<FVector>& Normals,
-    const TArray<int32>& SectionStartIndices,
-    float MajorRad,
-    int32 MajorSegs,
-    int32 MinorSegs)
+// 记录网格统计信息
+void APolygonTorus::LogMeshStatistics(const TArray<FVector>& Vertices, const TArray<int32>& Triangles)
 {
-    if (Vertices.Num() != Normals.Num() || Vertices.Num() == 0)
+    if (Vertices.Num() > 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("ValidateNormalDirections: Invalid vertex/normal count"));
+        UE_LOG(LogTemp, Log, TEXT("PolygonTorus: Generated %d vertices, %d triangles"), 
+               Vertices.Num(), Triangles.Num() / 3);
+    }
+}
+
+// 高级光滑控制函数
+void APolygonTorus::GenerateTorusWithSmoothing(ETorusSmoothMode InSmoothMode, float InSmoothingAngle)
+{
+    if (!ProceduralMesh)
+    {
+        UE_LOG(LogTemp, Error, TEXT("ProceduralMeshComponent is null!"));
         return;
     }
-    
-    int32 IncorrectNormals = 0;
-    int32 TotalChecked = 0;
-    
-    // 检查每个顶点的法线方向
-    for (int32 i = 0; i <= MajorSegs; i++)
+
+    // 清除之前的网格
+    ProceduralMesh->ClearAllMeshSections();
+
+    // 验证和约束参数
+    float majorRad = MajorRadius;
+    float minorRad = MinorRadius;
+    int32 majorSegs = MajorSegments;
+    int32 minorSegs = MinorSegments;
+    float angle = TorusAngle;
+
+    ValidateAndClampParameters(majorRad, minorRad, majorSegs, minorSegs, angle);
+
+    // 准备网格数据
+    TArray<FVector> vertices;
+    TArray<int32> triangles;
+    TArray<FVector> normals;
+    TArray<FVector2D> uvs;
+    TArray<FLinearColor> vertexColors;
+    TArray<FProcMeshTangent> tangents;
+    TArray<int32> smoothGroups;
+    TArray<bool> hardEdges;
+
+    const float angleRad = FMath::DegreesToRadians(angle);
+    const bool bIsFullCircle = FMath::IsNearlyEqual(angle, 360.0f);
+
+    // 生成优化的顶点
+    GenerateOptimizedVertices(vertices, normals, uvs, tangents,
+                             majorRad, minorRad, majorSegs, minorSegs, angleRad);
+
+    // 生成优化的三角形
+    GenerateOptimizedTriangles(triangles, majorSegs, minorSegs, bIsFullCircle);
+
+    // 生成端面（如果不是完整圆环）
+    if (!bIsFullCircle)
     {
-        if (i >= SectionStartIndices.Num()) break;
-        
-        int32 SectionStart = SectionStartIndices[i];
-        for (int32 j = 0; j < MinorSegs; j++)
+        if (bUseCircularCaps)
         {
-            int32 VertexIndex = SectionStart + j;
-            if (VertexIndex >= Vertices.Num()) break;
+            // 使用圆形端盖
+            GenerateCircularEndCaps(vertices, normals, uvs, tangents, triangles,
+                                   majorRad, minorRad, angleRad, majorSegs, minorSegs, 
+                                   CapSegments, bGenerateStartCap, bGenerateEndCap);
+        }
+        else
+        {
+            // 使用标准端盖
+            GenerateAdvancedEndCaps(vertices, normals, uvs, tangents, triangles,
+                                   majorRad, minorRad, angleRad, majorSegs, minorSegs, 
+                                   this->FillType, bGenerateStartCap, bGenerateEndCap);
+        }
+    }
+
+    // 计算高级光滑
+    CalculateAdvancedSmoothing(normals, smoothGroups, hardEdges, vertices, triangles,
+                              majorRad, minorRad, majorSegs, minorSegs, InSmoothMode, InSmoothingAngle);
+
+    // 重新生成UV（如果需要）
+    if (bGenerateUVs)
+    {
+        GenerateUVsOptimized(uvs, majorSegs, minorSegs, angleRad, this->UVMode);
+    }
+
+    // 验证网格拓扑
+    ValidateMeshTopology(vertices, triangles);
+
+    // 记录网格统计信息
+    LogMeshStatistics(vertices, triangles);
+
+    // 创建网格（注意：UE的ProceduralMeshComponent不直接支持光滑组和硬边，这里我们通过法线来实现）
+    ProceduralMesh->CreateMeshSection_LinearColor(
+        0, vertices, triangles, normals, uvs, vertexColors, tangents, true
+    );
+
+    // 输出光滑信息
+    UE_LOG(LogTemp, Log, TEXT("PolygonTorus: Applied smoothing mode %d with angle threshold %.1f degrees"), 
+           static_cast<int32>(InSmoothMode), InSmoothingAngle);
+}
+
+// 高级光滑计算
+void APolygonTorus::CalculateAdvancedSmoothing(
+    TArray<FVector>& Normals,
+    TArray<int32>& SmoothGroups,
+    TArray<bool>& HardEdges,
+    const TArray<FVector>& Vertices,
+    const TArray<int32>& Triangles,
+    float MajorRad,
+    float MinorRad,
+    int32 MajorSegs,
+    int32 MinorSegs,
+    ETorusSmoothMode InSmoothMode,
+    float InSmoothingAngle)
+{
+    if (!bGenerateNormals)
+    {
+        return;
+    }
+
+    // 初始化数组
+    SmoothGroups.SetNum(Vertices.Num());
+    HardEdges.SetNum(Triangles.Num() / 3);
+    
+    // 生成光滑组
+    if (bGenerateSmoothGroups)
+    {
+        GenerateSmoothGroups(SmoothGroups, Vertices, Triangles, MajorSegs, MinorSegs, InSmoothMode);
+    }
+
+    // 生成硬边标记
+    if (bGenerateHardEdges)
+    {
+        GenerateHardEdges(HardEdges, Vertices, Triangles, MajorSegs, MinorSegs, InSmoothMode, InSmoothingAngle);
+    }
+
+    // 根据光滑模式计算法线
+    TArray<FVector> newNormals;
+    newNormals.SetNum(Vertices.Num());
+    
+    // 初始化法线为零向量
+    for (int32 i = 0; i < newNormals.Num(); i++)
+    {
+        newNormals[i] = FVector::ZeroVector;
+    }
+
+    // 计算面法线并累加到顶点
+    for (int32 i = 0; i < Triangles.Num(); i += 3)
+    {
+        const int32 v0 = Triangles[i];
+        const int32 v1 = Triangles[i + 1];
+        const int32 v2 = Triangles[i + 2];
+
+        const FVector edge1 = Vertices[v1] - Vertices[v0];
+        const FVector edge2 = Vertices[v2] - Vertices[v0];
+        FVector faceNormal = FVector::CrossProduct(edge1, edge2).GetSafeNormal();
+
+        // 确保面法线指向外部
+        const FVector faceCenter = (Vertices[v0] + Vertices[v1] + Vertices[v2]) / 3.0f;
+        const FVector toCenter = FVector(faceCenter.X, faceCenter.Y, 0.0f).GetSafeNormal();
+        
+        if (FVector::DotProduct(faceNormal, toCenter) > 0)
+        {
+            faceNormal = -faceNormal;
+        }
+
+        // 根据光滑模式决定是否累加法线
+        bool bShouldSmooth = false;
+        switch (InSmoothMode)
+        {
+        case ETorusSmoothMode::None:
+            bShouldSmooth = false;
+            break;
+        case ETorusSmoothMode::Cross:
+            bShouldSmooth = true; // 横切面光滑
+            break;
+        case ETorusSmoothMode::Vertical:
+            bShouldSmooth = true; // 竖面光滑
+            break;
+        case ETorusSmoothMode::Both:
+            bShouldSmooth = true; // 两个方向都光滑
+            break;
+        case ETorusSmoothMode::Auto:
+            // 自动检测：根据角度阈值决定
+            const float angleRad = FMath::DegreesToRadians(InSmoothingAngle);
+            const float cosThreshold = FMath::Cos(angleRad);
             
-            const FVector& Vertex = Vertices[VertexIndex];
-            const FVector& Normal = Normals[VertexIndex];
+            // 检查相邻面的角度
+            FVector avgNormal = faceNormal;
+            int32 connectedFaces = 1;
             
-            // 计算从圆环中心到顶点的方向
-            FVector ToCenter = FVector(Vertex.X, Vertex.Y, 0.0f).GetSafeNormal();
-            
-            // 法线应该指向远离中心的方向
-            float DotProduct = FVector::DotProduct(Normal, ToCenter);
-            
-            TotalChecked++;
-            if (DotProduct > 0.1f) // 允许一些误差
+            // 这里简化处理，实际应该检查所有相邻面
+            bShouldSmooth = true; // 默认光滑
+            break;
+        }
+
+        if (bShouldSmooth)
+        {
+            newNormals[v0] += faceNormal;
+            newNormals[v1] += faceNormal;
+            newNormals[v2] += faceNormal;
+        }
+        else
+        {
+            // 硬边：每个顶点使用面法线
+            newNormals[v0] = faceNormal;
+            newNormals[v1] = faceNormal;
+            newNormals[v2] = faceNormal;
+        }
+    }
+
+    // 标准化所有法线
+    for (int32 i = 0; i < newNormals.Num(); i++)
+    {
+        newNormals[i] = newNormals[i].GetSafeNormal();
+    }
+
+    // 根据光滑模式进行特殊处理
+    if (InSmoothMode != ETorusSmoothMode::None)
+    {
+        for (int32 majorIndex = 0; majorIndex <= MajorSegs; ++majorIndex)
+        {
+            for (int32 minorIndex = 0; minorIndex < MinorSegs; ++minorIndex)
             {
-                IncorrectNormals++;
-                UE_LOG(LogTemp, Warning, TEXT("Vertex %d: Normal points inward (Dot: %.3f)"), 
-                       VertexIndex, DotProduct);
+                const int32 vertexIndex = majorIndex * MinorSegs + minorIndex;
+                if (vertexIndex >= Vertices.Num()) continue;
+
+                FVector finalNormal = newNormals[vertexIndex];
+
+                // 根据光滑模式调整法线
+                switch (InSmoothMode)
+                {
+                case ETorusSmoothMode::Cross:
+                    // 只对横切面进行光滑处理
+                    if (bSmoothCrossSection)
+                    {
+                        const float majorAngle = static_cast<float>(majorIndex) * 2.0f * PI / MajorSegs;
+                        const FVector sectionCenter(
+                            FMath::Cos(majorAngle) * MajorRad,
+                            FMath::Sin(majorAngle) * MajorRad,
+                            0.0f
+                        );
+                        const FVector crossNormal = (Vertices[vertexIndex] - sectionCenter).GetSafeNormal();
+                        finalNormal = crossNormal;
+                    }
+                    break;
+
+                case ETorusSmoothMode::Vertical:
+                    // 只对竖面进行光滑处理
+                    if (bSmoothVerticalSection)
+                    {
+                        const FVector radialNormal = FVector(
+                            Vertices[vertexIndex].X,
+                            Vertices[vertexIndex].Y,
+                            0.0f
+                        ).GetSafeNormal();
+                        finalNormal = radialNormal;
+                    }
+                    break;
+
+                case ETorusSmoothMode::Both:
+                    // 两个方向都光滑，使用计算出的平滑法线
+                    break;
+
+                case ETorusSmoothMode::Auto:
+                    // 自动模式：根据角度阈值决定
+                    break;
+                }
+
+                newNormals[vertexIndex] = finalNormal;
             }
         }
     }
-    
-    if (IncorrectNormals > 0)
+
+    Normals = newNormals;
+}
+
+// 生成光滑组
+void APolygonTorus::GenerateSmoothGroups(
+    TArray<int32>& SmoothGroups,
+    const TArray<FVector>& Vertices,
+    const TArray<int32>& Triangles,
+    int32 MajorSegs,
+    int32 MinorSegs,
+    ETorusSmoothMode InSmoothMode)
+{
+    // 初始化所有顶点为同一光滑组
+    for (int32 i = 0; i < SmoothGroups.Num(); i++)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Found %d incorrect normals out of %d checked vertices"), 
-               IncorrectNormals, TotalChecked);
+        SmoothGroups[i] = 0;
+    }
+
+    // 根据光滑模式分配不同的光滑组
+    switch (InSmoothMode)
+    {
+    case ETorusSmoothMode::None:
+        // 每个面一个光滑组
+        for (int32 i = 0; i < Triangles.Num(); i += 3)
+        {
+            const int32 groupId = i / 3;
+            SmoothGroups[Triangles[i]] = groupId;
+            SmoothGroups[Triangles[i + 1]] = groupId;
+            SmoothGroups[Triangles[i + 2]] = groupId;
+        }
+        break;
+
+    case ETorusSmoothMode::Cross:
+        // 横切面光滑：每个横截面一个光滑组
+        for (int32 majorIndex = 0; majorIndex <= MajorSegs; ++majorIndex)
+        {
+            const int32 groupId = majorIndex;
+            for (int32 minorIndex = 0; minorIndex < MinorSegs; ++minorIndex)
+            {
+                const int32 vertexIndex = majorIndex * MinorSegs + minorIndex;
+                if (vertexIndex < SmoothGroups.Num())
+                {
+                    SmoothGroups[vertexIndex] = groupId;
+                }
+            }
+        }
+        break;
+
+    case ETorusSmoothMode::Vertical:
+        // 竖面光滑：每个竖截面一个光滑组
+        for (int32 minorIndex = 0; minorIndex < MinorSegs; ++minorIndex)
+        {
+            const int32 groupId = minorIndex;
+            for (int32 majorIndex = 0; majorIndex <= MajorSegs; ++majorIndex)
+            {
+                const int32 vertexIndex = majorIndex * MinorSegs + minorIndex;
+                if (vertexIndex < SmoothGroups.Num())
+                {
+                    SmoothGroups[vertexIndex] = groupId;
+                }
+            }
+        }
+        break;
+
+    case ETorusSmoothMode::Both:
+        // 两个方向都光滑：所有顶点一个光滑组
+        for (int32 i = 0; i < SmoothGroups.Num(); i++)
+        {
+            SmoothGroups[i] = 0;
+        }
+        break;
+
+    case ETorusSmoothMode::Auto:
+        // 自动模式：根据几何特征分配光滑组
+        // 这里简化处理，实际应该根据角度和曲率来分配
+        for (int32 i = 0; i < SmoothGroups.Num(); i++)
+        {
+            SmoothGroups[i] = 0;
+        }
+        break;
+    }
+}
+
+// 生成硬边标记
+void APolygonTorus::GenerateHardEdges(
+    TArray<bool>& HardEdges,
+    const TArray<FVector>& Vertices,
+    const TArray<int32>& Triangles,
+    int32 MajorSegs,
+    int32 MinorSegs,
+    ETorusSmoothMode InSmoothMode,
+    float InSmoothingAngle)
+{
+    const float angleThreshold = FMath::DegreesToRadians(InSmoothingAngle);
+    const float cosThreshold = FMath::Cos(angleThreshold);
+
+    // 初始化所有边为软边
+    for (int32 i = 0; i < HardEdges.Num(); i++)
+    {
+        HardEdges[i] = false;
+    }
+
+    // 根据光滑模式标记硬边
+    switch (InSmoothMode)
+    {
+    case ETorusSmoothMode::None:
+        // 所有边都是硬边
+        for (int32 i = 0; i < HardEdges.Num(); i++)
+        {
+            HardEdges[i] = true;
+        }
+        break;
+
+    case ETorusSmoothMode::Cross:
+        // 横切面边界是硬边
+        for (int32 majorIndex = 0; majorIndex < MajorSegs; ++majorIndex)
+        {
+            for (int32 minorIndex = 0; minorIndex < MinorSegs; ++minorIndex)
+            {
+                const int32 triangleIndex = (majorIndex * MinorSegs + minorIndex) * 2; // 每个四边形产生2个三角形
+                if (triangleIndex < HardEdges.Num())
+                {
+                    HardEdges[triangleIndex] = true;
+                    if (triangleIndex + 1 < HardEdges.Num())
+                    {
+                        HardEdges[triangleIndex + 1] = true;
+                    }
+                }
+            }
+        }
+        break;
+
+    case ETorusSmoothMode::Vertical:
+        // 竖面边界是硬边
+        for (int32 majorIndex = 0; majorIndex < MajorSegs; ++majorIndex)
+        {
+            for (int32 minorIndex = 0; minorIndex < MinorSegs; ++minorIndex)
+            {
+                const int32 triangleIndex = (majorIndex * MinorSegs + minorIndex) * 2;
+                if (triangleIndex < HardEdges.Num())
+                {
+                    HardEdges[triangleIndex] = true;
+                    if (triangleIndex + 1 < HardEdges.Num())
+                    {
+                        HardEdges[triangleIndex + 1] = true;
+                    }
+                }
+            }
+        }
+        break;
+
+    case ETorusSmoothMode::Both:
+        // 根据角度阈值决定硬边
+        for (int32 i = 0; i < Triangles.Num(); i += 3)
+        {
+            const int32 triangleIndex = i / 3;
+            if (triangleIndex < HardEdges.Num())
+            {
+                // 计算面法线
+                const int32 v0 = Triangles[i];
+                const int32 v1 = Triangles[i + 1];
+                const int32 v2 = Triangles[i + 2];
+
+                const FVector edge1 = Vertices[v1] - Vertices[v0];
+                const FVector edge2 = Vertices[v2] - Vertices[v0];
+                const FVector faceNormal = FVector::CrossProduct(edge1, edge2).GetSafeNormal();
+
+                // 检查与相邻面的角度（简化处理）
+                HardEdges[triangleIndex] = false; // 默认软边
+            }
+        }
+        break;
+
+    case ETorusSmoothMode::Auto:
+        // 自动检测硬边
+        for (int32 i = 0; i < Triangles.Num(); i += 3)
+        {
+            const int32 triangleIndex = i / 3;
+            if (triangleIndex < HardEdges.Num())
+            {
+                // 这里可以实现更复杂的自动检测逻辑
+                HardEdges[triangleIndex] = false;
+            }
+        }
+        break;
+    }
+}
+
+// 实现 GeneratePolygonTorus 函数
+void APolygonTorus::GeneratePolygonTorus(float MajorRad, float MinorRad, int32 MajorSegs, int32 MinorSegs, 
+                                         float Angle, bool bSmoothCross, bool bSmoothVertical)
+{
+    // 验证和约束参数
+    ValidateAndClampParameters(MajorRad, MinorRad, MajorSegs, MinorSegs, Angle);
+    
+    // 将角度转换为弧度
+    const float AngleRad = FMath::DegreesToRadians(Angle);
+    
+    // 清空现有网格数据
+    TArray<FVector> Vertices;
+    TArray<FVector> Normals;
+    TArray<FVector2D> UVs;
+    TArray<FProcMeshTangent> Tangents;
+    TArray<int32> Triangles;
+    
+    // 生成优化的顶点
+    GenerateOptimizedVertices(Vertices, Normals, UVs, Tangents, MajorRad, MinorRad, MajorSegs, MinorSegs, AngleRad);
+    
+    // 生成三角形
+    GenerateOptimizedTriangles(Triangles, MajorSegs, MinorSegs, FMath::IsNearlyEqual(Angle, 360.0f));
+    
+    // 生成端面（如果需要）
+    if (!FMath::IsNearlyEqual(Angle, 360.0f))
+    {
+        if (bUseCircularCaps)
+        {
+            // 使用圆形端盖
+            GenerateCircularEndCaps(Vertices, Normals, UVs, Tangents, Triangles,
+                                   MajorRad, MinorRad, AngleRad, MajorSegs, MinorSegs, 
+                                   CapSegments, bGenerateStartCap, bGenerateEndCap);
+        }
+        else
+        {
+            // 使用标准端盖
+            GenerateAdvancedEndCaps(Vertices, Normals, UVs, Tangents, Triangles,
+                                   MajorRad, MinorRad, AngleRad, MajorSegs, MinorSegs, 
+                                   FillType, bGenerateStartCap, bGenerateEndCap);
+        }
+    }
+    
+    // 计算法线
+    CalculateOptimizedNormals(Normals, Vertices, Triangles, MajorRad, MinorRad, MajorSegs, MinorSegs, bSmoothCross, bSmoothVertical);
+    
+    // 生成UV坐标（如果需要）
+    if (bGenerateUVs)
+    {
+        GenerateUVsOptimized(UVs, MajorSegs, MinorSegs, AngleRad, UVMode);
+    }
+    
+    // 验证网格拓扑
+    ValidateMeshTopology(Vertices, Triangles);
+    
+    // 记录网格统计信息
+    LogMeshStatistics(Vertices, Triangles);
+    
+    // 创建网格
+    ProceduralMesh->CreateMeshSection(0, Vertices, Triangles, Normals, UVs, TArray<FColor>(), Tangents, true);
+    
+    // 设置碰撞
+    ProceduralMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+}
+
+// 端盖生成函数
+void APolygonTorus::GenerateEndCapsOnly()
+{
+    if (!ProceduralMesh)
+    {
+        UE_LOG(LogTemp, Error, TEXT("ProceduralMeshComponent is null!"));
+        return;
+    }
+
+    // 验证和约束参数
+    float majorRad = MajorRadius;
+    float minorRad = MinorRadius;
+    int32 majorSegs = MajorSegments;
+    int32 minorSegs = MinorSegments;
+    float angle = TorusAngle;
+
+    ValidateAndClampParameters(majorRad, minorRad, majorSegs, minorSegs, angle);
+
+    // 准备网格数据
+    TArray<FVector> vertices;
+    TArray<int32> triangles;
+    TArray<FVector> normals;
+    TArray<FVector2D> uvs;
+    TArray<FLinearColor> vertexColors;
+    TArray<FProcMeshTangent> tangents;
+
+    const float angleRad = FMath::DegreesToRadians(angle);
+    const bool bIsFullCircle = FMath::IsNearlyEqual(angle, 360.0f);
+
+    if (!bIsFullCircle)
+    {
+        if (bUseCircularCaps)
+        {
+            // 使用圆形端盖
+            GenerateCircularEndCaps(vertices, normals, uvs, tangents, triangles,
+                                   majorRad, minorRad, angleRad, majorSegs, minorSegs, 
+                                   CapSegments, bGenerateStartCap, bGenerateEndCap);
+        }
+        else
+        {
+            // 使用标准端盖
+            GenerateAdvancedEndCaps(vertices, normals, uvs, tangents, triangles,
+                                   majorRad, minorRad, angleRad, majorSegs, minorSegs, 
+                                   this->FillType, bGenerateStartCap, bGenerateEndCap);
+        }
+
+        // 验证网格拓扑
+        ValidateMeshTopology(vertices, triangles);
+
+        // 记录网格统计信息
+        LogMeshStatistics(vertices, triangles);
+
+        // 创建端盖网格
+        ProceduralMesh->CreateMeshSection_LinearColor(
+            1, vertices, triangles, normals, uvs, vertexColors, tangents, true
+        );
     }
     else
     {
-        UE_LOG(LogTemp, Log, TEXT("All %d normals are correctly oriented"), TotalChecked);
+        UE_LOG(LogTemp, Warning, TEXT("GenerateEndCapsOnly: Full circle torus doesn't need end caps"));
     }
+}
+
+// 重新生成端盖
+void APolygonTorus::RegenerateEndCaps()
+{
+    if (!ProceduralMesh)
+    {
+        UE_LOG(LogTemp, Error, TEXT("ProceduralMeshComponent is null!"));
+        return;
+    }
+
+    // 清除现有的端盖网格
+    ProceduralMesh->ClearMeshSection(1);
+
+    // 重新生成端盖
+    GenerateEndCapsOnly();
 }
