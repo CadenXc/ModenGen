@@ -713,7 +713,14 @@ void AFrustum::CreateEndCapTriangles(float Angle, const FVector& Normal, bool Is
         const int32 V2 = OrderedVertices[i + 1];
         
         // 创建三角形：V1 -> V2 -> 中心点
-        AddTriangle(V1, V2, CenterVertex, 0);
+        if (IsStart)
+        {
+			AddTriangle(V1, V2, CenterVertex, 0);
+        }
+        else
+        {
+			AddTriangle(V2, V1, CenterVertex, 0);
+        }
     }
 }
 
