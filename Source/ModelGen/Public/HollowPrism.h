@@ -76,6 +76,10 @@ struct FPrismParameters
     /** 倒角分段数 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Chamfer", meta = (ClampMin = "1"))
     int32 ChamferSections = 4;
+
+    /** 是否使用三角形方法生成顶底面 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Prism")
+    bool bUseTriangleMethod = false;
 };
 
 UCLASS()
@@ -122,8 +126,17 @@ private:
     /** 生成顶部倒角几何 */
     void GenerateTopChamferGeometry(FMeshSection& Section, float StartZ);
 
-    /** 生成底部倒角几何 */
-    void GenerateBottomChamferGeometry(FMeshSection& Section, float StartZ);
+    /** 生成顶部内环倒角 */
+    void GenerateTopInnerChamfer(FMeshSection& Section, float HalfHeight);
+
+    /** 生成顶部外环倒角 */
+    void GenerateTopOuterChamfer(FMeshSection& Section, float HalfHeight);
+
+    /** 生成底部内环倒角 */
+    void GenerateBottomInnerChamfer(FMeshSection& Section, float HalfHeight);
+
+    /** 生成底部外环倒角 */
+    void GenerateBottomOuterChamfer(FMeshSection& Section, float HalfHeight);
 
     /** 生成端盖 */
     void GenerateEndCaps(FMeshSection& Section);

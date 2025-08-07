@@ -88,10 +88,21 @@ void AHollowPrism::GenerateGeometry()
 
     MeshData.Reserve(VertexCountEstimate, TriangleCountEstimate * 3);
 
-    // 生成基础几何
-    GenerateSideWalls(MeshData);
-    GenerateTopCapWithQuads(MeshData);
-    GenerateBottomCapWithQuads(MeshData);
+	GenerateSideWalls(MeshData);
+	GenerateTopCapWithQuads(MeshData);
+	GenerateBottomCapWithQuads(MeshData);
+
+    // 生成倒角几何
+    if (Parameters.ChamferRadius > 0.0f)
+    {
+        const float HalfHeight = Parameters.Height / 2.0f;
+        
+        // 分别生成内外倒角
+        GenerateTopInnerChamfer(MeshData, HalfHeight);
+        GenerateTopOuterChamfer(MeshData, HalfHeight);
+        GenerateBottomInnerChamfer(MeshData, HalfHeight);
+        GenerateBottomOuterChamfer(MeshData, HalfHeight);
+    }
 
     if (Parameters.ArcAngle < 360.0f - KINDA_SMALL_NUMBER)
     {
@@ -302,18 +313,282 @@ void AHollowPrism::GenerateBottomCapWithQuads(FMeshSection& Section)
     }
 }
 
-// 生成顶部倒角几何
-void AHollowPrism::GenerateTopChamferGeometry(FMeshSection& Section, float StartZ)
+
+
+// 生成顶部内环倒角
+void AHollowPrism::GenerateTopInnerChamfer(FMeshSection& Section, float HalfHeight)
 {
-    // 暂时不实现倒角几何生成，保持标准几何
-    // 这个方法保留用于将来的倒角功能实现
+    const float ChamferRadius = Parameters.ChamferRadius;
+    const int32 ChamferSections = Parameters.ChamferSections;
+    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.Sides;
+
+    if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
+
+    TArray<int32> PrevRing;
+
+    for (int32 i = 0; i <= ChamferSections; ++i)
+    {
+        const float alpha = static_cast<float>(i) / ChamferSections;
+
+        // 内环倒角：从内半径开始，向外扩展
+        const float StartRadius = Parameters.InnerRadius;
+        const float EndRadius = Parameters.InnerRadius + ChamferRadius;
+        const float CurrentRadius = FMath::Lerp(StartRadius, EndRadius, alpha);
+        const float CurrentZ = FMath::Lerp(HalfHeight - ChamferRadius, HalfHeight, alpha);
+
+        TArray<int32> CurrentRing;
+        CurrentRing.Reserve(Parameters.Sides + 1);
+
+        for (int32 s = 0; s <= Parameters.Sides; ++s)
+        {
+            const float angle = s * AngleStep;
+
+            const FVector Position = FVector(
+                CurrentRadius * FMath::Cos(angle),
+                CurrentRadius * FMath::Sin(angle),
+                CurrentZ
+            );
+
+            // 内环法线：指向内部（负径向方向）
+            const FVector RadialDirection = FVector(FMath::Cos(angle), FMath::Sin(angle), 0.0f);
+            const FVector TopNormal = FVector(0, 0, 1.0f);
+            FVector Normal = FMath::Lerp(-RadialDirection, TopNormal, alpha).GetSafeNormal();
+
+            // 确保法线指向内部
+            if (FVector::DotProduct(Normal, RadialDirection) > 0)
+            {
+                Normal = -Normal;
+            }
+
+            const float U = static_cast<float>(s) / Parameters.Sides;
+            const float V = (CurrentZ + HalfHeight) / Parameters.Height;
+
+            CurrentRing.Add(AddVertex(Section, Position, Normal, FVector2D(U, V)));
+        }
+
+        // 连接相邻环
+        if (i > 0 && PrevRing.Num() > 0)
+        {
+            for (int32 s = 0; s < Parameters.Sides; ++s)
+            {
+                const int32 V00 = PrevRing[s];
+                const int32 V10 = CurrentRing[s];
+                const int32 V01 = PrevRing[s + 1];
+                const int32 V11 = CurrentRing[s + 1];
+                
+                AddQuad(Section, V00, V01, V11, V10);
+            }
+        }
+
+        PrevRing = CurrentRing;
+    }
 }
 
-// 生成底部倒角几何
-void AHollowPrism::GenerateBottomChamferGeometry(FMeshSection& Section, float StartZ)
+// 生成顶部外环倒角
+void AHollowPrism::GenerateTopOuterChamfer(FMeshSection& Section, float HalfHeight)
 {
-    // 暂时不实现倒角几何生成，保持标准几何
-    // 这个方法保留用于将来的倒角功能实现
+    const float ChamferRadius = Parameters.ChamferRadius;
+    const int32 ChamferSections = Parameters.ChamferSections;
+    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.Sides;
+
+    if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
+
+    TArray<int32> PrevRing;
+
+    for (int32 i = 0; i <= ChamferSections; ++i)
+    {
+        const float alpha = static_cast<float>(i) / ChamferSections;
+
+        // 外环倒角：从外半径开始，向内收缩
+        const float StartRadius = Parameters.OuterRadius;
+        const float EndRadius = Parameters.OuterRadius - ChamferRadius;
+        const float CurrentRadius = FMath::Lerp(StartRadius, EndRadius, alpha);
+        const float CurrentZ = FMath::Lerp(HalfHeight - ChamferRadius, HalfHeight, alpha);
+
+        TArray<int32> CurrentRing;
+        CurrentRing.Reserve(Parameters.Sides + 1);
+
+        for (int32 s = 0; s <= Parameters.Sides; ++s)
+        {
+            const float angle = s * AngleStep;
+
+            const FVector Position = FVector(
+                CurrentRadius * FMath::Cos(angle),
+                CurrentRadius * FMath::Sin(angle),
+                CurrentZ
+            );
+
+            // 外环法线：指向外部（正径向方向）
+            const FVector RadialDirection = FVector(FMath::Cos(angle), FMath::Sin(angle), 0.0f);
+            const FVector TopNormal = FVector(0, 0, 1.0f);
+            FVector Normal = FMath::Lerp(RadialDirection, TopNormal, alpha).GetSafeNormal();
+
+            // 确保法线指向外部
+            if (FVector::DotProduct(Normal, RadialDirection) < 0)
+            {
+                Normal = -Normal;
+            }
+
+            const float U = static_cast<float>(s) / Parameters.Sides;
+            const float V = (CurrentZ + HalfHeight) / Parameters.Height;
+
+            CurrentRing.Add(AddVertex(Section, Position, Normal, FVector2D(U, V)));
+        }
+
+        // 连接相邻环
+        if (i > 0 && PrevRing.Num() > 0)
+        {
+            for (int32 s = 0; s < Parameters.Sides; ++s)
+            {
+                const int32 V00 = PrevRing[s];
+                const int32 V10 = CurrentRing[s];
+                const int32 V01 = PrevRing[s + 1];
+                const int32 V11 = CurrentRing[s + 1];
+                
+                AddQuad(Section, V00, V10, V11, V01);
+            }
+        }
+
+        PrevRing = CurrentRing;
+    }
+}
+
+// 生成底部内环倒角
+void AHollowPrism::GenerateBottomInnerChamfer(FMeshSection& Section, float HalfHeight)
+{
+    const float ChamferRadius = Parameters.ChamferRadius;
+    const int32 ChamferSections = Parameters.ChamferSections;
+    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.Sides;
+
+    if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
+
+    TArray<int32> PrevRing;
+
+    for (int32 i = 0; i <= ChamferSections; ++i)
+    {
+        const float alpha = static_cast<float>(i) / ChamferSections;
+
+        // 内环倒角：从内半径开始，向外扩展
+        const float StartRadius = Parameters.InnerRadius;
+        const float EndRadius = Parameters.InnerRadius + ChamferRadius;
+        const float CurrentRadius = FMath::Lerp(StartRadius, EndRadius, alpha);
+        const float CurrentZ = FMath::Lerp(-HalfHeight + ChamferRadius, -HalfHeight, alpha);
+
+        TArray<int32> CurrentRing;
+        CurrentRing.Reserve(Parameters.Sides + 1);
+
+        for (int32 s = 0; s <= Parameters.Sides; ++s)
+        {
+            const float angle = s * AngleStep;
+
+            const FVector Position = FVector(
+                CurrentRadius * FMath::Cos(angle),
+                CurrentRadius * FMath::Sin(angle),
+                CurrentZ
+            );
+
+            // 内环法线：指向内部（负径向方向）
+            const FVector RadialDirection = FVector(FMath::Cos(angle), FMath::Sin(angle), 0.0f);
+            const FVector BottomNormal = FVector(0, 0, -1.0f);
+            FVector Normal = FMath::Lerp(-RadialDirection, BottomNormal, alpha).GetSafeNormal();
+
+            // 确保法线指向内部
+            if (FVector::DotProduct(Normal, RadialDirection) > 0)
+            {
+                Normal = -Normal;
+            }
+
+            const float U = static_cast<float>(s) / Parameters.Sides;
+            const float V = (CurrentZ + HalfHeight) / Parameters.Height;
+
+            CurrentRing.Add(AddVertex(Section, Position, Normal, FVector2D(U, V)));
+        }
+
+        // 连接相邻环
+        if (i > 0 && PrevRing.Num() > 0)
+        {
+            for (int32 s = 0; s < Parameters.Sides; ++s)
+            {
+                const int32 V00 = PrevRing[s];
+                const int32 V10 = CurrentRing[s];
+                const int32 V01 = PrevRing[s + 1];
+                const int32 V11 = CurrentRing[s + 1];
+                
+                AddQuad(Section, V00, V10, V11, V01);
+            }
+        }
+
+        PrevRing = CurrentRing;
+    }
+}
+
+// 生成底部外环倒角
+void AHollowPrism::GenerateBottomOuterChamfer(FMeshSection& Section, float HalfHeight)
+{
+    const float ChamferRadius = Parameters.ChamferRadius;
+    const int32 ChamferSections = Parameters.ChamferSections;
+    const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.Sides;
+
+    if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
+
+    TArray<int32> PrevRing;
+
+    for (int32 i = 0; i <= ChamferSections; ++i)
+    {
+        const float alpha = static_cast<float>(i) / ChamferSections;
+
+        // 外环倒角：从外半径开始，向内收缩
+        const float StartRadius = Parameters.OuterRadius;
+        const float EndRadius = Parameters.OuterRadius - ChamferRadius;
+        const float CurrentRadius = FMath::Lerp(StartRadius, EndRadius, alpha);
+        const float CurrentZ = FMath::Lerp(-HalfHeight + ChamferRadius, -HalfHeight, alpha);
+
+        TArray<int32> CurrentRing;
+        CurrentRing.Reserve(Parameters.Sides + 1);
+
+        for (int32 s = 0; s <= Parameters.Sides; ++s)
+        {
+            const float angle = s * AngleStep;
+
+            const FVector Position = FVector(
+                CurrentRadius * FMath::Cos(angle),
+                CurrentRadius * FMath::Sin(angle),
+                CurrentZ
+            );
+
+            // 外环法线：指向外部（正径向方向）
+            const FVector RadialDirection = FVector(FMath::Cos(angle), FMath::Sin(angle), 0.0f);
+            const FVector BottomNormal = FVector(0, 0, -1.0f);
+            FVector Normal = FMath::Lerp(RadialDirection, BottomNormal, alpha).GetSafeNormal();
+
+            // 确保法线指向外部
+            if (FVector::DotProduct(Normal, RadialDirection) < 0)
+            {
+                Normal = -Normal;
+            }
+
+            const float U = static_cast<float>(s) / Parameters.Sides;
+            const float V = (CurrentZ + HalfHeight) / Parameters.Height;
+
+            CurrentRing.Add(AddVertex(Section, Position, Normal, FVector2D(U, V)));
+        }
+
+        // 连接相邻环
+        if (i > 0 && PrevRing.Num() > 0)
+        {
+            for (int32 s = 0; s < Parameters.Sides; ++s)
+            {
+                const int32 V00 = PrevRing[s];
+                const int32 V10 = CurrentRing[s];
+                const int32 V01 = PrevRing[s + 1];
+                const int32 V11 = CurrentRing[s + 1];
+                
+                AddQuad(Section, V00, V01, V11, V10);
+            }
+        }
+
+        PrevRing = CurrentRing;
+    }
 }
 
 // 生成端盖
