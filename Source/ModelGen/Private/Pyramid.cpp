@@ -1,12 +1,29 @@
+// Copyright (c) 2024. All rights reserved.
+
+/**
+ * @file Pyramid.cpp
+ * @brief 可配置的程序化金字塔生成器的实现
+ */
+
 #include "Pyramid.h"
+
+// Engine includes
 #include "ProceduralMeshComponent.h"
 #include "Materials/Material.h"
 #include "UObject/ConstructorHelpers.h"
 
+// 日志分类定义
+DEFINE_LOG_CATEGORY_STATIC(LogPyramid, Log, All);
+
 // ============================================================================
-// FPyramidGeometry 实现
+// FPyramidGeometry Implementation
+// 几何数据结构的实现
 // ============================================================================
 
+/**
+ * 清除所有几何数据
+ * 在重新生成几何体或清理资源时调用
+ */
 void FPyramidGeometry::Clear()
 {
     Vertices.Empty();
@@ -17,90 +34,171 @@ void FPyramidGeometry::Clear()
     Tangents.Empty();
 }
 
+/**
+ * 验证几何数据的完整性
+ * 
+ * @return bool - 如果所有必要的几何数据都存在且数量匹配则返回true
+ */
 bool FPyramidGeometry::IsValid() const
 {
-    return Vertices.Num() > 0 && 
-           Triangles.Num() > 0 && 
-           Triangles.Num() % 3 == 0 &&
-           Normals.Num() == Vertices.Num() &&
-           UV0.Num() == Vertices.Num() &&
-           Tangents.Num() == Vertices.Num();
+    // 检查是否有基本的顶点和三角形数据
+    const bool bHasBasicGeometry = Vertices.Num() > 0 && Triangles.Num() > 0;
+    
+    // 检查三角形索引是否为3的倍数（每个三角形3个顶点）
+    const bool bValidTriangleCount = Triangles.Num() % 3 == 0;
+    
+    // 检查所有顶点属性数组的大小是否匹配
+    const bool bMatchingArraySizes = Normals.Num() == Vertices.Num() &&
+                                   UV0.Num() == Vertices.Num() &&
+                                   Tangents.Num() == Vertices.Num();
+    
+    return bHasBasicGeometry && bValidTriangleCount && bMatchingArraySizes;
 }
 
 // ============================================================================
-// FPyramidBuildParameters 实现
+// FPyramidBuildParameters Implementation
+// 生成参数结构体的实现
 // ============================================================================
 
+/**
+ * 验证生成参数的有效性
+ * 
+ * @return bool - 如果所有参数都在有效范围内则返回true
+ */
 bool FPyramidBuildParameters::IsValid() const
 {
-    return BaseRadius > 0.0f && 
-           Height > 0.0f && 
-           Sides >= 3 && 
-           Sides <= 100 &&
-           BevelRadius >= 0.0f && 
-           BevelRadius < Height;
+    // 检查基础尺寸是否有效
+    const bool bValidBaseRadius = BaseRadius > 0.0f;
+    const bool bValidHeight = Height > 0.0f;
+    
+    // 检查边数是否在有效范围内
+    const bool bValidSides = Sides >= 3 && Sides <= 100;
+    
+    // 检查倒角半径是否有效
+    const bool bValidBevelRadius = BevelRadius >= 0.0f && BevelRadius < Height;
+    
+    return bValidBaseRadius && bValidHeight && bValidSides && bValidBevelRadius;
 }
 
+/**
+ * 获取倒角顶部半径
+ * 
+ * @return float - 倒角顶部的半径
+ */
 float FPyramidBuildParameters::GetBevelTopRadius() const
 {
-    if (BevelRadius <= 0.0f) return BaseRadius;
+    if (BevelRadius <= 0.0f) 
+    {
+        return BaseRadius;
+    }
+    
+    // 计算倒角顶部的半径（线性缩放）
     return FMath::Max(0.0f, BaseRadius - BaseRadius * BevelRadius / Height);
 }
 
+/**
+ * 获取总高度
+ * 
+ * @return float - 金字塔的总高度
+ */
 float FPyramidBuildParameters::GetTotalHeight() const
 {
     return Height;
 }
 
+/**
+ * 获取金字塔底面半径
+ * 
+ * @return float - 金字塔部分的底面半径
+ */
 float FPyramidBuildParameters::GetPyramidBaseRadius() const
 {
     return (BevelRadius > 0) ? GetBevelTopRadius() : BaseRadius;
 }
 
+/**
+ * 获取金字塔底面高度
+ * 
+ * @return float - 金字塔底面距离地面的高度
+ */
 float FPyramidBuildParameters::GetPyramidBaseHeight() const
 {
     return (BevelRadius > 0) ? BevelRadius : 0.0f;
 }
 
 // ============================================================================
-// FPyramidBuilder 实现
+// FPyramidBuilder Implementation
+// 几何体生成器的实现
 // ============================================================================
 
+/**
+ * 构造函数
+ * @param InParams - 初始化生成器的参数
+ */
 FPyramidBuilder::FPyramidBuilder(const FPyramidBuildParameters& InParams)
     : Params(InParams)
 {
 }
 
+/**
+ * 生成金字塔的几何体
+ * 
+ * @param OutGeometry - 输出参数，用于存储生成的几何数据
+ * @return bool - 如果生成成功则返回true
+ */
 bool FPyramidBuilder::Generate(FPyramidGeometry& OutGeometry)
 {
+    // 验证生成参数
     if (!Params.IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("Invalid build parameters for Pyramid"));
+        UE_LOG(LogPyramid, Error, TEXT("无效的金字塔生成参数"));
         return false;
     }
 
     // 清除之前的几何数据
     OutGeometry.Clear();
 
-    // 生成各个几何部分
+    // 生成几何体的不同部分
     if (Params.BevelRadius > 0.0f)
     {
+        // 如果有倒角，先生成底部棱柱部分
         GeneratePrismSection(OutGeometry);
+        UE_LOG(LogPyramid, Verbose, TEXT("生成倒角部分：半径=%.2f"), Params.BevelRadius);
     }
     else
     {
+        // 没有倒角，直接生成底面
         GenerateBottomFace(OutGeometry);
     }
+    
+    // 生成金字塔锥形部分
     GeneratePyramidSection(OutGeometry);
 
+    // 验证生成的几何体
+    const bool bIsValid = OutGeometry.IsValid();
+    if (bIsValid)
+    {
+        UE_LOG(LogPyramid, Log, TEXT("金字塔生成完成：顶点=%d，三角形=%d"), 
+               OutGeometry.GetVertexCount(), OutGeometry.GetTriangleCount());
+    }
+    else
+    {
+        UE_LOG(LogPyramid, Error, TEXT("生成的金字塔几何体无效"));
+    }
 
-    return OutGeometry.IsValid();
+    return bIsValid;
 }
 
+/**
+ * 生成底部棱柱部分（用于倒角）
+ * 
+ * @param Geometry - 目标几何体
+ */
 void FPyramidBuilder::GeneratePrismSection(FPyramidGeometry& Geometry)
 {
-    TArray<FVector> BottomVerts = GenerateCircleVertices(Params.GetBevelTopRadius(), 0.0f, Params.Sides);
-    TArray<FVector> TopVerts = GenerateCircleVertices(Params.GetBevelTopRadius(), Params.BevelRadius, Params.Sides);
+    // 生成棱柱的底部和顶部顶点
+    const TArray<FVector> BottomVerts = GenerateCircleVertices(Params.GetBevelTopRadius(), 0.0f, Params.Sides);
+    const TArray<FVector> TopVerts = GenerateCircleVertices(Params.GetBevelTopRadius(), Params.BevelRadius, Params.Sides);
 
     // 生成棱柱侧面
     GeneratePrismSides(Geometry, BottomVerts, TopVerts, false, 0.0f, 0.5f);
@@ -109,49 +207,74 @@ void FPyramidBuilder::GeneratePrismSection(FPyramidGeometry& Geometry)
     GeneratePolygonFace(Geometry, BottomVerts, FVector(0, 0, -1), false);
 }
 
+/**
+ * 生成金字塔锥形部分
+ * 
+ * @param Geometry - 目标几何体
+ */
 void FPyramidBuilder::GeneratePyramidSection(FPyramidGeometry& Geometry)
 {
-    float PyramidBaseRadius = Params.GetPyramidBaseRadius();
-    float PyramidBaseHeight = Params.GetPyramidBaseHeight();
-    TArray<FVector> BaseVertices = GenerateCircleVertices(PyramidBaseRadius, PyramidBaseHeight, Params.Sides);
-    FVector Apex(0.0f, 0.0f, Params.GetTotalHeight());
+    // 计算金字塔部分的参数
+    const float PyramidBaseRadius = Params.GetPyramidBaseRadius();
+    const float PyramidBaseHeight = Params.GetPyramidBaseHeight();
+    const TArray<FVector> BaseVertices = GenerateCircleVertices(PyramidBaseRadius, PyramidBaseHeight, Params.Sides);
+    const FVector Apex(0.0f, 0.0f, Params.GetTotalHeight());
 
+    // 为每个侧面生成三角形
     for (int32 i = 0; i < Params.Sides; i++)
     {
-        int32 NextIndex = (i + 1) % Params.Sides;
+        const int32 NextIndex = (i + 1) % Params.Sides;
 
-        // 计算三角形法线
-        FVector Edge1 = BaseVertices[i] - Apex;
-        FVector Edge2 = BaseVertices[NextIndex] - Apex;
-        FVector Normal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
+        // 计算三角形法线（确保指向外部）
+        const FVector Edge1 = BaseVertices[i] - Apex;
+        const FVector Edge2 = BaseVertices[NextIndex] - Apex;
+        const FVector Normal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
+
+        // 计算UV坐标
+        const float U_Current = static_cast<float>(i) / Params.Sides;
+        const float U_Next = static_cast<float>(i + 1) / Params.Sides;
+        const float V_Base = (Params.BevelRadius > 0) ? 0.5f : 0.0f;
 
         // 添加三个顶点
-        int32 ApexIndex = GetOrAddVertex(Geometry, Apex, Normal, FVector2D(0.5f, 1.0f));
-        int32 CurrentBaseIndex = GetOrAddVertex(Geometry, BaseVertices[i], Normal,
-            FVector2D(static_cast<float>(i) / Params.Sides, (Params.BevelRadius > 0) ? 0.5f : 0.0f));
-        int32 NextBaseIndex = GetOrAddVertex(Geometry, BaseVertices[NextIndex], Normal,
-            FVector2D(static_cast<float>(i + 1) / Params.Sides, (Params.BevelRadius > 0) ? 0.5f : 0.0f));
+        const int32 ApexIndex = GetOrAddVertex(Geometry, Apex, Normal, FVector2D(0.5f, 1.0f));
+        const int32 CurrentBaseIndex = GetOrAddVertex(Geometry, BaseVertices[i], Normal, FVector2D(U_Current, V_Base));
+        const int32 NextBaseIndex = GetOrAddVertex(Geometry, BaseVertices[NextIndex], Normal, FVector2D(U_Next, V_Base));
 
+        // 添加三角形（确保逆时针顺序）
         AddTriangle(Geometry, ApexIndex, NextBaseIndex, CurrentBaseIndex);
     }
-
 }
 
+/**
+ * 生成底面
+ * 
+ * @param Geometry - 目标几何体
+ */
 void FPyramidBuilder::GenerateBottomFace(FPyramidGeometry& Geometry)
 {
-    TArray<FVector> BaseVerts = GenerateCircleVertices(Params.BaseRadius, 0.0f, Params.Sides);
+    const TArray<FVector> BaseVerts = GenerateCircleVertices(Params.BaseRadius, 0.0f, Params.Sides);
     GeneratePolygonFace(Geometry, BaseVerts, FVector(0, 0, -1), false);
 }
 
+/**
+ * 添加顶点到几何体
+ * 每次都创建新顶点以确保法线正确性
+ * 
+ * @param Geometry - 目标几何体
+ * @param Pos - 顶点位置
+ * @param Normal - 顶点法线
+ * @param UV - 顶点UV坐标
+ * @return int32 - 新顶点的索引
+ */
 int32 FPyramidBuilder::GetOrAddVertex(FPyramidGeometry& Geometry, const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
     // 为了确保法线正确，我们总是创建新顶点
     // 这样可以避免不同面之间的法线冲突
-    int32 Index = Geometry.Vertices.Add(Pos);
+    const int32 Index = Geometry.Vertices.Add(Pos);
     Geometry.Normals.Add(Normal);
     Geometry.UV0.Add(UV);
 
-    // 计算切线（垂直于法线）
+    // 计算切线向量（垂直于法线）
     FVector TangentDirection = FVector::CrossProduct(Normal, FVector::UpVector);
     if (TangentDirection.IsNearlyZero())
     {
@@ -163,27 +286,67 @@ int32 FPyramidBuilder::GetOrAddVertex(FPyramidGeometry& Geometry, const FVector&
     return Index;
 }
 
+/**
+ * 添加三角形到几何体
+ * 
+ * @param Geometry - 目标几何体
+ * @param V1,V2,V3 - 三角形的三个顶点索引（按逆时针顺序）
+ */
 void FPyramidBuilder::AddTriangle(FPyramidGeometry& Geometry, int32 V1, int32 V2, int32 V3)
 {
+    // 验证顶点索引
+    if (!ensureMsgf(V1 >= 0 && V2 >= 0 && V3 >= 0, TEXT("三角形顶点索引无效")))
+    {
+        return;
+    }
+
+    if (!ensureMsgf(V1 < Geometry.Vertices.Num() && V2 < Geometry.Vertices.Num() && V3 < Geometry.Vertices.Num(),
+                    TEXT("三角形顶点索引超出范围")))
+    {
+        return;
+    }
+
+    // 按逆时针顺序添加顶点索引
     Geometry.Triangles.Add(V1);
     Geometry.Triangles.Add(V2);
     Geometry.Triangles.Add(V3);
 }
 
+/**
+ * 生成圆形顶点
+ * 
+ * @param Radius - 圆的半径
+ * @param Z - 圆所在的Z高度
+ * @param NumSides - 圆的边数
+ * @return TArray<FVector> - 生成的顶点数组
+ */
 TArray<FVector> FPyramidBuilder::GenerateCircleVertices(float Radius, float Z, int32 NumSides)
 {
+    // 验证参数
+    if (!ensureMsgf(Radius >= 0.0f, TEXT("半径不能为负数")))
+    {
+        Radius = 0.0f;
+    }
+
+    if (!ensureMsgf(NumSides >= 3, TEXT("边数至少为3")))
+    {
+        NumSides = 3;
+    }
+
     TArray<FVector> Vertices;
     Vertices.Reserve(NumSides);
 
+    // 生成圆周上的顶点
     for (int32 i = 0; i < NumSides; i++)
     {
-        float Angle = 2 * PI * i / NumSides;
+        const float Angle = 2.0f * PI * i / NumSides;
         Vertices.Add(FVector(
             Radius * FMath::Cos(Angle),
             Radius * FMath::Sin(Angle),
             Z
         ));
     }
+    
     return Vertices;
 }
 

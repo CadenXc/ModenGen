@@ -4,9 +4,14 @@
 #include "UObject/ConstructorHelpers.h" 
 
 // ============================================================================
-// FChamferCubeGeometry 实现
+// FChamferCubeGeometry Implementation
+// 几何数据结构的实现
 // ============================================================================
 
+/**
+ * 清除所有几何数据
+ * 在重新生成几何体或清理资源时调用
+ */
 void FChamferCubeGeometry::Clear()
 {
 	Vertices.Empty();
@@ -17,43 +22,77 @@ void FChamferCubeGeometry::Clear()
 	Tangents.Empty();
 }
 
+/**
+ * 验证几何数据的完整性
+ * 
+ * @return bool - 如果所有必要的几何数据都存在且数量匹配则返回true
+ */
 bool FChamferCubeGeometry::IsValid() const
 {
-	return Vertices.Num() > 0 && 
-		   Triangles.Num() > 0 && 
-		   Triangles.Num() % 3 == 0 &&
-		   Normals.Num() == Vertices.Num() &&
-		   UV0.Num() == Vertices.Num() &&
-		   Tangents.Num() == Vertices.Num();
+	// 检查是否有基本的顶点和三角形数据
+	const bool bHasBasicGeometry = Vertices.Num() > 0 && Triangles.Num() > 0;
+	
+	// 检查三角形索引是否为3的倍数（每个三角形3个顶点）
+	const bool bValidTriangleCount = Triangles.Num() % 3 == 0;
+	
+	// 检查所有顶点属性数组的大小是否匹配
+	const bool bMatchingArraySizes = Normals.Num() == Vertices.Num() &&
+								   UV0.Num() == Vertices.Num() &&
+								   Tangents.Num() == Vertices.Num();
+	
+	return bHasBasicGeometry && bValidTriangleCount && bMatchingArraySizes;
 }
 
 // ============================================================================
-// FChamferCubeBuilder::FBuildParameters 实现
+// FChamferCubeBuilder::FBuildParameters Implementation
+// 生成参数结构体的实现
 // ============================================================================
 
+/**
+ * 验证生成参数的有效性
+ * 
+ * @return bool - 如果所有参数都在有效范围内则返回true
+ */
 bool FChamferCubeBuilder::FBuildParameters::IsValid() const
 {
-	return Size > 0.0f && 
-		   ChamferSize >= 0.0f && 
-		   ChamferSize < GetHalfSize() &&
-		   Sections >= 1 && 
-		   Sections <= 10;
+	// 检查基础尺寸是否有效
+	const bool bValidSize = Size > 0.0f;
+	
+	// 检查倒角尺寸是否在有效范围内
+	const bool bValidChamferSize = ChamferSize >= 0.0f && ChamferSize < GetHalfSize();
+	
+	// 检查分段数是否在有效范围内
+	const bool bValidSections = Sections >= 1 && Sections <= 10;
+	
+	return bValidSize && bValidChamferSize && bValidSections;
 }
 
 // ============================================================================
-// FChamferCubeBuilder 实现
+// FChamferCubeBuilder Implementation
+// 几何体生成器的实现
 // ============================================================================
 
+/**
+ * 构造函数
+ * @param InParams - 初始化生成器的参数
+ */
 FChamferCubeBuilder::FChamferCubeBuilder(const FBuildParameters& InParams)
 	: Params(InParams)
 {
 }
 
+/**
+ * 生成倒角立方体的几何体
+ * 
+ * @param OutGeometry - 输出参数，用于存储生成的几何数据
+ * @return bool - 如果生成成功则返回true
+ */
 bool FChamferCubeBuilder::Generate(FChamferCubeGeometry& OutGeometry)
 {
+	// 验证生成参数
 	if (!Params.IsValid())
 	{
-		UE_LOG(LogTemp, Error, TEXT("Invalid build parameters for ChamferCube"));
+		UE_LOG(LogTemp, Error, TEXT("无效的倒角立方体生成参数"));
 		return false;
 	}
 
@@ -61,10 +100,13 @@ bool FChamferCubeBuilder::Generate(FChamferCubeGeometry& OutGeometry)
 	OutGeometry.Clear();
 	UniqueVerticesMap.Empty();
 
-	// 计算核心点
+	// 计算立方体的核心点（倒角起始点）
 	TArray<FVector> CorePoints = CalculateCorePoints();
 
-	// 生成各个几何部分
+	// 按照以下顺序生成几何体：
+	// 1. 生成主要面（6个面）
+	// 2. 生成边缘倒角（12条边）
+	// 3. 生成角落倒角（8个角）
 	GenerateMainFaces(OutGeometry);
 	GenerateEdgeChamfers(OutGeometry, CorePoints);
 	GenerateCornerChamfers(OutGeometry, CorePoints);
@@ -72,6 +114,12 @@ bool FChamferCubeBuilder::Generate(FChamferCubeGeometry& OutGeometry)
 	return OutGeometry.IsValid();
 }
 
+/**
+ * 计算立方体的8个核心点（倒角起始点）
+ * 这些点位于立方体的8个角落，但向内偏移了倒角的距离
+ * 
+ * @return TArray<FVector> - 包含8个核心点的数组
+ */
 TArray<FVector> FChamferCubeBuilder::CalculateCorePoints() const
 {
 	const float InnerOffset = Params.GetInnerOffset();
@@ -79,32 +127,55 @@ TArray<FVector> FChamferCubeBuilder::CalculateCorePoints() const
 	TArray<FVector> CorePoints;
 	CorePoints.Reserve(8);
 	
-	// 8个角落的核心点
-	CorePoints.Add(FVector(-InnerOffset, -InnerOffset, -InnerOffset)); 
-	CorePoints.Add(FVector(InnerOffset, -InnerOffset, -InnerOffset)); 
-	CorePoints.Add(FVector(-InnerOffset, InnerOffset, -InnerOffset));
-	CorePoints.Add(FVector(InnerOffset, InnerOffset, -InnerOffset));
-	CorePoints.Add(FVector(-InnerOffset, -InnerOffset, InnerOffset));
-	CorePoints.Add(FVector(InnerOffset, -InnerOffset, InnerOffset));
-	CorePoints.Add(FVector(-InnerOffset, InnerOffset, InnerOffset));
-	CorePoints.Add(FVector(InnerOffset, InnerOffset, InnerOffset));
+	// 按照以下顺序添加8个角落的核心点：
+	// 下面四个点（Z轴负方向）
+	CorePoints.Add(FVector(-InnerOffset, -InnerOffset, -InnerOffset)); // 左后下
+	CorePoints.Add(FVector(InnerOffset, -InnerOffset, -InnerOffset));  // 右后下
+	CorePoints.Add(FVector(-InnerOffset, InnerOffset, -InnerOffset));  // 左前下
+	CorePoints.Add(FVector(InnerOffset, InnerOffset, -InnerOffset));   // 右前下
+	// 上面四个点（Z轴正方向）
+	CorePoints.Add(FVector(-InnerOffset, -InnerOffset, InnerOffset));  // 左后上
+	CorePoints.Add(FVector(InnerOffset, -InnerOffset, InnerOffset));   // 右后上
+	CorePoints.Add(FVector(-InnerOffset, InnerOffset, InnerOffset));   // 左前上
+	CorePoints.Add(FVector(InnerOffset, InnerOffset, InnerOffset));    // 右前上
 	
 	return CorePoints;
 }
 
+/**
+ * 获取或添加顶点到几何体中
+ * 使用位置作为唯一标识，避免重复顶点
+ * 
+ * @param Geometry - 目标几何体
+ * @param Pos - 顶点位置
+ * @param Normal - 顶点法线
+ * @param UV - 顶点UV坐标
+ * @return int32 - 顶点在几何体中的索引
+ */
 int32 FChamferCubeBuilder::GetOrAddVertex(FChamferCubeGeometry& Geometry, const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
-	int32* FoundIndex = UniqueVerticesMap.Find(Pos);
-	if (FoundIndex)
+	// 尝试查找已存在的顶点
+	if (int32* FoundIndex = UniqueVerticesMap.Find(Pos))
 	{
 		return *FoundIndex;
 	}
 
-	int32 NewIndex = AddVertex(Geometry, Pos, Normal, UV);
+	// 添加新顶点并记录其索引
+	const int32 NewIndex = AddVertex(Geometry, Pos, Normal, UV);
 	UniqueVerticesMap.Add(Pos, NewIndex);
 	return NewIndex;
 }
 
+/**
+ * 添加新顶点到几何体
+ * 同时添加所有必要的顶点属性（法线、UV、颜色、切线）
+ * 
+ * @param Geometry - 目标几何体
+ * @param Pos - 顶点位置
+ * @param Normal - 顶点法线
+ * @param UV - 顶点UV坐标
+ * @return int32 - 新顶点的索引
+ */
 int32 FChamferCubeBuilder::AddVertex(FChamferCubeGeometry& Geometry, const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
 	Geometry.Vertices.Add(Pos);
@@ -116,71 +187,144 @@ int32 FChamferCubeBuilder::AddVertex(FChamferCubeGeometry& Geometry, const FVect
 	return Geometry.Vertices.Num() - 1;
 }
 
+/**
+ * 计算顶点的切线向量
+ * 切线向量用于法线贴图的计算
+ * 
+ * @param Normal - 顶点法线
+ * @return FVector - 计算得到的切线向量
+ */
 FVector FChamferCubeBuilder::CalculateTangent(const FVector& Normal) const
 {
+	// 首先尝试使用上向量计算切线
 	FVector TangentDirection = FVector::CrossProduct(Normal, FVector::UpVector);
+	
+	// 如果结果接近零向量，改用右向量计算
 	if (TangentDirection.IsNearlyZero())
 	{
 		TangentDirection = FVector::CrossProduct(Normal, FVector::RightVector);
 	}
+	
 	TangentDirection.Normalize();
 	return TangentDirection;
 }
 
+/**
+ * 添加四边形到几何体
+ * 将四边形分解为两个三角形
+ * 
+ * @param Geometry - 目标几何体
+ * @param V1,V2,V3,V4 - 四边形的四个顶点索引（按逆时针顺序）
+ */
 void FChamferCubeBuilder::AddQuad(FChamferCubeGeometry& Geometry, int32 V1, int32 V2, int32 V3, int32 V4)
 {
-	AddTriangle(Geometry, V1, V2, V3);
-	AddTriangle(Geometry, V1, V3, V4);
+	// 将四边形分解为两个三角形
+	AddTriangle(Geometry, V1, V2, V3);  // 第一个三角形
+	AddTriangle(Geometry, V1, V3, V4);  // 第二个三角形
 }
 
+/**
+ * 添加三角形到几何体
+ * 
+ * @param Geometry - 目标几何体
+ * @param V1,V2,V3 - 三角形的三个顶点索引（按逆时针顺序）
+ */
 void FChamferCubeBuilder::AddTriangle(FChamferCubeGeometry& Geometry, int32 V1, int32 V2, int32 V3)
 {
+	// 按逆时针顺序添加顶点索引
 	Geometry.Triangles.Add(V1);
 	Geometry.Triangles.Add(V2);
 	Geometry.Triangles.Add(V3);
 }
 
+/**
+ * 生成立方体的六个主要面
+ * 每个面都是一个矩形，考虑了倒角的影响
+ * 
+ * @param Geometry - 目标几何体
+ */
 void FChamferCubeBuilder::GenerateMainFaces(FChamferCubeGeometry& Geometry)
 {
 	const float HalfSize = Params.GetHalfSize();
 	const float InnerOffset = Params.GetInnerOffset();
 
-	// 定义面的中心点、方向向量和法线
+	/**
+	 * 面数据结构，用于定义每个面的属性
+	 */
 	struct FaceData
 	{
-		FVector Center;
-		FVector SizeX;
-		FVector SizeY;
-		FVector Normal;
+		FVector Center;   // 面的中心点
+		FVector SizeX;    // 面的X方向尺寸向量
+		FVector SizeY;    // 面的Y方向尺寸向量
+		FVector Normal;   // 面的法线向量
 	};
 
+	// 定义立方体的六个面
+	// 每个面的定义包括：
+	// 1. 面的中心点位置
+	// 2. 面的两个方向向量（考虑倒角后的实际尺寸）
+	// 3. 面的法线方向
 	TArray<FaceData> Faces = {
-		// +X 面 (右面，法线指向 +X) - 从+X方向看，Z轴向左(SizeX)，Y轴向上(SizeY)
-		{FVector(HalfSize, 0, 0), FVector(0, 0, -InnerOffset), FVector(0, InnerOffset, 0), FVector(1, 0, 0)},
-		// -X 面 (左面，法线指向 -X) - 从-X方向看，Z轴向右(SizeX)，Y轴向上(SizeY)
-		{FVector(-HalfSize, 0, 0), FVector(0, 0, InnerOffset), FVector(0, InnerOffset, 0), FVector(-1, 0, 0)},
-		// +Y 面 (前面，法线指向 +Y) - 从+Y方向看，X轴向左，Z轴向右
-		{FVector(0, HalfSize, 0), FVector(-InnerOffset, 0, 0), FVector(0, 0, InnerOffset), FVector(0, 1, 0)},
-		// -Y 面 (后面，法线指向 -Y) - 从-Y方向看，X轴向右，Z轴向右
-		{FVector(0, -HalfSize, 0), FVector(InnerOffset, 0, 0), FVector(0, 0, InnerOffset), FVector(0, -1, 0)},
-		// +Z 面 (上面，法线指向 +Z) - 从+Z方向看，X轴向右，Y轴向上
-		{FVector(0, 0, HalfSize), FVector(InnerOffset, 0, 0), FVector(0, InnerOffset, 0), FVector(0, 0, 1)},
-		// -Z 面 (下面，法线指向 -Z) - 从-Z方向看，X轴向右，Y轴向下
-		{FVector(0, 0, -HalfSize), FVector(InnerOffset, 0, 0), FVector(0, -InnerOffset, 0), FVector(0, 0, -1)}
+		// +X面（右面）：从+X方向看，Z轴向左(SizeX)，Y轴向上(SizeY)
+		{
+			FVector(HalfSize, 0, 0),                    // 中心点
+			FVector(0, 0, -InnerOffset),                // X方向（实际是Z轴负方向）
+			FVector(0, InnerOffset, 0),                 // Y方向
+			FVector(1, 0, 0)                            // 法线
+		},
+		// -X面（左面）：从-X方向看，Z轴向右(SizeX)，Y轴向上(SizeY)
+		{
+			FVector(-HalfSize, 0, 0),                   // 中心点
+			FVector(0, 0, InnerOffset),                 // X方向（实际是Z轴正方向）
+			FVector(0, InnerOffset, 0),                 // Y方向
+			FVector(-1, 0, 0)                           // 法线
+		},
+		// +Y面（前面）：从+Y方向看，X轴向左，Z轴向上
+		{
+			FVector(0, HalfSize, 0),                    // 中心点
+			FVector(-InnerOffset, 0, 0),                // X方向
+			FVector(0, 0, InnerOffset),                 // Y方向（实际是Z轴）
+			FVector(0, 1, 0)                            // 法线
+		},
+		// -Y面（后面）：从-Y方向看，X轴向右，Z轴向上
+		{
+			FVector(0, -HalfSize, 0),                   // 中心点
+			FVector(InnerOffset, 0, 0),                 // X方向
+			FVector(0, 0, InnerOffset),                 // Y方向（实际是Z轴）
+			FVector(0, -1, 0)                           // 法线
+		},
+		// +Z面（上面）：从+Z方向看，X轴向右，Y轴向上
+		{
+			FVector(0, 0, HalfSize),                    // 中心点
+			FVector(InnerOffset, 0, 0),                 // X方向
+			FVector(0, InnerOffset, 0),                 // Y方向
+			FVector(0, 0, 1)                            // 法线
+		},
+		// -Z面（下面）：从-Z方向看，X轴向右，Y轴向下
+		{
+			FVector(0, 0, -HalfSize),                   // 中心点
+			FVector(InnerOffset, 0, 0),                 // X方向
+			FVector(0, -InnerOffset, 0),                // Y方向
+			FVector(0, 0, -1)                           // 法线
+		}
 	};
 
-	// UV 坐标数组（对应新的顶点顺序）
+	// 定义标准UV坐标
+	// UV坐标按照顺时针顺序定义，确保纹理正确映射
 	TArray<FVector2D> UVs = {
-		FVector2D(0, 0), // 0: 左下
-		FVector2D(0, 1), // 1: 左上
-		FVector2D(1, 1), // 2: 右上
-		FVector2D(1, 0)  // 3: 右下
+		FVector2D(0, 0),  // 左下角
+		FVector2D(0, 1),  // 左上角
+		FVector2D(1, 1),  // 右上角
+		FVector2D(1, 0)   // 右下角
 	};
 
 	// 为每个面生成几何体
 	for (const FaceData& Face : Faces)
 	{
+		// 生成面的四个顶点
 		TArray<FVector> FaceVerts = GenerateRectangleVertices(Face.Center, Face.SizeX, Face.SizeY);
+		
+		// 使用这些顶点和UV创建面的几何体
 		GenerateQuadSides(Geometry, FaceVerts, Face.Normal, UVs);
 	}
 }

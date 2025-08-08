@@ -1,138 +1,266 @@
+// Copyright (c) 2024. All rights reserved.
+
+/**
+ * @file PolygonTorus.h
+ * @brief 可配置的多边形圆环生成器
+ * 
+ * 该类提供了一个可在编辑器中实时配置的多边形圆环生成器。
+ * 支持以下特性：
+ * - 可配置的主半径和次半径
+ * - 可调节的主次分段数
+ * - 多种光滑模式
+ * - 多种UV映射模式
+ * - 端盖生成选项
+ * - 实时预览和更新
+ */
+
 #pragma once
 
+// Engine includes
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ProceduralMeshComponent.h"
+
+// Generated header must be the last include
 #include "PolygonTorus.generated.h"
 
+/**
+ * 圆环端面填充类型
+ * 定义端盖的填充方式
+ */
 UENUM(BlueprintType)
 enum class ETorusFillType : uint8
 {
+    /* 不填充 */
     None        UMETA(DisplayName = "None"),
+    
+    /* 多边形填充 */
     NGon        UMETA(DisplayName = "NGon"),
+    
+    /* 三角形填充 */
     Triangles   UMETA(DisplayName = "Triangles")
 };
 
+/**
+ * 圆环UV映射模式
+ * 定义纹理坐标的生成方式
+ */
 UENUM(BlueprintType)
 enum class ETorusUVMode : uint8
 {
+    /* 标准UV映射 */
     Standard    UMETA(DisplayName = "Standard"),
+    
+    /* 柱面UV映射 */
     Cylindrical UMETA(DisplayName = "Cylindrical"),
+    
+    /* 球面UV映射 */
     Spherical   UMETA(DisplayName = "Spherical")
 };
 
+/**
+ * 圆环光滑模式
+ * 定义法线光滑的计算方式
+ */
 UENUM(BlueprintType)
 enum class ETorusSmoothMode : uint8
 {
+    /* 不平滑 */
     None        UMETA(DisplayName = "None"),
+    
+    /* 仅横截面光滑 */
     Cross       UMETA(DisplayName = "Cross Section Only"),
+    
+    /* 仅垂直截面光滑 */
     Vertical    UMETA(DisplayName = "Vertical Section Only"),
+    
+    /* 两个方向都光滑 */
     Both        UMETA(DisplayName = "Both Sections"),
+    
+    /* 自动检测 */
     Auto        UMETA(DisplayName = "Auto Detect")
 };
 
-UCLASS()
+/**
+ * 程序化生成的多边形圆环Actor
+ * 支持实时参数调整和预览
+ */
+UCLASS(BlueprintType, meta=(DisplayName = "Polygon Torus"))
 class MODELGEN_API APolygonTorus : public AActor
 {
     GENERATED_BODY()
 
 public:
+    //~ Begin Constructor Section
     APolygonTorus();
 
-    // 圆环参数
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Torus Parameters")
-        float MajorRadius = 100.0f;  // 圆环中心到截面中心的距离
+    //~ Begin Torus Parameters Section
+    /** 主半径（圆环中心到截面中心的距离） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Geometry", 
+        meta = (ClampMin = "1.0", UIMin = "1.0", 
+        DisplayName = "Major Radius", ToolTip = "Distance from torus center to section center"))
+    float MajorRadius = 100.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Torus Parameters")
-        float MinorRadius = 25.0f;   // 截面半径
+    /** 次半径（截面半径） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Geometry", 
+        meta = (ClampMin = "1.0", UIMin = "1.0", 
+        DisplayName = "Minor Radius", ToolTip = "Section radius"))
+    float MinorRadius = 25.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Torus Parameters")
-        int32 MajorSegments = 8;     // 圆环分段数（多边形边数）
+    /** 主分段数（圆环分段数） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Geometry", 
+        meta = (ClampMin = 3, UIMin = 3, ClampMax = 256, UIMax = 100, 
+        DisplayName = "Major Segments", ToolTip = "Number of torus segments"))
+    int32 MajorSegments = 8;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Torus Parameters")
-        int32 MinorSegments = 4;     // 截面分段数（多边形边数）
+    /** 次分段数（截面分段数） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Geometry", 
+        meta = (ClampMin = 3, UIMin = 3, ClampMax = 256, UIMax = 100, 
+        DisplayName = "Minor Segments", ToolTip = "Number of section segments"))
+    int32 MinorSegments = 4;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Torus Parameters")
-        float TorusAngle = 360.0f;   // 圆环角度（度数）
+    /** 圆环角度（度数） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Geometry", 
+        meta = (ClampMin = "1.0", UIMin = "1.0", ClampMax = "360.0", UIMax = "360.0", 
+        DisplayName = "Torus Angle", ToolTip = "Torus angle in degrees"))
+    float TorusAngle = 360.0f;
 
-    // 光滑控制参数
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Smoothing")
-        ETorusSmoothMode SmoothMode = ETorusSmoothMode::Both;  // 光滑模式
+    //~ Begin Smoothing Section
+    /** 光滑模式 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Smoothing", 
+        meta = (DisplayName = "Smooth Mode", ToolTip = "Normal smoothing calculation method"))
+    ETorusSmoothMode SmoothMode = ETorusSmoothMode::Both;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Smoothing")
-        bool bSmoothCrossSection = true;  // 横切面光滑（向后兼容）
+    /** 横切面光滑（向后兼容） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Smoothing", 
+        meta = (DisplayName = "Smooth Cross Section", ToolTip = "Smooth cross sections"))
+    bool bSmoothCrossSection = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Smoothing")
-        bool bSmoothVerticalSection = true;  // 竖面光滑（向后兼容）
+    /** 竖面光滑（向后兼容） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Smoothing", 
+        meta = (DisplayName = "Smooth Vertical Section", ToolTip = "Smooth vertical sections"))
+    bool bSmoothVerticalSection = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Smoothing")
-        bool bGenerateSmoothGroups = true;  // 生成光滑组
+    /** 生成光滑组 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Smoothing", 
+        meta = (DisplayName = "Generate Smooth Groups", ToolTip = "Generate smooth groups"))
+    bool bGenerateSmoothGroups = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Smoothing")
-        bool bGenerateHardEdges = true;  // 生成硬边标记
+    /** 生成硬边标记 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Smoothing", 
+        meta = (DisplayName = "Generate Hard Edges", ToolTip = "Generate hard edge markers"))
+    bool bGenerateHardEdges = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Smoothing")
-        float SmoothingAngle = 30.0f;  // 光滑角度阈值（度数）
+    /** 光滑角度阈值（度数） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Smoothing", 
+        meta = (ClampMin = "0.0", UIMin = "0.0", ClampMax = "180.0", UIMax = "180.0", 
+        DisplayName = "Smoothing Angle", ToolTip = "Normal smoothing angle threshold"))
+    float SmoothingAngle = 30.0f;
 
-    // 新增参数
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Torus Parameters")
-        ETorusFillType FillType = ETorusFillType::NGon;  // 端面填充类型
+    //~ Begin Generation Options Section
+    /** 端面填充类型 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Options", 
+        meta = (DisplayName = "Fill Type", ToolTip = "End cap fill method"))
+    ETorusFillType FillType = ETorusFillType::NGon;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Torus Parameters")
-        ETorusUVMode UVMode = ETorusUVMode::Standard;  // UV映射模式
+    /** UV映射模式 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Options", 
+        meta = (DisplayName = "UV Mode", ToolTip = "Texture coordinate generation method"))
+    ETorusUVMode UVMode = ETorusUVMode::Standard;
 
-    // 端盖控制参数
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "End Caps")
-        bool bGenerateStartCap = true;  // 是否生成起始端盖
+    /** 是否生成UV坐标 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Options", 
+        meta = (DisplayName = "Generate UVs", ToolTip = "Generate UV coordinates"))
+    bool bGenerateUVs = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "End Caps")
-        bool bGenerateEndCap = true;  // 是否生成结束端盖
+    /** 是否生成法线 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Options", 
+        meta = (DisplayName = "Generate Normals", ToolTip = "Generate normal vectors"))
+    bool bGenerateNormals = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "End Caps")
-        int32 CapSegments = 16;  // 端盖分段数（用于圆形端盖）
+    /** 是否生成切线 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Options", 
+        meta = (DisplayName = "Generate Tangents", ToolTip = "Generate tangent vectors"))
+    bool bGenerateTangents = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "End Caps")
-        bool bUseCircularCaps = false;  // 是否使用圆形端盖
+    //~ Begin End Caps Section
+    /** 是否生成起始端盖 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|End Caps", 
+        meta = (DisplayName = "Generate Start Cap", ToolTip = "Generate start end cap"))
+    bool bGenerateStartCap = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Torus Parameters")
-        bool bGenerateUVs = true;  // 是否生成UV坐标
+    /** 是否生成结束端盖 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|End Caps", 
+        meta = (DisplayName = "Generate End Cap", ToolTip = "Generate end end cap"))
+    bool bGenerateEndCap = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Torus Parameters")
-        bool bGenerateNormals = true;  // 是否生成法线
+    /** 端盖分段数（用于圆形端盖） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|End Caps", 
+        meta = (ClampMin = 3, UIMin = 3, ClampMax = 64, UIMax = 32, 
+        DisplayName = "Cap Segments", ToolTip = "Number of cap segments"))
+    int32 CapSegments = 16;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Torus Parameters")
-        bool bGenerateTangents = true;  // 是否生成切线
+    /** 是否使用圆形端盖 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|End Caps", 
+        meta = (DisplayName = "Use Circular Caps", ToolTip = "Use circular end caps"))
+    bool bUseCircularCaps = false;
 
-    // 网格生成函数
-    UFUNCTION(BlueprintCallable, Category = "Torus")
-        void GeneratePolygonTorus(float MajorRad, float MinorRad, int32 MajorSegs, int32 MinorSegs, 
-                                 float Angle, bool bSmoothCross, bool bSmoothVertical);
+    //~ Begin Public Methods Section
+    /**
+     * 生成多边形圆环
+     * @param MajorRad - 主半径
+     * @param MinorRad - 次半径
+     * @param MajorSegs - 主分段数
+     * @param MinorSegs - 次分段数
+     * @param Angle - 圆环角度
+     * @param bSmoothCross - 是否横切面光滑
+     * @param bSmoothVertical - 是否竖面光滑
+     */
+    UFUNCTION(BlueprintCallable, Category = "PolygonTorus|Generation", 
+        meta = (DisplayName = "Generate Polygon Torus"))
+    void GeneratePolygonTorus(float MajorRad, float MinorRad, int32 MajorSegs, int32 MinorSegs, 
+                             float Angle, bool bSmoothCross, bool bSmoothVertical);
 
-    // 优化的生成函数
-    UFUNCTION(BlueprintCallable, Category = "Torus")
-        void GenerateOptimizedTorus();
+    /**
+     * 生成优化的圆环
+     */
+    UFUNCTION(BlueprintCallable, Category = "PolygonTorus|Generation", 
+        meta = (DisplayName = "Generate Optimized Torus"))
+    void GenerateOptimizedTorus();
 
-    // 高级光滑控制函数
-    UFUNCTION(BlueprintCallable, Category = "Torus")
-        void GenerateTorusWithSmoothing(ETorusSmoothMode InSmoothMode, float InSmoothingAngle = 30.0f);
+    /**
+     * 使用高级光滑控制生成圆环
+     * @param InSmoothMode - 光滑模式
+     * @param InSmoothingAngle - 光滑角度阈值
+     */
+    UFUNCTION(BlueprintCallable, Category = "PolygonTorus|Generation", 
+        meta = (DisplayName = "Generate Torus With Smoothing"))
+    void GenerateTorusWithSmoothing(ETorusSmoothMode InSmoothMode, float InSmoothingAngle = 30.0f);
 
-    // 端盖生成函数
-    UFUNCTION(BlueprintCallable, Category = "End Caps")
-        void GenerateEndCapsOnly();
+    /**
+     * 仅生成端盖
+     */
+    UFUNCTION(BlueprintCallable, Category = "PolygonTorus|End Caps", 
+        meta = (DisplayName = "Generate End Caps Only"))
+    void GenerateEndCapsOnly();
 
-    // 重新生成端盖
-    UFUNCTION(BlueprintCallable, Category = "End Caps")
-        void RegenerateEndCaps();
-
-    // 引擎事件
-    virtual void OnConstruction(const FTransform& Transform) override;
+    /**
+     * 重新生成端盖
+     */
+    UFUNCTION(BlueprintCallable, Category = "PolygonTorus|End Caps", 
+        meta = (DisplayName = "Regenerate End Caps"))
+    void RegenerateEndCaps();
 
 protected:
+    //~ Begin AActor Interface
     virtual void BeginPlay() override;
+    virtual void OnConstruction(const FTransform& Transform) override;
 
 private:
-    UPROPERTY(VisibleAnywhere)
-        UProceduralMeshComponent* ProceduralMesh;
+    //~ Begin Components Section
+    /** 程序化网格组件 */
+    UPROPERTY(VisibleAnywhere, Category = "PolygonTorus|Components")
+    UProceduralMeshComponent* ProceduralMesh;
 
     // 优化的辅助函数
     void GenerateOptimizedVertices(

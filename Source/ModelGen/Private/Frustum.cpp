@@ -1,34 +1,63 @@
-// Frustum.cpp
+// Copyright (c) 2024. All rights reserved.
+
+/**
+ * @file Frustum.cpp
+ * @brief 可配置的程序化截锥体生成器的实现
+ */
 
 #include "Frustum.h"
+
+// Engine includes
 #include "ProceduralMeshComponent.h"
 #include "Materials/Material.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/KismetMathLibrary.h"
 
+// 日志分类定义
+DEFINE_LOG_CATEGORY_STATIC(LogFrustum, Log, All);
+
+/**
+ * 构造函数
+ * 初始化组件和默认属性
+ */
 AFrustum::AFrustum()
 {
+    // 启用Tick以支持实时更新
     PrimaryActorTick.bCanEverTick = true;
 
-    // 创建网格组件
+    // 创建并配置程序化网格组件
     MeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("FrustumMesh"));
     RootComponent = MeshComponent;
 
     // 配置网格属性
-    MeshComponent->bUseAsyncCooking = true;
-    MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-    MeshComponent->SetSimulatePhysics(false);
+    if (MeshComponent)
+    {
+        // 启用异步烘焙以提高性能
+        MeshComponent->bUseAsyncCooking = true;
+        
+        // 配置碰撞设置
+        MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+        MeshComponent->SetSimulatePhysics(false);
+    }
 
-    // 初始生成
+    // 初始生成几何体
     GenerateGeometry();
 }
 
+/**
+ * 游戏开始时调用
+ * 确保几何体已正确生成
+ */
 void AFrustum::BeginPlay()
 {
     Super::BeginPlay();
     GenerateGeometry();
 }
 
+/**
+ * 加载完成时调用
+ * 确保几何体已正确生成
+ */
 void AFrustum::PostLoad()
 {
     Super::PostLoad();
@@ -36,19 +65,31 @@ void AFrustum::PostLoad()
 }
 
 #if WITH_EDITOR
+/**
+ * 编辑器中属性变更时调用
+ * 
+ * @param PropertyChangedEvent - 属性变更事件信息
+ */
 void AFrustum::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
     Super::PostEditChangeProperty(PropertyChangedEvent);
 
+    // 检查是否是相关属性发生变化
     const FName PropertyName = PropertyChangedEvent.GetPropertyName();
     static const TArray<FName> RelevantProperties = {
+        // 基础几何参数
         "TopRadius", "BottomRadius", "Height",
+        // 细分参数
         "Sides", "HeightSegments",
+        // 倒角参数
         "ChamferRadius", "ChamferSections",
-        "BendAmount", "MinBendRadius", "ArcAngle",
-        "CapThickness"
+        // 变形参数
+        "BendAmount", "MinBendRadius",
+        // 形状控制参数
+        "ArcAngle", "CapThickness"
     };
 
+    // 如果是相关属性变化，标记几何体需要重新生成
     if (RelevantProperties.Contains(PropertyName))
     {
         bGeometryDirty = true;
@@ -57,10 +98,16 @@ void AFrustum::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 }
 #endif
 
+/**
+ * 每帧更新
+ * 
+ * @param DeltaTime - 帧间隔时间
+ */
 void AFrustum::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
+    // 如果几何体需要更新，重新生成
     if (bGeometryDirty)
     {
         GenerateGeometry();
@@ -68,331 +115,732 @@ void AFrustum::Tick(float DeltaTime)
     }
 }
 
+/**
+ * 重新生成几何体
+ * 可从蓝图中调用以手动触发重新生成
+ */
 void AFrustum::Regenerate()
 {
     GenerateGeometry();
 }
 
+/**
+ * 生成截锥体的几何体
+ * 包括主体、倒角、顶底面和端面（如果需要）
+ */
 void AFrustum::GenerateGeometry()
 {
-    if (!MeshComponent)
+    // 验证组件
+    if (!ensureMsgf(MeshComponent, TEXT("Frustum: Mesh component is missing!")))
     {
-        UE_LOG(LogTemp, Error, TEXT("Mesh component is missing!"));
+        UE_LOG(LogFrustum, Error, TEXT("无法生成几何体：网格组件未初始化"));
         return;
     }
 
     // 清除现有网格
     MeshComponent->ClearAllMeshSections();
 
-    // 验证参数
-    Parameters.TopRadius = FMath::Max(0.01f, Parameters.TopRadius);
-    Parameters.BottomRadius = FMath::Max(0.01f, Parameters.BottomRadius);
-    Parameters.Height = FMath::Max(0.01f, Parameters.Height);
-    Parameters.Sides = FMath::Max(3, Parameters.Sides);
-    Parameters.HeightSegments = FMath::Max(1, Parameters.HeightSegments);
-    Parameters.ChamferRadius = FMath::Max(0.0f, Parameters.ChamferRadius);
-    Parameters.ChamferSections = FMath::Max(1, Parameters.ChamferSections);
-    Parameters.ArcAngle = FMath::Clamp(Parameters.ArcAngle, 0.0f, 360.0f);
-    Parameters.MinBendRadius = FMath::Max(1.0f, Parameters.MinBendRadius);
-    Parameters.CapThickness = FMath::Max(0.0f, Parameters.CapThickness);
+    // 验证并修正参数
+    ValidateAndClampParameters();
 
-    // 清除现有网格数据
-    MeshData.Clear();
+    // 清除并预分配网格数据
+    PrepareGeometryData();
 
-    // 预估内存需求
-    const int32 VertexCountEstimate =
-        (Parameters.HeightSegments + 1) * (Parameters.Sides + 1) * 4 +
-        (Parameters.ArcAngle < 360.0f ? Parameters.HeightSegments * 4 : 0);
-
-    const int32 TriangleCountEstimate =
-        Parameters.HeightSegments * Parameters.Sides * 6 +
-        (Parameters.ArcAngle < 360.0f ? Parameters.HeightSegments * 6 : 0);
-
-    MeshData.Reserve(VertexCountEstimate, TriangleCountEstimate);
-
-    const float HalfHeight = Parameters.Height / 2.0f;
+    // 计算关键尺寸
+    const float HalfHeight = Parameters.Height * 0.5f;
     const float TopChamferHeight = FMath::Min(Parameters.ChamferRadius, Parameters.TopRadius);
     const float BottomChamferHeight = FMath::Min(Parameters.ChamferRadius, Parameters.BottomRadius);
 
-    // 调整主体几何体的范围，避免与倒角重叠
+    // 计算主体几何体的范围
     const float StartZ = -HalfHeight + BottomChamferHeight;
     const float EndZ = HalfHeight - TopChamferHeight;
 
-    // 生成几何部件 - 确保不重叠
-    if (EndZ > StartZ) // 只有当主体高度大于0时才生成主体
+    // 生成几何体的各个部分
+    GenerateGeometryParts(StartZ, EndZ);
+
+    // 验证生成的数据
+    if (!ValidateGeneratedData())
+    {
+        return;
+    }
+
+    // 更新网格组件
+    UpdateMeshComponent();
+}
+
+/**
+ * 验证并修正生成参数
+ */
+void AFrustum::ValidateAndClampParameters()
+{
+    // 基础几何参数
+    Parameters.TopRadius = FMath::Max(0.01f, Parameters.TopRadius);
+    Parameters.BottomRadius = FMath::Max(0.01f, Parameters.BottomRadius);
+    Parameters.Height = FMath::Max(0.01f, Parameters.Height);
+
+    // 细分参数
+    Parameters.Sides = FMath::Max(3, Parameters.Sides);
+    Parameters.HeightSegments = FMath::Max(1, Parameters.HeightSegments);
+
+    // 倒角参数
+    Parameters.ChamferRadius = FMath::Max(0.0f, Parameters.ChamferRadius);
+    Parameters.ChamferSections = FMath::Max(1, Parameters.ChamferSections);
+
+    // 变形参数
+    Parameters.BendAmount = FMath::Clamp(Parameters.BendAmount, -1.0f, 1.0f);
+    Parameters.MinBendRadius = FMath::Max(1.0f, Parameters.MinBendRadius);
+
+    // 形状控制参数
+    Parameters.ArcAngle = FMath::Clamp(Parameters.ArcAngle, 0.0f, 360.0f);
+    Parameters.CapThickness = FMath::Max(0.0f, Parameters.CapThickness);
+
+    // 记录参数验证结果
+    UE_LOG(LogFrustum, Verbose, TEXT("参数验证完成：TopRadius=%.2f, BottomRadius=%.2f, Height=%.2f, Sides=%d"),
+           Parameters.TopRadius, Parameters.BottomRadius, Parameters.Height, Parameters.Sides);
+}
+
+/**
+ * 准备几何数据，包括清理和预分配内存
+ */
+void AFrustum::PrepareGeometryData()
+{
+    // 清除现有数据
+    MeshData.Clear();
+
+    // 计算预估的顶点和三角形数量
+    const int32 VertexCountEstimate = CalculateVertexCountEstimate();
+    const int32 TriangleCountEstimate = CalculateTriangleCountEstimate();
+
+    // 预分配内存
+    MeshData.Reserve(VertexCountEstimate, TriangleCountEstimate);
+
+    UE_LOG(LogFrustum, Verbose, TEXT("预分配内存：顶点=%d，三角形=%d"),
+           VertexCountEstimate, TriangleCountEstimate);
+}
+
+/**
+ * 计算预估的顶点数量
+ */
+int32 AFrustum::CalculateVertexCountEstimate() const
+{
+    // 基础顶点数（主体 + 顶底面）
+    int32 EstimatedCount = (Parameters.HeightSegments + 1) * (Parameters.Sides + 1) * 4;
+
+    // 如果不是完整圆形，需要额外的端面顶点
+    if (Parameters.ArcAngle < 360.0f)
+    {
+        EstimatedCount += Parameters.HeightSegments * 4;
+    }
+
+    // 倒角需要的额外顶点
+    if (Parameters.ChamferRadius > 0.0f)
+    {
+        EstimatedCount += Parameters.Sides * Parameters.ChamferSections * 2;
+    }
+
+    return EstimatedCount;
+}
+
+/**
+ * 计算预估的三角形数量
+ */
+int32 AFrustum::CalculateTriangleCountEstimate() const
+{
+    // 基础三角形数（主体 + 顶底面）
+    int32 EstimatedCount = Parameters.HeightSegments * Parameters.Sides * 6;
+
+    // 如果不是完整圆形，需要额外的端面三角形
+    if (Parameters.ArcAngle < 360.0f)
+    {
+        EstimatedCount += Parameters.HeightSegments * 6;
+    }
+
+    // 倒角需要的额外三角形
+    if (Parameters.ChamferRadius > 0.0f)
+    {
+        EstimatedCount += Parameters.Sides * Parameters.ChamferSections * 4;
+    }
+
+    return EstimatedCount;
+}
+
+/**
+ * 生成几何体的各个部分
+ */
+void AFrustum::GenerateGeometryParts(float StartZ, float EndZ)
+{
+    // 生成主体几何体（如果有足够的高度）
+    if (EndZ > StartZ)
     {
         CreateSideGeometry(StartZ, EndZ);
+        UE_LOG(LogFrustum, Verbose, TEXT("生成主体几何体：StartZ=%.2f, EndZ=%.2f"), StartZ, EndZ);
     }
     
-    // 生成倒角几何体
+    // 生成倒角几何体（如果启用）
     if (Parameters.ChamferRadius > 0.0f)
     {
         CreateTopChamferGeometry(EndZ);
         CreateBottomChamferGeometry(StartZ);
+        UE_LOG(LogFrustum, Verbose, TEXT("生成倒角几何体：Radius=%.2f, Sections=%d"), 
+               Parameters.ChamferRadius, Parameters.ChamferSections);
     }
     
     // 生成顶底面几何体
-    CreateTopGeometry(HalfHeight);
-    CreateBottomGeometry(-HalfHeight);
+    CreateTopGeometry(Parameters.Height * 0.5f);
+    CreateBottomGeometry(-Parameters.Height * 0.5f);
 
+    // 生成端面（如果不是完整圆形）
     if (Parameters.ArcAngle < 360.0f - KINDA_SMALL_NUMBER)
     {
         CreateEndCaps();
+        UE_LOG(LogFrustum, Verbose, TEXT("生成端面：ArcAngle=%.2f"), Parameters.ArcAngle);
     }
-
-    // 验证数据完整性
-    if (!MeshData.IsValid())
-    {
-        UE_LOG(LogTemp, Error, TEXT("Generated mesh data is invalid!"));
-        return;
-    }
-
-    // 更新ProceduralMesh组件
-    UpdateProceduralMeshComponent();
-    
-    // 运行法线验证测试
-    TestNormalValidation();
 }
 
+/**
+ * 验证生成的几何数据
+ */
+bool AFrustum::ValidateGeneratedData()
+{
+    if (!MeshData.IsValid())
+    {
+        UE_LOG(LogFrustum, Error, TEXT("生成的网格数据无效：顶点=%d，三角形=%d"), 
+               MeshData.GetVertexCount(), MeshData.GetTriangleCount());
+        return false;
+    }
+
+    UE_LOG(LogFrustum, Log, TEXT("几何体生成完成：顶点=%d，三角形=%d"), 
+           MeshData.GetVertexCount(), MeshData.GetTriangleCount());
+    return true;
+}
+
+/**
+ * 更新网格组件
+ */
+void AFrustum::UpdateMeshComponent()
+{
+    // 更新网格数据
+    UpdateProceduralMeshComponent();
+    
+    // 运行调试验证
+    if (WITH_EDITOR || UE_BUILD_DEBUG)
+    {
+        TestNormalValidation();
+    }
+}
+
+/**
+ * 添加顶点到网格
+ * 
+ * @param Position - 顶点位置
+ * @param Normal - 顶点法线
+ * @param UV - 顶点UV坐标
+ * @param Color - 顶点颜色
+ * @return int32 - 新顶点的索引
+ */
 int32 AFrustum::AddVertex(const FVector& Position, const FVector& Normal, 
                          const FVector2D& UV, const FLinearColor& Color)
 {
-    return MeshData.AddVertex(Position, Normal, UV, Color);
+    // 验证输入参数
+    if (!ensureMsgf(!Position.ContainsNaN(), TEXT("顶点位置包含无效值")))
+    {
+        return INDEX_NONE;
+    }
+
+    if (!ensureMsgf(!Normal.ContainsNaN() && !Normal.IsZero(), TEXT("顶点法线无效")))
+    {
+        return INDEX_NONE;
+    }
+
+    if (!ensureMsgf(!UV.ContainsNaN(), TEXT("UV坐标包含无效值")))
+    {
+        return INDEX_NONE;
+    }
+
+    // 添加顶点并返回索引
+    const int32 NewIndex = MeshData.AddVertex(Position, Normal, UV, Color);
+
+    // 记录顶点添加
+    UE_LOG(LogFrustum, VeryVerbose, TEXT("添加顶点：Index=%d, Position=%s, Normal=%s"), 
+           NewIndex, *Position.ToString(), *Normal.ToString());
+
+    return NewIndex;
 }
 
+/**
+ * 添加四边形到网格
+ * 
+ * @param V1,V2,V3,V4 - 四边形的四个顶点索引（按逆时针顺序）
+ * @param MaterialIndex - 材质索引
+ */
 void AFrustum::AddQuad(int32 V1, int32 V2, int32 V3, int32 V4, int32 MaterialIndex)
 {
+    // 验证顶点索引
+    if (!ensureMsgf(V1 >= 0 && V2 >= 0 && V3 >= 0 && V4 >= 0, TEXT("四边形顶点索引无效")))
+    {
+        return;
+    }
+
+    if (!ensureMsgf(V1 < MeshData.GetVertexCount() && V2 < MeshData.GetVertexCount() &&
+                    V3 < MeshData.GetVertexCount() && V4 < MeshData.GetVertexCount(),
+                    TEXT("四边形顶点索引超出范围")))
+    {
+        return;
+    }
+
+    // 添加四边形
     MeshData.AddQuad(V1, V2, V3, V4, MaterialIndex);
+
+    // 记录四边形添加
+    UE_LOG(LogFrustum, VeryVerbose, TEXT("添加四边形：V1=%d, V2=%d, V3=%d, V4=%d, Material=%d"), 
+           V1, V2, V3, V4, MaterialIndex);
 }
 
+/**
+ * 添加三角形到网格
+ * 
+ * @param V1,V2,V3 - 三角形的三个顶点索引（按逆时针顺序）
+ * @param MaterialIndex - 材质索引
+ */
 void AFrustum::AddTriangle(int32 V1, int32 V2, int32 V3, int32 MaterialIndex)
 {
+    // 验证顶点索引
+    if (!ensureMsgf(V1 >= 0 && V2 >= 0 && V3 >= 0, TEXT("三角形顶点索引无效")))
+    {
+        return;
+    }
+
+    if (!ensureMsgf(V1 < MeshData.GetVertexCount() && V2 < MeshData.GetVertexCount() &&
+                    V3 < MeshData.GetVertexCount(),
+                    TEXT("三角形顶点索引超出范围")))
+    {
+        return;
+    }
+
+    // 添加三角形
     MeshData.AddTriangle(V1, V2, V3, MaterialIndex);
+
+    // 记录三角形添加
+    UE_LOG(LogFrustum, VeryVerbose, TEXT("添加三角形：V1=%d, V2=%d, V3=%d, Material=%d"), 
+           V1, V2, V3, MaterialIndex);
 }
 
+/**
+ * 更新程序化网格组件
+ * 将生成的几何数据应用到网格组件
+ */
 void AFrustum::UpdateProceduralMeshComponent()
 {
-    if (!MeshComponent || MeshData.Vertices.Num() == 0)
+    // 验证组件和数据
+    if (!ensureMsgf(MeshComponent, TEXT("网格组件未初始化")))
     {
+        return;
+    }
+
+    if (MeshData.Vertices.Num() == 0)
+    {
+        UE_LOG(LogFrustum, Warning, TEXT("没有顶点数据可更新"));
         return;
     }
 
     // 验证法线数据
     ValidateAndFixNormals();
 
-    // 提交网格
-    if (MeshData.Vertices.Num() > 0)
-    {
-        MeshComponent->CreateMeshSection_LinearColor(
-            0,
-            MeshData.Vertices,
-            MeshData.Triangles,
-            MeshData.Normals,
-            MeshData.UVs,
-            MeshData.VertexColors,
-            MeshData.Tangents,
-            true // 启用碰撞
-        );
+    // 提交网格数据
+    MeshComponent->CreateMeshSection_LinearColor(
+        0,                          // 段索引
+        MeshData.Vertices,         // 顶点位置
+        MeshData.Triangles,        // 三角形索引
+        MeshData.Normals,          // 顶点法线
+        MeshData.UVs,              // UV坐标
+        MeshData.VertexColors,     // 顶点颜色
+        MeshData.Tangents,         // 切线
+        true                       // 启用碰撞
+    );
 
-        // 应用材质
-        ApplyMaterial();
-    }
+    // 应用材质
+    ApplyMaterial();
+
+    // 记录更新结果
+    UE_LOG(LogFrustum, Log, TEXT("网格更新完成：顶点=%d，三角形=%d"), 
+           MeshData.GetVertexCount(), MeshData.GetTriangleCount());
 }
 
-// 新增：法线验证和修复函数
+/**
+ * 验证并修复网格的法线数据
+ * 包括检查法线长度、方向和一致性
+ */
 void AFrustum::ValidateAndFixNormals()
 {
-    if (MeshData.Vertices.Num() == 0 || MeshData.Normals.Num() == 0)
+    // 验证数据有效性
+    if (!ValidateNormalDataIntegrity())
     {
-        UE_LOG(LogTemp, Warning, TEXT("ValidateAndFixNormals: No mesh data to validate"));
         return;
     }
 
-    // 确保法线数组大小与顶点数组一致
-    if (MeshData.Normals.Num() != MeshData.Vertices.Num())
-    {
-        UE_LOG(LogTemp, Error, TEXT("ValidateAndFixNormals: Normal count (%d) doesn't match vertex count (%d)"), 
-               MeshData.Normals.Num(), MeshData.Vertices.Num());
-        return;
-    }
+    // 统计信息
+    FNormalValidationStats Stats;
 
-    int32 InvalidNormals = 0;
-    int32 ZeroNormals = 0;
-    int32 FlippedNormals = 0;
-    FVector AverageNormal = FVector::ZeroVector;
-
-    // 检查每个法线
-    for (int32 i = 0; i < MeshData.Normals.Num(); ++i)
-    {
-        FVector& Normal = MeshData.Normals[i];
-        const FVector& Vertex = MeshData.Vertices[i];
-
-        // 检查法线是否为零向量
-        if (Normal.IsNearlyZero())
-        {
-            ZeroNormals++;
-            // 尝试从顶点位置计算法线
-            Normal = Vertex.GetSafeNormal();
-            if (Normal.IsNearlyZero())
-            {
-                Normal = FVector(0, 0, 1); // 默认向上
-            }
-        }
-
-        // 检查法线是否已标准化
-        const float NormalLength = Normal.Size();
-        if (!FMath::IsNearlyEqual(NormalLength, 1.0f, 0.01f))
-        {
-            InvalidNormals++;
-            Normal = Normal.GetSafeNormal();
-        }
-
-        // 检查法线方向（对于Frustum，法线应该指向外部）
-        if (!Normal.IsNearlyZero())
-        {
-            // 对于侧面，法线应该指向远离中心的方向
-            if (FMath::Abs(Vertex.Z) < Parameters.Height / 2.0f - 0.1f) // 侧面顶点
-            {
-                FVector ToCenter = FVector(Vertex.X, Vertex.Y, 0).GetSafeNormal();
-                if (FVector::DotProduct(Normal, ToCenter) < 0)
-                {
-                    FlippedNormals++;
-                    Normal = -Normal;
-                }
-            }
-            // 对于顶面，法线应该向上
-            else if (Vertex.Z > 0)
-            {
-                if (Normal.Z < 0)
-                {
-                    FlippedNormals++;
-                    Normal = -Normal;
-                }
-            }
-            // 对于底面，法线应该向下
-            else if (Vertex.Z < 0)
-            {
-                if (Normal.Z > 0)
-                {
-                    FlippedNormals++;
-                    Normal = -Normal;
-                }
-            }
-        }
-
-        AverageNormal += Normal;
-    }
+    // 检查并修复每个顶点的法线
+    ValidateVertexNormals(Stats);
 
     // 输出统计信息
-    if (InvalidNormals > 0 || ZeroNormals > 0 || FlippedNormals > 0)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("Frustum Normal Validation: Invalid=%d, Zero=%d, Flipped=%d"), 
-               InvalidNormals, ZeroNormals, FlippedNormals);
-    }
-
-    // 输出平均法线方向
-    if (MeshData.Normals.Num() > 0)
-    {
-        AverageNormal = AverageNormal.GetSafeNormal();
-        UE_LOG(LogTemp, Log, TEXT("Frustum Average Normal: %s"), *AverageNormal.ToString());
-    }
+    LogNormalValidationStats(Stats);
 
     // 验证三角形法线一致性
     ValidateTriangleNormals();
 }
 
-// 新增：简单的法线测试函数
-void AFrustum::TestNormalValidation()
+/**
+ * 验证法线数据的完整性
+ * @return bool - 如果数据完整则返回true
+ */
+bool AFrustum::ValidateNormalDataIntegrity() const
 {
-    UE_LOG(LogTemp, Log, TEXT("=== Frustum Normal Validation Test ==="));
-    
-    // 测试基本的法线计算
-    FVector TestNormal1 = FVector(1, 0, 0);
-    FVector TestNormal2 = FVector(0, 1, 0);
-    FVector TestNormal3 = FVector(0, 0, 1);
-    
-    UE_LOG(LogTemp, Log, TEXT("Test Normal 1: %s"), *TestNormal1.ToString());
-    UE_LOG(LogTemp, Log, TEXT("Test Normal 2: %s"), *TestNormal2.ToString());
-    UE_LOG(LogTemp, Log, TEXT("Test Normal 3: %s"), *TestNormal3.ToString());
-    
-    // 测试点积计算
-    float Dot1 = FVector::DotProduct(TestNormal1, TestNormal2);
-    float Dot2 = FVector::DotProduct(TestNormal1, TestNormal3);
-    float Dot3 = FVector::DotProduct(TestNormal2, TestNormal3);
-    
-    UE_LOG(LogTemp, Log, TEXT("Dot Product Tests: %f, %f, %f"), Dot1, Dot2, Dot3);
-    
-    // 测试法线标准化
-    FVector Unnormalized = FVector(2, 3, 4);
-    FVector Normalized = Unnormalized.GetSafeNormal();
-    UE_LOG(LogTemp, Log, TEXT("Unnormalized: %s"), *Unnormalized.ToString());
-    UE_LOG(LogTemp, Log, TEXT("Normalized: %s"), *Normalized.ToString());
-    UE_LOG(LogTemp, Log, TEXT("Normalized Length: %f"), Normalized.Size());
-    
-    UE_LOG(LogTemp, Log, TEXT("=== Test Complete ==="));
+    // 检查是否有网格数据
+    if (MeshData.Vertices.Num() == 0 || MeshData.Normals.Num() == 0)
+    {
+        UE_LOG(LogFrustum, Warning, TEXT("没有网格数据可验证"));
+        return false;
+    }
+
+    // 检查法线数组大小是否匹配
+    if (MeshData.Normals.Num() != MeshData.Vertices.Num())
+    {
+        UE_LOG(LogFrustum, Error, TEXT("法线数量(%d)与顶点数量(%d)不匹配"), 
+               MeshData.Normals.Num(), MeshData.Vertices.Num());
+        return false;
+    }
+
+    return true;
 }
 
-// 新增：验证三角形法线一致性
+/**
+ * 验证并修复顶点法线
+ * @param Stats - 输出参数，用于收集统计信息
+ */
+void AFrustum::ValidateVertexNormals(FNormalValidationStats& Stats)
+{
+    const float HalfHeight = Parameters.Height * 0.5f;
+    Stats.AverageNormal = FVector::ZeroVector;
+
+    // 检查每个顶点的法线
+    for (int32 i = 0; i < MeshData.Normals.Num(); ++i)
+    {
+        FVector& Normal = MeshData.Normals[i];
+        const FVector& Vertex = MeshData.Vertices[i];
+
+        // 修复零向量法线
+        if (FixZeroNormal(Normal, Vertex, Stats))
+        {
+            continue;
+        }
+
+        // 标准化法线
+        if (NormalizeNormal(Normal, Stats))
+        {
+            continue;
+        }
+
+        // 修正法线方向
+        FixNormalDirection(Normal, Vertex, HalfHeight, Stats);
+
+        // 累加法线以计算平均值
+        Stats.AverageNormal += Normal;
+    }
+}
+
+/**
+ * 修复零向量法线
+ * @return bool - 如果法线是零向量并已修复则返回true
+ */
+bool AFrustum::FixZeroNormal(FVector& Normal, const FVector& Vertex, FNormalValidationStats& Stats)
+{
+    if (!Normal.IsNearlyZero())
+    {
+        return false;
+    }
+
+    Stats.ZeroNormals++;
+
+    // 尝试从顶点位置计算法线
+    Normal = Vertex.GetSafeNormal();
+    if (Normal.IsNearlyZero())
+    {
+        Normal = FVector(0, 0, 1); // 默认向上
+    }
+
+    return true;
+}
+
+/**
+ * 标准化法线
+ * @return bool - 如果法线需要标准化并已修复则返回true
+ */
+bool AFrustum::NormalizeNormal(FVector& Normal, FNormalValidationStats& Stats)
+{
+    const float NormalLength = Normal.Size();
+    if (FMath::IsNearlyEqual(NormalLength, 1.0f, 0.01f))
+    {
+        return false;
+    }
+
+    Stats.InvalidNormals++;
+    Normal = Normal.GetSafeNormal();
+    return true;
+}
+
+/**
+ * 修正法线方向
+ */
+void AFrustum::FixNormalDirection(FVector& Normal, const FVector& Vertex, float HalfHeight, FNormalValidationStats& Stats)
+{
+    if (Normal.IsNearlyZero())
+    {
+        return;
+    }
+
+    // 根据顶点位置确定期望的法线方向
+    if (FMath::Abs(Vertex.Z) < HalfHeight - 0.1f)
+    {
+        // 侧面顶点：法线应指向远离中心
+        FixSideNormal(Normal, Vertex, Stats);
+    }
+    else if (Vertex.Z > 0)
+    {
+        // 顶面顶点：法线应向上
+        FixTopNormal(Normal, Stats);
+    }
+    else
+    {
+        // 底面顶点：法线应向下
+        FixBottomNormal(Normal, Stats);
+    }
+}
+
+/**
+ * 修正侧面法线方向
+ */
+void AFrustum::FixSideNormal(FVector& Normal, const FVector& Vertex, FNormalValidationStats& Stats)
+{
+    const FVector ToCenter = FVector(Vertex.X, Vertex.Y, 0).GetSafeNormal();
+    if (FVector::DotProduct(Normal, ToCenter) < 0)
+    {
+        Stats.FlippedNormals++;
+        Normal = -Normal;
+    }
+}
+
+/**
+ * 修正顶面法线方向
+ */
+void AFrustum::FixTopNormal(FVector& Normal, FNormalValidationStats& Stats)
+{
+    if (Normal.Z < 0)
+    {
+        Stats.FlippedNormals++;
+        Normal = -Normal;
+    }
+}
+
+/**
+ * 修正底面法线方向
+ */
+void AFrustum::FixBottomNormal(FVector& Normal, FNormalValidationStats& Stats)
+{
+    if (Normal.Z > 0)
+    {
+        Stats.FlippedNormals++;
+        Normal = -Normal;
+    }
+}
+
+/**
+ * 输出法线验证统计信息
+ */
+void AFrustum::LogNormalValidationStats(FNormalValidationStats& Stats)
+{
+    // 输出问题统计
+    if (Stats.InvalidNormals > 0 || Stats.ZeroNormals > 0 || Stats.FlippedNormals > 0)
+    {
+        UE_LOG(LogFrustum, Warning, TEXT("法线验证结果：无效=%d，零向量=%d，方向错误=%d"), 
+               Stats.InvalidNormals, Stats.ZeroNormals, Stats.FlippedNormals);
+    }
+
+    // 输出平均法线方向
+    if (MeshData.Normals.Num() > 0)
+    {
+        Stats.AverageNormal = Stats.AverageNormal.GetSafeNormal();
+        UE_LOG(LogFrustum, Log, TEXT("平均法线方向：%s"), *Stats.AverageNormal.ToString());
+    }
+}
+
+/**
+ * 运行法线验证测试
+ * 仅在编辑器或调试模式下使用
+ */
+void AFrustum::TestNormalValidation()
+{
+    UE_LOG(LogFrustum, Log, TEXT("=== 法线验证测试开始 ==="));
+    
+    // 测试基本法线
+    const FVector TestNormals[] = {
+        FVector(1, 0, 0),  // X轴
+        FVector(0, 1, 0),  // Y轴
+        FVector(0, 0, 1)   // Z轴
+    };
+    
+    // 测试法线属性
+    for (int32 i = 0; i < 3; ++i)
+    {
+        const FVector& Normal = TestNormals[i];
+        UE_LOG(LogFrustum, Log, TEXT("测试法线 %d: %s (长度=%.3f)"), 
+               i + 1, *Normal.ToString(), Normal.Size());
+    }
+    
+    // 测试法线点积
+    TestNormalDotProducts(TestNormals);
+    
+    // 测试法线标准化
+    TestNormalNormalization();
+    
+    UE_LOG(LogFrustum, Log, TEXT("=== 法线验证测试完成 ==="));
+}
+
+/**
+ * 测试法线点积计算
+ */
+void AFrustum::TestNormalDotProducts(const FVector TestNormals[3])
+{
+    for (int32 i = 0; i < 3; ++i)
+    {
+        for (int32 j = i + 1; j < 3; ++j)
+        {
+            const float Dot = FVector::DotProduct(TestNormals[i], TestNormals[j]);
+            UE_LOG(LogFrustum, Log, TEXT("法线 %d 和 %d 的点积: %.3f"), 
+                   i + 1, j + 1, Dot);
+        }
+    }
+}
+
+/**
+ * 测试法线标准化
+ */
+void AFrustum::TestNormalNormalization()
+{
+    const FVector Unnormalized(2, 3, 4);
+    const FVector Normalized = Unnormalized.GetSafeNormal();
+    
+    UE_LOG(LogFrustum, Log, TEXT("未标准化: %s (长度=%.3f)"), 
+           *Unnormalized.ToString(), Unnormalized.Size());
+    UE_LOG(LogFrustum, Log, TEXT("已标准化: %s (长度=%.3f)"), 
+           *Normalized.ToString(), Normalized.Size());
+}
+
+/**
+ * 验证三角形法线的一致性
+ */
 void AFrustum::ValidateTriangleNormals()
 {
+    // 验证数据有效性
     if (MeshData.Triangles.Num() == 0)
     {
         return;
     }
 
+    // 统计信息
     int32 InconsistentTriangles = 0;
     int32 DegenerateTriangles = 0;
 
+    // 检查每个三角形
     for (int32 i = 0; i < MeshData.Triangles.Num(); i += 3)
     {
-        if (i + 2 >= MeshData.Triangles.Num())
+        // 验证索引范围
+        if (!ValidateTriangleIndices(i))
         {
-            break;
+            continue;
         }
 
+        // 获取三角形顶点索引
         const int32 V0 = MeshData.Triangles[i];
         const int32 V1 = MeshData.Triangles[i + 1];
         const int32 V2 = MeshData.Triangles[i + 2];
 
-        if (V0 < 0 || V1 < 0 || V2 < 0 || 
-            V0 >= MeshData.Vertices.Num() || 
-            V1 >= MeshData.Vertices.Num() || 
-            V2 >= MeshData.Vertices.Num())
-        {
-            UE_LOG(LogTemp, Error, TEXT("Invalid triangle indices: %d, %d, %d"), V0, V1, V2);
-            continue;
-        }
-
-        // 计算面法线
+        // 计算三角形法线
         const FVector Edge1 = MeshData.Vertices[V1] - MeshData.Vertices[V0];
         const FVector Edge2 = MeshData.Vertices[V2] - MeshData.Vertices[V0];
         const FVector FaceNormal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
 
+        // 检查退化三角形
         if (FaceNormal.IsNearlyZero())
         {
             DegenerateTriangles++;
             continue;
         }
 
-        // 检查顶点法线是否与面法线一致
-        const FVector& Normal0 = MeshData.Normals[V0];
-        const FVector& Normal1 = MeshData.Normals[V1];
-        const FVector& Normal2 = MeshData.Normals[V2];
-
-        const float Dot0 = FVector::DotProduct(FaceNormal, Normal0);
-        const float Dot1 = FVector::DotProduct(FaceNormal, Normal1);
-        const float Dot2 = FVector::DotProduct(FaceNormal, Normal2);
-
-        // 如果法线方向差异太大，标记为不一致
-        if (Dot0 < 0.5f || Dot1 < 0.5f || Dot2 < 0.5f)
+        // 检查顶点法线一致性
+        if (!CheckVertexNormalConsistency(V0, V1, V2, FaceNormal))
         {
             InconsistentTriangles++;
         }
     }
 
+    // 输出统计信息
+    LogTriangleValidationResults(InconsistentTriangles, DegenerateTriangles);
+}
+
+/**
+ * 验证三角形索引的有效性
+ */
+bool AFrustum::ValidateTriangleIndices(int32 BaseIndex) const
+{
+    if (BaseIndex + 2 >= MeshData.Triangles.Num())
+    {
+        return false;
+    }
+
+    const int32 Indices[] = {
+        MeshData.Triangles[BaseIndex],
+        MeshData.Triangles[BaseIndex + 1],
+        MeshData.Triangles[BaseIndex + 2]
+    };
+
+    for (int32 Index : Indices)
+    {
+        if (Index < 0 || Index >= MeshData.Vertices.Num())
+        {
+            UE_LOG(LogFrustum, Error, TEXT("无效的三角形索引：%d"), Index);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * 检查顶点法线与面法线的一致性
+ */
+bool AFrustum::CheckVertexNormalConsistency(int32 V0, int32 V1, int32 V2, const FVector& FaceNormal) const
+{
+    const FVector& Normal0 = MeshData.Normals[V0];
+    const FVector& Normal1 = MeshData.Normals[V1];
+    const FVector& Normal2 = MeshData.Normals[V2];
+
+    const float Dot0 = FVector::DotProduct(FaceNormal, Normal0);
+    const float Dot1 = FVector::DotProduct(FaceNormal, Normal1);
+    const float Dot2 = FVector::DotProduct(FaceNormal, Normal2);
+
+    return Dot0 >= 0.5f && Dot1 >= 0.5f && Dot2 >= 0.5f;
+}
+
+/**
+ * 输出三角形验证结果
+ */
+void AFrustum::LogTriangleValidationResults(int32 InconsistentTriangles, int32 DegenerateTriangles) const
+{
     if (InconsistentTriangles > 0 || DegenerateTriangles > 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Triangle Normal Issues: Inconsistent=%d, Degenerate=%d"), 
+        UE_LOG(LogFrustum, Warning, TEXT("三角形问题：法线不一致=%d，退化=%d"), 
                InconsistentTriangles, DegenerateTriangles);
     }
 }
@@ -844,7 +1292,7 @@ void AFrustum::CreateEndCapTriangles(float Angle, const FVector& Normal, bool Is
     if (Parameters.ChamferRadius > 0.0f)
     {
         const int32 TopChamferSections = Parameters.ChamferSections;
-        for (int32 i = 0; i <= TopChamferSections; ++i) // 从顶面到侧边
+        for (int32 i = 0; i < TopChamferSections; ++i) // 从顶面到侧边
         {
             const float Alpha = static_cast<float>(i) / TopChamferSections;
             
@@ -871,7 +1319,7 @@ void AFrustum::CreateEndCapTriangles(float Angle, const FVector& Normal, bool Is
     }
 
     // 3. 侧边顶点（从上到下）
-    for (int32 h = 1; h < Parameters.HeightSegments; ++h)
+    for (int32 h = 0; h <= Parameters.HeightSegments; ++h)
     {
         const float Z = FMath::Lerp(EndZ, StartZ, static_cast<float>(h) / Parameters.HeightSegments);
         const float Alpha = (Z + HalfHeight) / Parameters.Height;
@@ -893,7 +1341,7 @@ void AFrustum::CreateEndCapTriangles(float Angle, const FVector& Normal, bool Is
     if (Parameters.ChamferRadius > 0.0f)
     {
         const int32 BottomChamferSections = Parameters.ChamferSections;
-        for (int32 i = 0; i <= BottomChamferSections; ++i) // 从侧边到底面
+        for (int32 i = 1; i <= BottomChamferSections; ++i) // 从侧边到底面
         {
             const float Alpha = static_cast<float>(i) / BottomChamferSections;
             

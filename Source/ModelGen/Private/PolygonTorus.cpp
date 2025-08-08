@@ -1,12 +1,29 @@
+// Copyright (c) 2024. All rights reserved.
+
+/**
+ * @file PolygonTorus.cpp
+ * @brief 可配置的多边形圆环生成器的实现
+ */
+
 #include "PolygonTorus.h"
+
+// Engine includes
 #include "ProceduralMeshComponent.h"
 #include "Materials/Material.h"
 #include "UObject/ConstructorHelpers.h"
 
+// 日志分类定义
+DEFINE_LOG_CATEGORY_STATIC(LogPolygonTorus, Log, All);
+
+/**
+ * 构造函数
+ * 初始化组件和默认设置
+ */
 APolygonTorus::APolygonTorus()
 {
     PrimaryActorTick.bCanEverTick = false;
 
+    // 创建程序化网格组件
     ProceduralMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("GeneratedMesh"));
     RootComponent = ProceduralMesh;
     ProceduralMesh->bUseAsyncCooking = true;
@@ -18,39 +35,104 @@ APolygonTorus::APolygonTorus()
     {
         ProceduralMesh->SetMaterial(0, MaterialFinder.Object);
     }
+    else
+    {
+        UE_LOG(LogPolygonTorus, Warning, TEXT("无法加载默认材质"));
+    }
 
+    // 初始生成圆环
     GenerateTorusWithSmoothing(ETorusSmoothMode::Both, 30.0f);
 }
 
+/**
+ * 游戏开始时调用
+ * 确保圆环已正确生成
+ */
 void APolygonTorus::BeginPlay()
 {
     Super::BeginPlay();
     GenerateTorusWithSmoothing(ETorusSmoothMode::Both, 30.0f);
 }
 
+/**
+ * 编辑器构造时调用
+ * 实时更新圆环以反映参数变化
+ */
 void APolygonTorus::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
     GenerateTorusWithSmoothing(ETorusSmoothMode::Both, 30.0f);
 }
 
-// 优化的参数验证和约束
+/**
+ * 验证和修正参数
+ * 确保所有参数都在有效范围内
+ * 
+ * @param MajorRad - 主半径（引用传递，会被修正）
+ * @param MinorRad - 次半径（引用传递，会被修正）
+ * @param MajorSegs - 主分段数（引用传递，会被修正）
+ * @param MinorSegs - 次分段数（引用传递，会被修正）
+ * @param Angle - 圆环角度（引用传递，会被修正）
+ */
 void APolygonTorus::ValidateAndClampParameters(float& MajorRad, float& MinorRad, int32& MajorSegs, 
                                               int32& MinorSegs, float& Angle)
 {
     // 约束分段数
+    const int32 OldMajorSegs = MajorSegs;
+    const int32 OldMinorSegs = MinorSegs;
     MajorSegs = FMath::Clamp(MajorSegs, 3, 256);
     MinorSegs = FMath::Clamp(MinorSegs, 3, 256);
     
+    if (OldMajorSegs != MajorSegs)
+    {
+        UE_LOG(LogPolygonTorus, Warning, TEXT("主分段数已从 %d 调整为 %d"), OldMajorSegs, MajorSegs);
+    }
+    
+    if (OldMinorSegs != MinorSegs)
+    {
+        UE_LOG(LogPolygonTorus, Warning, TEXT("次分段数已从 %d 调整为 %d"), OldMinorSegs, MinorSegs);
+    }
+    
     // 约束半径
+    const float OldMajorRad = MajorRad;
+    const float OldMinorRad = MinorRad;
     MajorRad = FMath::Max(MajorRad, 1.0f);
     MinorRad = FMath::Clamp(MinorRad, 1.0f, MajorRad * 0.9f);
     
+    if (OldMajorRad != MajorRad)
+    {
+        UE_LOG(LogPolygonTorus, Warning, TEXT("主半径已从 %.2f 调整为 %.2f"), OldMajorRad, MajorRad);
+    }
+    
+    if (OldMinorRad != MinorRad)
+    {
+        UE_LOG(LogPolygonTorus, Warning, TEXT("次半径已从 %.2f 调整为 %.2f"), OldMinorRad, MinorRad);
+    }
+    
     // 约束角度
+    const float OldAngle = Angle;
     Angle = FMath::Clamp(Angle, 1.0f, 360.0f);
+    
+    if (OldAngle != Angle)
+    {
+        UE_LOG(LogPolygonTorus, Warning, TEXT("圆环角度已从 %.2f 调整为 %.2f"), OldAngle, Angle);
+    }
 }
 
-// 优化的顶点生成（基于Blender的实现）
+/**
+ * 生成优化的顶点
+ * 基于Blender的实现，生成高质量的圆环顶点
+ * 
+ * @param Vertices - 输出的顶点数组
+ * @param Normals - 输出的法线数组
+ * @param UVs - 输出的UV坐标数组
+ * @param Tangents - 输出的切线数组
+ * @param MajorRad - 主半径
+ * @param MinorRad - 次半径
+ * @param MajorSegs - 主分段数
+ * @param MinorSegs - 次分段数
+ * @param AngleRad - 圆环角度（弧度）
+ */
 void APolygonTorus::GenerateOptimizedVertices(
     TArray<FVector>& Vertices,
     TArray<FVector>& Normals,
@@ -458,7 +540,24 @@ void APolygonTorus::GenerateAdvancedEndCaps(
     }
 }
 
-// 生成圆形端盖（用于特殊形状）
+/**
+ * 生成圆形端盖
+ * 用于特殊形状的圆环，生成圆形端面
+ * 
+ * @param Vertices - 输出的顶点数组
+ * @param Normals - 输出的法线数组
+ * @param UVs - 输出的UV坐标数组
+ * @param Tangents - 输出的切线数组
+ * @param Triangles - 输出的三角形索引数组
+ * @param MajorRad - 主半径
+ * @param MinorRad - 次半径
+ * @param AngleRad - 圆环角度（弧度）
+ * @param MajorSegs - 主分段数
+ * @param MinorSegs - 次分段数
+ * @param InCapSegments - 端盖分段数
+ * @param bInGenerateStartCap - 是否生成起始端盖
+ * @param bInGenerateEndCap - 是否生成结束端盖
+ */
 void APolygonTorus::GenerateCircularEndCaps(
     TArray<FVector>& Vertices,
     TArray<FVector>& Normals,
@@ -474,9 +573,31 @@ void APolygonTorus::GenerateCircularEndCaps(
     bool bInGenerateStartCap,
     bool bInGenerateEndCap)
 {
+    // 验证输入参数
+    if (!ensureMsgf(MajorRad > 0.0f, TEXT("主半径必须大于0")))
+    {
+        return;
+    }
+
+    if (!ensureMsgf(MinorRad > 0.0f, TEXT("次半径必须大于0")))
+    {
+        return;
+    }
+
+    if (!ensureMsgf(MajorRad >= MinorRad, TEXT("主半径必须大于或等于次半径")))
+    {
+        return;
+    }
+
+    if (!ensureMsgf(InCapSegments >= 3, TEXT("端盖分段数至少为3")))
+    {
+        InCapSegments = 3;
+    }
+
     // 如果是完整圆环，不需要端面
     if (FMath::IsNearlyEqual(AngleRad, 2.0f * PI))
     {
+        UE_LOG(LogPolygonTorus, Verbose, TEXT("完整圆环，跳过端盖生成"));
         return;
     }
 
@@ -821,12 +942,18 @@ void APolygonTorus::GenerateOptimizedTorus()
     );
 }
 
-// 网格拓扑验证
+/**
+ * 验证网格拓扑
+ * 检查生成的网格数据的完整性和有效性
+ * 
+ * @param Vertices - 顶点数组
+ * @param Triangles - 三角形索引数组
+ */
 void APolygonTorus::ValidateMeshTopology(const TArray<FVector>& Vertices, const TArray<int32>& Triangles)
 {
     if (Vertices.Num() == 0 || Triangles.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("ValidateMeshTopology: Empty mesh data"));
+        UE_LOG(LogPolygonTorus, Warning, TEXT("网格数据为空"));
         return;
     }
 
@@ -835,7 +962,7 @@ void APolygonTorus::ValidateMeshTopology(const TArray<FVector>& Vertices, const 
     {
         if (Triangles[i] < 0 || Triangles[i] >= Vertices.Num())
         {
-            UE_LOG(LogTemp, Error, TEXT("Invalid triangle index: %d (vertex count: %d)"), 
+            UE_LOG(LogPolygonTorus, Error, TEXT("无效的三角形索引：%d（顶点数量：%d）"), 
                    Triangles[i], Vertices.Num());
         }
     }
@@ -843,28 +970,44 @@ void APolygonTorus::ValidateMeshTopology(const TArray<FVector>& Vertices, const 
     // 检查三角形数量是否为3的倍数
     if (Triangles.Num() % 3 != 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Triangle count is not divisible by 3: %d"), Triangles.Num());
+        UE_LOG(LogPolygonTorus, Warning, TEXT("三角形数量不是3的倍数：%d"), Triangles.Num());
     }
 }
 
-// 记录网格统计信息
+/**
+ * 记录网格统计信息
+ * 输出生成的网格数据统计信息
+ * 
+ * @param Vertices - 顶点数组
+ * @param Triangles - 三角形索引数组
+ */
 void APolygonTorus::LogMeshStatistics(const TArray<FVector>& Vertices, const TArray<int32>& Triangles)
 {
     if (Vertices.Num() > 0)
     {
-        UE_LOG(LogTemp, Log, TEXT("PolygonTorus: Generated %d vertices, %d triangles"), 
+        UE_LOG(LogPolygonTorus, Log, TEXT("圆环生成完成：顶点=%d，三角形=%d"), 
                Vertices.Num(), Triangles.Num() / 3);
     }
 }
 
-// 高级光滑控制函数
+/**
+ * 使用高级光滑控制生成圆环
+ * 主要的圆环生成函数，支持多种光滑模式
+ * 
+ * @param InSmoothMode - 光滑模式
+ * @param InSmoothingAngle - 光滑角度阈值
+ */
 void APolygonTorus::GenerateTorusWithSmoothing(ETorusSmoothMode InSmoothMode, float InSmoothingAngle)
 {
-    if (!ProceduralMesh)
+    // 验证网格组件
+    if (!ensureMsgf(ProceduralMesh, TEXT("程序化网格组件缺失！")))
     {
-        UE_LOG(LogTemp, Error, TEXT("ProceduralMeshComponent is null!"));
+        UE_LOG(LogPolygonTorus, Error, TEXT("程序化网格组件缺失，无法生成圆环"));
         return;
     }
+
+    UE_LOG(LogPolygonTorus, Log, TEXT("开始生成圆环：主半径=%.2f，次半径=%.2f，主分段=%d，次分段=%d"), 
+           MajorRadius, MinorRadius, MajorSegments, MinorSegments);
 
     // 清除之前的网格
     ProceduralMesh->ClearAllMeshSections();

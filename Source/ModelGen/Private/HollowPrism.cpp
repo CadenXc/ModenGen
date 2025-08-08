@@ -1,23 +1,162 @@
+// Copyright (c) 2024. All rights reserved.
+
+/**
+ * @file HollowPrism.cpp
+ * @brief 可配置的空心棱柱生成器的实现
+ */
+
 #include "HollowPrism.h"
+
+// Engine includes
 #include "ProceduralMeshComponent.h"
 #include "Materials/Material.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/KismetMathLibrary.h"
 
+// 日志分类定义
+DEFINE_LOG_CATEGORY_STATIC(LogHollowPrism, Log, All);
+
+// ============================================================================
+// FMeshSection Implementation
+// 网格数据结构的实现
+// ============================================================================
+
+/**
+ * 清除所有网格数据
+ * 在重新生成几何体或清理资源时调用
+ */
+void FMeshSection::Clear()
+{
+    Vertices.Reset();
+    Triangles.Reset();
+    Normals.Reset();
+    UVs.Reset();
+    VertexColors.Reset();
+    Tangents.Reset();
+}
+
+/**
+ * 预分配内存以提高性能
+ * 
+ * @param VertexCount - 预估的顶点数量
+ * @param TriangleCount - 预估的三角形数量
+ */
+void FMeshSection::Reserve(int32 VertexCount, int32 TriangleCount)
+{
+    Vertices.Reserve(VertexCount);
+    Triangles.Reserve(TriangleCount);
+    Normals.Reserve(VertexCount);
+    UVs.Reserve(VertexCount);
+    VertexColors.Reserve(VertexCount);
+    Tangents.Reserve(VertexCount);
+}
+
+/**
+ * 验证网格数据的完整性
+ * 
+ * @return bool - 如果所有必要的网格数据都存在且数量匹配则返回true
+ */
+bool FMeshSection::IsValid() const
+{
+    // 检查是否有基本的顶点和三角形数据
+    const bool bHasBasicGeometry = Vertices.Num() > 0 && Triangles.Num() > 0;
+    
+    // 检查三角形索引是否为3的倍数（每个三角形3个顶点）
+    const bool bValidTriangleCount = Triangles.Num() % 3 == 0;
+    
+    // 检查所有顶点属性数组的大小是否匹配
+    const bool bMatchingArraySizes = Normals.Num() == Vertices.Num() &&
+                                   UVs.Num() == Vertices.Num() &&
+                                   Tangents.Num() == Vertices.Num();
+    
+    return bHasBasicGeometry && bValidTriangleCount && bMatchingArraySizes;
+}
+
+// ============================================================================
+// FPrismParameters Implementation
+// 生成参数结构体的实现
+// ============================================================================
+
+/**
+ * 验证生成参数的有效性
+ * 
+ * @return bool - 如果所有参数都在有效范围内则返回true
+ */
+bool FPrismParameters::IsValid() const
+{
+    // 检查基础尺寸是否有效
+    const bool bValidInnerRadius = InnerRadius > 0.0f;
+    const bool bValidOuterRadius = OuterRadius > 0.0f;
+    const bool bValidHeight = Height > 0.0f;
+    
+    // 检查边数是否在有效范围内
+    const bool bValidSides = Sides >= 3 && Sides <= 100;
+    
+    // 检查弧角是否在有效范围内
+    const bool bValidArcAngle = ArcAngle >= 0.0f && ArcAngle <= 360.0f;
+    
+    // 检查倒角参数是否有效
+    const bool bValidChamferRadius = ChamferRadius >= 0.0f;
+    const bool bValidChamferSections = ChamferSections >= 1 && ChamferSections <= 20;
+    
+    // 检查外半径是否大于内半径
+    const bool bValidRadiusRelationship = OuterRadius > InnerRadius;
+    
+    return bValidInnerRadius && bValidOuterRadius && bValidHeight && 
+           bValidSides && bValidArcAngle && bValidChamferRadius && 
+           bValidChamferSections && bValidRadiusRelationship;
+}
+
+/**
+ * 获取壁厚
+ * 
+ * @return float - 空心棱柱的壁厚
+ */
+float FPrismParameters::GetWallThickness() const
+{
+    return OuterRadius - InnerRadius;
+}
+
+/**
+ * 检查是否为完整圆环
+ * 
+ * @return bool - 如果弧角接近360度则返回true
+ */
+bool FPrismParameters::IsFullCircle() const
+{
+    return ArcAngle >= 360.0f - KINDA_SMALL_NUMBER;
+}
+
+// ============================================================================
+// AHollowPrism Implementation
+// 空心棱柱Actor的实现
+// ============================================================================
+
+/**
+ * 构造函数
+ * 初始化组件和默认设置
+ */
 AHollowPrism::AHollowPrism()
 {
     PrimaryActorTick.bCanEverTick = false;
 
+    // 创建程序化网格组件
     MeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("PrismMesh"));
     RootComponent = MeshComponent;
 
+    // 配置网格组件
     MeshComponent->bUseAsyncCooking = true;
     MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
     MeshComponent->SetSimulatePhysics(false);
 
+    // 初始生成几何体
     GenerateGeometry();
 }
 
+/**
+ * 游戏开始时调用
+ * 确保几何体已正确生成
+ */
 void AHollowPrism::BeginPlay()
 {
     Super::BeginPlay();
@@ -25,77 +164,90 @@ void AHollowPrism::BeginPlay()
 }
 
 #if WITH_EDITOR
+/**
+ * 编辑器属性变更时调用
+ * 实时更新几何体以反映参数变化
+ * 
+ * @param PropertyChangedEvent - 属性变更事件
+ */
 void AHollowPrism::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
     Super::PostEditChangeProperty(PropertyChangedEvent);
 
     const FName PropertyName = PropertyChangedEvent.GetPropertyName();
+    
+    // 定义需要触发重新生成的属性
     static const TArray<FName> RelevantProperties = {
         "InnerRadius", "OuterRadius", "Height",
         "Sides", "ArcAngle", "bUseTriangleMethod",
-        "ChamferRadius", "bUseChamfer", "ChamferSections", "ChamferSegments"
+        "ChamferRadius", "ChamferSections"
     };
 
     if (RelevantProperties.Contains(PropertyName))
     {
+        UE_LOG(LogHollowPrism, Verbose, TEXT("属性变更：%s，重新生成几何体"), *PropertyName.ToString());
         GenerateGeometry();
     }
 }
 #endif
 
+/**
+ * 重新生成空心棱柱几何体
+ * 蓝图可调用的公共接口
+ */
 void AHollowPrism::Regenerate()
 {
+    UE_LOG(LogHollowPrism, Log, TEXT("手动重新生成空心棱柱几何体"));
     GenerateGeometry();
 }
 
+/**
+ * 生成空心棱柱的几何体
+ * 主要的几何体生成函数，协调各个部分的生成
+ */
 void AHollowPrism::GenerateGeometry()
 {
-    if (!MeshComponent)
+    // 验证网格组件
+    if (!ensureMsgf(MeshComponent, TEXT("网格组件缺失！")))
     {
-        UE_LOG(LogTemp, Error, TEXT("Mesh component is missing!"));
+        UE_LOG(LogHollowPrism, Error, TEXT("网格组件缺失，无法生成几何体"));
         return;
     }
 
+    // 清除之前的网格数据
     MeshComponent->ClearAllMeshSections();
 
-    // 参数验证
-    Parameters.InnerRadius = FMath::Max(0.01f, Parameters.InnerRadius);
-    Parameters.OuterRadius = FMath::Max(0.01f, Parameters.OuterRadius);
-    Parameters.Height = FMath::Max(0.01f, Parameters.Height);
-    Parameters.Sides = FMath::Max(3, Parameters.Sides);
-    Parameters.ArcAngle = FMath::Clamp(Parameters.ArcAngle, 0.0f, 360.0f);
-    Parameters.ChamferRadius = FMath::Max(0.0f, Parameters.ChamferRadius);
-    Parameters.ChamferSections = FMath::Max(1, Parameters.ChamferSections);
-
-    // 确保外半径大于内半径
-    if (Parameters.OuterRadius <= Parameters.InnerRadius)
+    // 验证和修正参数
+    if (!ValidateAndClampParameters())
     {
-        Parameters.OuterRadius = Parameters.InnerRadius + 1.0f;
+        UE_LOG(LogHollowPrism, Error, TEXT("参数验证失败，使用默认值"));
     }
 
+    // 创建网格数据容器
     FMeshSection MeshData;
 
-    // 顶点和三角形数量估算
-    const int32 VertexCountEstimate =
-        Parameters.Sides * 8 +  // 侧面（内外各4个顶点）
-        Parameters.Sides * 4 +  // 顶面/底面（内外各2个顶点）
-        (Parameters.ArcAngle < 360.0f ? 8 : 0);  // 端盖
+    // 估算顶点和三角形数量
+    const int32 VertexCountEstimate = CalculateVertexCountEstimate();
+    const int32 TriangleCountEstimate = CalculateTriangleCountEstimate();
 
-    const int32 TriangleCountEstimate =
-        Parameters.Sides * 8 +  // 侧面
-        Parameters.Sides * 4 +  // 顶面/底面
-        (Parameters.ArcAngle < 360.0f ? 8 : 0);  // 端盖
-
+    // 预分配内存以提高性能
     MeshData.Reserve(VertexCountEstimate, TriangleCountEstimate * 3);
 
-	GenerateSideWalls(MeshData);
-	GenerateTopCapWithQuads(MeshData);
-	GenerateBottomCapWithQuads(MeshData);
+    UE_LOG(LogHollowPrism, Verbose, TEXT("开始生成空心棱柱几何体：顶点预估=%d，三角形预估=%d"), 
+           VertexCountEstimate, TriangleCountEstimate);
 
-    // 生成倒角几何
+    // 生成各个几何部分
+    GenerateSideWalls(MeshData);
+    GenerateTopCapWithQuads(MeshData);
+    GenerateBottomCapWithQuads(MeshData);
+
+    // 生成倒角几何（如果启用）
     if (Parameters.ChamferRadius > 0.0f)
     {
         const float HalfHeight = Parameters.Height / 2.0f;
+        
+        UE_LOG(LogHollowPrism, Verbose, TEXT("生成倒角几何：半径=%.2f，分段数=%d"), 
+               Parameters.ChamferRadius, Parameters.ChamferSections);
         
         // 分别生成内外倒角
         GenerateTopInnerChamfer(MeshData, HalfHeight);
@@ -104,49 +256,159 @@ void AHollowPrism::GenerateGeometry()
         GenerateBottomOuterChamfer(MeshData, HalfHeight);
     }
 
-    if (Parameters.ArcAngle < 360.0f - KINDA_SMALL_NUMBER)
+    // 生成端盖（如果不是完整圆环）
+    if (!Parameters.IsFullCircle())
     {
         GenerateEndCaps(MeshData);
+        UE_LOG(LogHollowPrism, Verbose, TEXT("生成端盖：弧角=%.2f"), Parameters.ArcAngle);
     }
 
-    // 创建网格
-    if (MeshData.Vertices.Num() > 0)
+    // 验证生成的几何体
+    if (!MeshData.IsValid())
     {
-        MeshComponent->CreateMeshSection_LinearColor(
-            0,
-            MeshData.Vertices,
-            MeshData.Triangles,
-            MeshData.Normals,
-            MeshData.UVs,
-            MeshData.VertexColors,
-            MeshData.Tangents,
-            true
-        );
+        UE_LOG(LogHollowPrism, Error, TEXT("生成的几何体无效"));
+        return;
+    }
 
-        // 应用材质
-        static ConstructorHelpers::FObjectFinder<UMaterial> DefaultMaterial(TEXT("Material'/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall'"));
-        if (DefaultMaterial.Succeeded())
-        {
-            MeshComponent->SetMaterial(0, DefaultMaterial.Object);
-        }
-        else
-        {
-            UMaterial* FallbackMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
-            if (FallbackMaterial)
-            {
-                MeshComponent->SetMaterial(0, FallbackMaterial);
-            }
-        }
+    // 更新网格组件
+    UpdateMeshComponent(MeshData);
+
+    UE_LOG(LogHollowPrism, Log, TEXT("空心棱柱生成完成：顶点=%d，三角形=%d"), 
+           MeshData.GetVertexCount(), MeshData.GetTriangleCount());
+}
+
+/**
+ * 验证和修正参数
+ * 
+ * @return bool - 如果参数有效则返回true
+ */
+bool AHollowPrism::ValidateAndClampParameters()
+{
+    // 修正基础参数
+    Parameters.InnerRadius = FMath::Max(0.01f, Parameters.InnerRadius);
+    Parameters.OuterRadius = FMath::Max(0.01f, Parameters.OuterRadius);
+    Parameters.Height = FMath::Max(0.01f, Parameters.Height);
+    Parameters.Sides = FMath::Clamp(Parameters.Sides, 3, 100);
+    Parameters.ArcAngle = FMath::Clamp(Parameters.ArcAngle, 0.0f, 360.0f);
+    Parameters.ChamferRadius = FMath::Max(0.0f, Parameters.ChamferRadius);
+    Parameters.ChamferSections = FMath::Clamp(Parameters.ChamferSections, 1, 20);
+
+    // 确保外半径大于内半径
+    if (Parameters.OuterRadius <= Parameters.InnerRadius)
+    {
+        Parameters.OuterRadius = Parameters.InnerRadius + 1.0f;
+        UE_LOG(LogHollowPrism, Warning, TEXT("外半径已自动调整为：%.2f"), Parameters.OuterRadius);
+    }
+
+    return Parameters.IsValid();
+}
+
+/**
+ * 计算预估的顶点数量
+ * 
+ * @return int32 - 预估的顶点数量
+ */
+int32 AHollowPrism::CalculateVertexCountEstimate() const
+{
+    int32 VertexCount = 0;
+    
+    // 侧面顶点（内外各4个顶点）
+    VertexCount += Parameters.Sides * 8;
+    
+    // 顶面/底面顶点（内外各2个顶点）
+    VertexCount += Parameters.Sides * 4;
+    
+    // 倒角顶点（如果启用）
+    if (Parameters.ChamferRadius > 0.0f)
+    {
+        VertexCount += Parameters.Sides * Parameters.ChamferSections * 8; // 内外各4个顶点
+    }
+    
+    // 端盖顶点（如果不是完整圆环）
+    if (!Parameters.IsFullCircle())
+    {
+        VertexCount += 8; // 端盖的顶点数量
+    }
+    
+    return VertexCount;
+}
+
+/**
+ * 计算预估的三角形数量
+ * 
+ * @return int32 - 预估的三角形数量
+ */
+int32 AHollowPrism::CalculateTriangleCountEstimate() const
+{
+    int32 TriangleCount = 0;
+    
+    // 侧面三角形
+    TriangleCount += Parameters.Sides * 8;
+    
+    // 顶面/底面三角形
+    TriangleCount += Parameters.Sides * 4;
+    
+    // 倒角三角形（如果启用）
+    if (Parameters.ChamferRadius > 0.0f)
+    {
+        TriangleCount += Parameters.Sides * Parameters.ChamferSections * 8;
+    }
+    
+    // 端盖三角形（如果不是完整圆环）
+    if (!Parameters.IsFullCircle())
+    {
+        TriangleCount += 8;
+    }
+    
+    return TriangleCount;
+}
+
+/**
+ * 更新网格组件
+ * 
+ * @param MeshData - 要应用的网格数据
+ */
+void AHollowPrism::UpdateMeshComponent(const FMeshSection& MeshData)
+{
+    if (!ensureMsgf(MeshComponent, TEXT("网格组件缺失")))
+    {
+        return;
+    }
+
+    // 创建网格段
+    MeshComponent->CreateMeshSection_LinearColor(0, MeshData.Vertices, MeshData.Triangles, 
+        MeshData.Normals, MeshData.UVs, MeshData.VertexColors, 
+        MeshData.Tangents, true);
+
+    // 应用默认材质
+    static ConstructorHelpers::FObjectFinder<UMaterial> DefaultMaterial(TEXT("Material'/Game/StarterContent/Materials/M_Basic_Wall.M_Basic_Wall'"));
+    if (DefaultMaterial.Succeeded())
+    {
+        MeshComponent->SetMaterial(0, DefaultMaterial.Object);
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("Generated prism mesh has no vertices"));
+        UMaterial* FallbackMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
+        if (FallbackMaterial)
+        {
+            MeshComponent->SetMaterial(0, FallbackMaterial);
+        }
     }
+
+    UE_LOG(LogHollowPrism, Verbose, TEXT("网格组件更新完成：顶点=%d，三角形=%d"), 
+           MeshData.GetVertexCount(), MeshData.GetTriangleCount());
 }
 
 
 
-// 生成侧面
+
+
+/**
+ * 生成侧面墙壁
+ * 创建空心棱柱的侧面几何体，包括内外环之间的墙壁
+ * 
+ * @param Section - 目标网格段
+ */
 void AHollowPrism::GenerateSideWalls(FMeshSection& Section)
 {
     const float HalfHeight = Parameters.Height / 2.0f;
@@ -653,7 +915,7 @@ void AHollowPrism::GenerateEndCap(FMeshSection& Section, float Angle, const FVec
     if (Parameters.ChamferRadius > 0.0f)
     {
         const int32 TopChamferSections = Parameters.ChamferSections;
-        for (int32 i = 0; i <= TopChamferSections; ++i) // 从顶面到侧边
+        for (int32 i = 0; i < TopChamferSections; ++i) // 从顶面到侧边
         {
             const float Alpha = static_cast<float>(i) / TopChamferSections;
             
@@ -682,7 +944,7 @@ void AHollowPrism::GenerateEndCap(FMeshSection& Section, float Angle, const FVec
     }
 
     // 3. 侧边顶点（从上到下）
-    for (int32 h = 1; h < 4; ++h) // 使用4个分段
+    for (int32 h = 0; h <= 4; ++h) // 使用4个分段
     {
         const float Z = FMath::Lerp(EndZ, StartZ, static_cast<float>(h) / 4.0f);
 
@@ -701,7 +963,7 @@ void AHollowPrism::GenerateEndCap(FMeshSection& Section, float Angle, const FVec
     if (Parameters.ChamferRadius > 0.0f)
     {
         const int32 BottomChamferSections = Parameters.ChamferSections;
-        for (int32 i = 0; i <= BottomChamferSections; ++i) // 从侧边到底面
+        for (int32 i = 0; i < BottomChamferSections; ++i) // 从侧边到底面
         {
             const float Alpha = static_cast<float>(i) / BottomChamferSections;
             
@@ -754,7 +1016,18 @@ void AHollowPrism::GenerateEndCap(FMeshSection& Section, float Angle, const FVec
     }
 }
 
-// 计算环形顶点
+/**
+ * 计算环形顶点
+ * 在指定半径和高度上生成环形顶点，用于构建空心棱柱的各个部分
+ * 
+ * @param Radius - 环形半径
+ * @param Sides - 边数
+ * @param Z - Z轴高度
+ * @param ArcAngle - 弧角（度）
+ * @param OutVertices - 输出的顶点数组
+ * @param OutUVs - 输出的UV坐标数组
+ * @param UVScale - UV缩放因子
+ */
 void AHollowPrism::CalculateRingVertices(float Radius, int32 Sides, float Z, float ArcAngle,
                                         TArray<FVector>& OutVertices, TArray<FVector2D>& OutUVs, float UVScale)
 {
@@ -782,11 +1055,36 @@ void AHollowPrism::CalculateRingVertices(float Radius, int32 Sides, float Z, flo
     }
 }
 
-// 添加顶点
+/**
+ * 添加顶点到网格
+ * 
+ * @param Section - 目标网格段
+ * @param Position - 顶点位置
+ * @param Normal - 顶点法线
+ * @param UV - 顶点UV坐标
+ * @return int32 - 新顶点的索引
+ */
 int32 AHollowPrism::AddVertex(FMeshSection& Section, const FVector& Position, const FVector& Normal, const FVector2D& UV)
 {
+    // 验证输入参数
+    if (!ensureMsgf(!Position.ContainsNaN(), TEXT("顶点位置包含NaN值")))
+    {
+        return INDEX_NONE;
+    }
+
+    if (!ensureMsgf(!Normal.ContainsNaN(), TEXT("顶点法线包含NaN值")))
+    {
+        return INDEX_NONE;
+    }
+
+    if (!ensureMsgf(!UV.ContainsNaN(), TEXT("顶点UV包含NaN值")))
+    {
+        return INDEX_NONE;
+    }
+
     const int32 VertexIndex = Section.Vertices.Num();
     
+    // 添加顶点数据
     Section.Vertices.Add(Position);
     Section.Normals.Add(Normal);
     Section.UVs.Add(UV);
@@ -796,9 +1094,28 @@ int32 AHollowPrism::AddVertex(FMeshSection& Section, const FVector& Position, co
     return VertexIndex;
 }
 
-// 添加四边形
+/**
+ * 添加四边形到网格
+ * 将四边形分解为两个三角形
+ * 
+ * @param Section - 目标网格段
+ * @param V1,V2,V3,V4 - 四边形的四个顶点索引（按逆时针顺序）
+ */
 void AHollowPrism::AddQuad(FMeshSection& Section, int32 V1, int32 V2, int32 V3, int32 V4)
 {
+    // 验证顶点索引
+    if (!ensureMsgf(V1 >= 0 && V2 >= 0 && V3 >= 0 && V4 >= 0, TEXT("四边形顶点索引无效")))
+    {
+        return;
+    }
+
+    if (!ensureMsgf(V1 < Section.Vertices.Num() && V2 < Section.Vertices.Num() && 
+                    V3 < Section.Vertices.Num() && V4 < Section.Vertices.Num(),
+                    TEXT("四边形顶点索引超出范围")))
+    {
+        return;
+    }
+
     // 第一个三角形
     Section.Triangles.Add(V1);
     Section.Triangles.Add(V2);
@@ -810,15 +1127,39 @@ void AHollowPrism::AddQuad(FMeshSection& Section, int32 V1, int32 V2, int32 V3, 
     Section.Triangles.Add(V4);
 }
 
-// 添加三角形
+/**
+ * 添加三角形到网格
+ * 
+ * @param Section - 目标网格段
+ * @param V1,V2,V3 - 三角形的三个顶点索引（按逆时针顺序）
+ */
 void AHollowPrism::AddTriangle(FMeshSection& Section, int32 V1, int32 V2, int32 V3)
 {
+    // 验证顶点索引
+    if (!ensureMsgf(V1 >= 0 && V2 >= 0 && V3 >= 0, TEXT("三角形顶点索引无效")))
+    {
+        return;
+    }
+
+    if (!ensureMsgf(V1 < Section.Vertices.Num() && V2 < Section.Vertices.Num() && V3 < Section.Vertices.Num(),
+                    TEXT("三角形顶点索引超出范围")))
+    {
+        return;
+    }
+
+    // 添加三角形索引
     Section.Triangles.Add(V1);
     Section.Triangles.Add(V2);
     Section.Triangles.Add(V3);
 }
 
-// 计算顶点法线
+/**
+ * 计算顶点法线
+ * 基于顶点位置计算径向法线
+ * 
+ * @param Vertex - 顶点位置
+ * @return FVector - 计算出的法线向量
+ */
 FVector AHollowPrism::CalculateVertexNormal(const FVector& Vertex)
 {
     // 简单的径向法线计算
