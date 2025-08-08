@@ -96,8 +96,8 @@ bool FPrismParameters::IsValid() const
     const bool bValidArcAngle = ArcAngle >= 0.0f && ArcAngle <= 360.0f;
     
     // 检查倒角参数是否有效
-    const bool bValidChamferRadius = ChamferRadius >= 0.0f;
-    const bool bValidChamferSections = ChamferSections >= 1 && ChamferSections <= 20;
+    const bool bValidChamferRadius = BevelRadius >= 0.0f;
+    const bool bValidChamferSections = BevelSections >= 1 && BevelSections <= 20;
     
     // 检查外半径是否大于内半径
     const bool bValidRadiusRelationship = OuterRadius > InnerRadius;
@@ -180,7 +180,7 @@ void AHollowPrism::PostEditChangeProperty(FPropertyChangedEvent& PropertyChanged
     static const TArray<FName> RelevantProperties = {
         "InnerRadius", "OuterRadius", "Height",
         "Sides", "ArcAngle", "bUseTriangleMethod",
-        "ChamferRadius", "ChamferSections"
+        "BevelRadius", "BevelSections"
     };
 
     if (RelevantProperties.Contains(PropertyName))
@@ -242,18 +242,18 @@ void AHollowPrism::GenerateGeometry()
     GenerateBottomCapWithQuads(MeshData);
 
     // 生成倒角几何（如果启用）
-    if (Parameters.ChamferRadius > 0.0f)
+    if (Parameters.BevelRadius > 0.0f)
     {
         const float HalfHeight = Parameters.Height / 2.0f;
         
         UE_LOG(LogHollowPrism, Verbose, TEXT("生成倒角几何：半径=%.2f，分段数=%d"), 
-               Parameters.ChamferRadius, Parameters.ChamferSections);
+               Parameters.BevelRadius, Parameters.BevelSections);
         
         // 分别生成内外倒角
-        GenerateTopInnerChamfer(MeshData, HalfHeight);
-        GenerateTopOuterChamfer(MeshData, HalfHeight);
-        GenerateBottomInnerChamfer(MeshData, HalfHeight);
-        GenerateBottomOuterChamfer(MeshData, HalfHeight);
+        GenerateTopInnerBevel(MeshData, HalfHeight);
+        GenerateTopOuterBevel(MeshData, HalfHeight);
+        GenerateBottomInnerBevel(MeshData, HalfHeight);
+        GenerateBottomOuterBevel(MeshData, HalfHeight);
     }
 
     // 生成端盖（如果不是完整圆环）
@@ -290,8 +290,8 @@ bool AHollowPrism::ValidateAndClampParameters()
     Parameters.Height = FMath::Max(0.01f, Parameters.Height);
     Parameters.Sides = FMath::Clamp(Parameters.Sides, 3, 100);
     Parameters.ArcAngle = FMath::Clamp(Parameters.ArcAngle, 0.0f, 360.0f);
-    Parameters.ChamferRadius = FMath::Max(0.0f, Parameters.ChamferRadius);
-    Parameters.ChamferSections = FMath::Clamp(Parameters.ChamferSections, 1, 20);
+    Parameters.BevelRadius = FMath::Max(0.0f, Parameters.BevelRadius);
+    Parameters.BevelSections = FMath::Clamp(Parameters.BevelSections, 1, 20);
 
     // 确保外半径大于内半径
     if (Parameters.OuterRadius <= Parameters.InnerRadius)
@@ -319,9 +319,9 @@ int32 AHollowPrism::CalculateVertexCountEstimate() const
     VertexCount += Parameters.Sides * 4;
     
     // 倒角顶点（如果启用）
-    if (Parameters.ChamferRadius > 0.0f)
+    if (Parameters.BevelRadius > 0.0f)
     {
-        VertexCount += Parameters.Sides * Parameters.ChamferSections * 8; // 内外各4个顶点
+        VertexCount += Parameters.Sides * Parameters.BevelSections * 8; // 内外各4个顶点
     }
     
     // 端盖顶点（如果不是完整圆环）
@@ -349,9 +349,9 @@ int32 AHollowPrism::CalculateTriangleCountEstimate() const
     TriangleCount += Parameters.Sides * 4;
     
     // 倒角三角形（如果启用）
-    if (Parameters.ChamferRadius > 0.0f)
+    if (Parameters.BevelRadius > 0.0f)
     {
-        TriangleCount += Parameters.Sides * Parameters.ChamferSections * 8;
+        TriangleCount += Parameters.Sides * Parameters.BevelSections * 8;
     }
     
     // 端盖三角形（如果不是完整圆环）
@@ -417,14 +417,14 @@ void AHollowPrism::GenerateSideWalls(FMeshSection& Section)
     // 生成内环顶点（顶部和底部）
     TArray<FVector> InnerTopVertices, InnerBottomVertices;
     TArray<FVector2D> InnerTopUVs, InnerBottomUVs;
-    CalculateRingVertices(Parameters.InnerRadius, Parameters.Sides, HalfHeight - Parameters.ChamferRadius, ArcAngle, InnerTopVertices, InnerTopUVs);
-    CalculateRingVertices(Parameters.InnerRadius, Parameters.Sides, -HalfHeight + Parameters.ChamferRadius, ArcAngle, InnerBottomVertices, InnerBottomUVs);
+    CalculateRingVertices(Parameters.InnerRadius, Parameters.Sides, HalfHeight - Parameters.BevelRadius, ArcAngle, InnerTopVertices, InnerTopUVs);
+    CalculateRingVertices(Parameters.InnerRadius, Parameters.Sides, -HalfHeight + Parameters.BevelRadius, ArcAngle, InnerBottomVertices, InnerBottomUVs);
 
     // 生成外环顶点（顶部和底部）
     TArray<FVector> OuterTopVertices, OuterBottomVertices;
     TArray<FVector2D> OuterTopUVs, OuterBottomUVs;
-    CalculateRingVertices(Parameters.OuterRadius, Parameters.Sides, HalfHeight - Parameters.ChamferRadius, ArcAngle, OuterTopVertices, OuterTopUVs, 0.5f);
-    CalculateRingVertices(Parameters.OuterRadius, Parameters.Sides, -HalfHeight + Parameters.ChamferRadius, ArcAngle, OuterBottomVertices, OuterBottomUVs, 0.5f);
+    CalculateRingVertices(Parameters.OuterRadius, Parameters.Sides, HalfHeight - Parameters.BevelRadius, ArcAngle, OuterTopVertices, OuterTopUVs, 0.5f);
+    CalculateRingVertices(Parameters.OuterRadius, Parameters.Sides, -HalfHeight + Parameters.BevelRadius, ArcAngle, OuterBottomVertices, OuterBottomUVs, 0.5f);
 
     // 添加顶点到网格并记录索引
     TArray<int32> InnerTopIndices, InnerBottomIndices;
@@ -480,12 +480,12 @@ void AHollowPrism::GenerateTopCapWithQuads(FMeshSection& Section)
     // 生成内环顶点
     TArray<FVector> InnerVertices;
     TArray<FVector2D> InnerUVs;
-    CalculateRingVertices(Parameters.InnerRadius + Parameters.ChamferRadius, Parameters.Sides, HalfHeight, ArcAngle, InnerVertices, InnerUVs);
+    CalculateRingVertices(Parameters.InnerRadius + Parameters.BevelRadius, Parameters.Sides, HalfHeight, ArcAngle, InnerVertices, InnerUVs);
 
     // 生成外环顶点
     TArray<FVector> OuterVertices;
     TArray<FVector2D> OuterUVs;
-    CalculateRingVertices(Parameters.OuterRadius - Parameters.ChamferRadius, Parameters.Sides, HalfHeight, ArcAngle, OuterVertices, OuterUVs);
+    CalculateRingVertices(Parameters.OuterRadius - Parameters.BevelRadius, Parameters.Sides, HalfHeight, ArcAngle, OuterVertices, OuterUVs);
 
     // 添加顶点到网格并记录索引
     TArray<int32> InnerIndices, OuterIndices;
@@ -532,12 +532,12 @@ void AHollowPrism::GenerateBottomCapWithQuads(FMeshSection& Section)
     // 生成内环顶点
     TArray<FVector> InnerVertices;
     TArray<FVector2D> InnerUVs;
-    CalculateRingVertices(Parameters.InnerRadius + Parameters.ChamferRadius, Parameters.Sides, -HalfHeight, ArcAngle, InnerVertices, InnerUVs);
+    CalculateRingVertices(Parameters.InnerRadius + Parameters.BevelRadius, Parameters.Sides, -HalfHeight, ArcAngle, InnerVertices, InnerUVs);
 
     // 生成外环顶点
     TArray<FVector> OuterVertices;
     TArray<FVector2D> OuterUVs;
-    CalculateRingVertices(Parameters.OuterRadius - Parameters.ChamferRadius, Parameters.Sides, -HalfHeight, ArcAngle, OuterVertices, OuterUVs);
+    CalculateRingVertices(Parameters.OuterRadius - Parameters.BevelRadius, Parameters.Sides, -HalfHeight, ArcAngle, OuterVertices, OuterUVs);
 
     // 添加顶点到网格并记录索引
     TArray<int32> InnerIndices, OuterIndices;
@@ -578,10 +578,10 @@ void AHollowPrism::GenerateBottomCapWithQuads(FMeshSection& Section)
 
 
 // 生成顶部内环倒角
-void AHollowPrism::GenerateTopInnerChamfer(FMeshSection& Section, float HalfHeight)
+void AHollowPrism::GenerateTopInnerBevel(FMeshSection& Section, float HalfHeight)
 {
-    const float ChamferRadius = Parameters.ChamferRadius;
-    const int32 ChamferSections = Parameters.ChamferSections;
+    const float ChamferRadius = Parameters.BevelRadius;
+    const int32 ChamferSections = Parameters.BevelSections;
     const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.Sides;
 
     if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
@@ -651,10 +651,10 @@ void AHollowPrism::GenerateTopInnerChamfer(FMeshSection& Section, float HalfHeig
 }
 
 // 生成顶部外环倒角
-void AHollowPrism::GenerateTopOuterChamfer(FMeshSection& Section, float HalfHeight)
+void AHollowPrism::GenerateTopOuterBevel(FMeshSection& Section, float HalfHeight)
 {
-    const float ChamferRadius = Parameters.ChamferRadius;
-    const int32 ChamferSections = Parameters.ChamferSections;
+    const float ChamferRadius = Parameters.BevelRadius;
+    const int32 ChamferSections = Parameters.BevelSections;
     const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.Sides;
 
     if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
@@ -724,10 +724,10 @@ void AHollowPrism::GenerateTopOuterChamfer(FMeshSection& Section, float HalfHeig
 }
 
 // 生成底部内环倒角
-void AHollowPrism::GenerateBottomInnerChamfer(FMeshSection& Section, float HalfHeight)
+void AHollowPrism::GenerateBottomInnerBevel(FMeshSection& Section, float HalfHeight)
 {
-    const float ChamferRadius = Parameters.ChamferRadius;
-    const int32 ChamferSections = Parameters.ChamferSections;
+    const float ChamferRadius = Parameters.BevelRadius;
+    const int32 ChamferSections = Parameters.BevelSections;
     const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.Sides;
 
     if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
@@ -797,10 +797,10 @@ void AHollowPrism::GenerateBottomInnerChamfer(FMeshSection& Section, float HalfH
 }
 
 // 生成底部外环倒角
-void AHollowPrism::GenerateBottomOuterChamfer(FMeshSection& Section, float HalfHeight)
+void AHollowPrism::GenerateBottomOuterBevel(FMeshSection& Section, float HalfHeight)
 {
-    const float ChamferRadius = Parameters.ChamferRadius;
-    const int32 ChamferSections = Parameters.ChamferSections;
+    const float ChamferRadius = Parameters.BevelRadius;
+    const int32 ChamferSections = Parameters.BevelSections;
     const float AngleStep = FMath::DegreesToRadians(Parameters.ArcAngle) / Parameters.Sides;
 
     if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
@@ -890,7 +890,7 @@ void AHollowPrism::GenerateEndCaps(FMeshSection& Section)
 void AHollowPrism::GenerateEndCap(FMeshSection& Section, float Angle, const FVector& Normal, bool IsStart)
 {
     const float HalfHeight = Parameters.Height / 2.0f;
-    const float ChamferRadius = Parameters.ChamferRadius;
+    const float ChamferRadius = Parameters.BevelRadius;
 
     // 计算倒角高度
     const float TopChamferHeight = FMath::Min(ChamferRadius, Parameters.OuterRadius - Parameters.InnerRadius);
@@ -912,9 +912,9 @@ void AHollowPrism::GenerateEndCap(FMeshSection& Section, float Angle, const FVec
     OrderedVertices.Add(TopCenterVertex);
 
     // 2. 上倒角弧线顶点（从顶面到侧边）
-    if (Parameters.ChamferRadius > 0.0f)
+    if (Parameters.BevelRadius > 0.0f)
     {
-        const int32 TopChamferSections = Parameters.ChamferSections;
+        const int32 TopChamferSections = Parameters.BevelSections;
         for (int32 i = 0; i < TopChamferSections; ++i) // 从顶面到侧边
         {
             const float Alpha = static_cast<float>(i) / TopChamferSections;
@@ -923,8 +923,8 @@ void AHollowPrism::GenerateEndCap(FMeshSection& Section, float Angle, const FVec
             const float CurrentZ = FMath::Lerp(HalfHeight, EndZ, Alpha);
             
             // 从顶面半径到侧边半径（减去倒角半径，与主体几何体保持一致）
-            const float TopInnerRadius = Parameters.InnerRadius + Parameters.ChamferRadius;
-            const float TopOuterRadius = Parameters.OuterRadius - Parameters.ChamferRadius;
+            const float TopInnerRadius = Parameters.InnerRadius + Parameters.BevelRadius;
+            const float TopOuterRadius = Parameters.OuterRadius - Parameters.BevelRadius;
             const float SideInnerRadius = Parameters.InnerRadius;
             const float SideOuterRadius = Parameters.OuterRadius;
             
@@ -960,9 +960,9 @@ void AHollowPrism::GenerateEndCap(FMeshSection& Section, float Angle, const FVec
     }
 
     // 4. 下倒角弧线顶点（从侧边到底面）
-    if (Parameters.ChamferRadius > 0.0f)
+    if (Parameters.BevelRadius > 0.0f)
     {
-        const int32 BottomChamferSections = Parameters.ChamferSections;
+        const int32 BottomChamferSections = Parameters.BevelSections;
         for (int32 i = 0; i < BottomChamferSections; ++i) // 从侧边到底面
         {
             const float Alpha = static_cast<float>(i) / BottomChamferSections;
@@ -973,8 +973,8 @@ void AHollowPrism::GenerateEndCap(FMeshSection& Section, float Angle, const FVec
             // 从侧边半径到底面半径（减去倒角半径，与主体几何体保持一致）
             const float SideInnerRadius = Parameters.InnerRadius;
             const float SideOuterRadius = Parameters.OuterRadius;
-            const float BottomInnerRadius = Parameters.InnerRadius + Parameters.ChamferRadius;
-            const float BottomOuterRadius = Parameters.OuterRadius - Parameters.ChamferRadius;
+            const float BottomInnerRadius = Parameters.InnerRadius + Parameters.BevelRadius;
+            const float BottomOuterRadius = Parameters.OuterRadius - Parameters.BevelRadius;
             
             const float CurrentInnerRadius = FMath::Lerp(SideInnerRadius, BottomInnerRadius, Alpha);
             const float CurrentOuterRadius = FMath::Lerp(SideOuterRadius, BottomOuterRadius, Alpha);

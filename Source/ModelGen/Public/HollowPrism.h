@@ -114,18 +114,18 @@ public:
         DisplayName = "Arc Angle", ToolTip = "空心棱柱的弧角（度）"))
     float ArcAngle = 360.0f;
 
-    //~ Begin Chamfer Section
+    //~ Begin Bevel Section
     /** 倒角半径 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Chamfer", 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Bevel", 
         meta = (ClampMin = "0.0", UIMin = "0.0", 
-        DisplayName = "Chamfer Radius", ToolTip = "倒角的半径"))
-    float ChamferRadius = 5.0f;
+        DisplayName = "Bevel Radius", ToolTip = "倒角的半径"))
+    float BevelRadius = 5.0f;
 
     /** 倒角分段数 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Chamfer", 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Bevel", 
         meta = (ClampMin = "1", UIMin = "1", ClampMax = "20", UIMax = "10", 
-        DisplayName = "Chamfer Sections", ToolTip = "倒角的分段数"))
-    int32 ChamferSections = 4;
+        DisplayName = "Bevel Sections", ToolTip = "倒角的分段数"))
+    int32 BevelSections = 4;
 
     //~ Begin Generation Options
     /** 是否使用三角形方法生成顶底面 */
@@ -208,21 +208,21 @@ private:
     /** 更新网格组件 */
     void UpdateMeshComponent(const FMeshSection& MeshData);
 
-    //~ Begin Chamfer Generation Methods
+    //~ Begin Bevel Generation Methods
     /** 生成顶部倒角几何 */
-    void GenerateTopChamferGeometry(FMeshSection& Section, float StartZ);
+    void GenerateTopBevelGeometry(FMeshSection& Section, float StartZ);
 
     /** 生成顶部内环倒角 */
-    void GenerateTopInnerChamfer(FMeshSection& Section, float HalfHeight);
+    void GenerateTopInnerBevel(FMeshSection& Section, float HalfHeight);
 
     /** 生成顶部外环倒角 */
-    void GenerateTopOuterChamfer(FMeshSection& Section, float HalfHeight);
+    void GenerateTopOuterBevel(FMeshSection& Section, float HalfHeight);
 
     /** 生成底部内环倒角 */
-    void GenerateBottomInnerChamfer(FMeshSection& Section, float HalfHeight);
+    void GenerateBottomInnerBevel(FMeshSection& Section, float HalfHeight);
 
     /** 生成底部外环倒角 */
-    void GenerateBottomOuterChamfer(FMeshSection& Section, float HalfHeight);
+    void GenerateBottomOuterBevel(FMeshSection& Section, float HalfHeight);
 
     //~ Begin End Cap Generation Methods
     /** 生成端盖 */

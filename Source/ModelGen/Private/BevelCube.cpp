@@ -1,10 +1,10 @@
-#include "ChamferCube.h"
+#include "BevelCube.h"
 #include "ProceduralMeshComponent.h"
 #include "Materials/Material.h"
 #include "UObject/ConstructorHelpers.h" 
 
 // ============================================================================
-// FChamferCubeGeometry Implementation
+// FBevelCubeGeometry Implementation
 // 几何数据结构的实现
 // ============================================================================
 
@@ -12,7 +12,7 @@
  * 清除所有几何数据
  * 在重新生成几何体或清理资源时调用
  */
-void FChamferCubeGeometry::Clear()
+void FBevelCubeGeometry::Clear()
 {
 	Vertices.Empty();
 	Triangles.Empty();
@@ -27,7 +27,7 @@ void FChamferCubeGeometry::Clear()
  * 
  * @return bool - 如果所有必要的几何数据都存在且数量匹配则返回true
  */
-bool FChamferCubeGeometry::IsValid() const
+bool FBevelCubeGeometry::IsValid() const
 {
 	// 检查是否有基本的顶点和三角形数据
 	const bool bHasBasicGeometry = Vertices.Num() > 0 && Triangles.Num() > 0;
@@ -44,7 +44,7 @@ bool FChamferCubeGeometry::IsValid() const
 }
 
 // ============================================================================
-// FChamferCubeBuilder::FBuildParameters Implementation
+// FBevelCubeBuilder::FBuildParameters Implementation
 // 生成参数结构体的实现
 // ============================================================================
 
@@ -53,22 +53,22 @@ bool FChamferCubeGeometry::IsValid() const
  * 
  * @return bool - 如果所有参数都在有效范围内则返回true
  */
-bool FChamferCubeBuilder::FBuildParameters::IsValid() const
+bool FBevelCubeBuilder::FBuildParameters::IsValid() const
 {
 	// 检查基础尺寸是否有效
 	const bool bValidSize = Size > 0.0f;
 	
 	// 检查倒角尺寸是否在有效范围内
-	const bool bValidChamferSize = ChamferSize >= 0.0f && ChamferSize < GetHalfSize();
+    const bool bValidBevelSize = BevelSize >= 0.0f && BevelSize < GetHalfSize();
 	
 	// 检查分段数是否在有效范围内
-	const bool bValidSections = Sections >= 1 && Sections <= 10;
+    const bool bValidSections = BevelSections >= 1 && BevelSections <= 10;
 	
-	return bValidSize && bValidChamferSize && bValidSections;
+    return bValidSize && bValidBevelSize && bValidSections;
 }
 
 // ============================================================================
-// FChamferCubeBuilder Implementation
+// FBevelCubeBuilder Implementation
 // 几何体生成器的实现
 // ============================================================================
 
@@ -76,7 +76,7 @@ bool FChamferCubeBuilder::FBuildParameters::IsValid() const
  * 构造函数
  * @param InParams - 初始化生成器的参数
  */
-FChamferCubeBuilder::FChamferCubeBuilder(const FBuildParameters& InParams)
+FBevelCubeBuilder::FBevelCubeBuilder(const FBuildParameters& InParams)
 	: Params(InParams)
 {
 }
@@ -87,7 +87,7 @@ FChamferCubeBuilder::FChamferCubeBuilder(const FBuildParameters& InParams)
  * @param OutGeometry - 输出参数，用于存储生成的几何数据
  * @return bool - 如果生成成功则返回true
  */
-bool FChamferCubeBuilder::Generate(FChamferCubeGeometry& OutGeometry)
+bool FBevelCubeBuilder::Generate(FBevelCubeGeometry& OutGeometry)
 {
 	// 验证生成参数
 	if (!Params.IsValid())
@@ -101,15 +101,15 @@ bool FChamferCubeBuilder::Generate(FChamferCubeGeometry& OutGeometry)
 	UniqueVerticesMap.Empty();
 
 	// 计算立方体的核心点（倒角起始点）
-	TArray<FVector> CorePoints = CalculateCorePoints();
+    TArray<FVector> CorePoints = CalculateCorePoints();
 
 	// 按照以下顺序生成几何体：
 	// 1. 生成主要面（6个面）
 	// 2. 生成边缘倒角（12条边）
 	// 3. 生成角落倒角（8个角）
-	GenerateMainFaces(OutGeometry);
-	GenerateEdgeChamfers(OutGeometry, CorePoints);
-	GenerateCornerChamfers(OutGeometry, CorePoints);
+    GenerateMainFaces(OutGeometry);
+    GenerateEdgeBevels(OutGeometry, CorePoints);
+    GenerateCornerBevels(OutGeometry, CorePoints);
 
 	return OutGeometry.IsValid();
 }
@@ -120,7 +120,7 @@ bool FChamferCubeBuilder::Generate(FChamferCubeGeometry& OutGeometry)
  * 
  * @return TArray<FVector> - 包含8个核心点的数组
  */
-TArray<FVector> FChamferCubeBuilder::CalculateCorePoints() const
+TArray<FVector> FBevelCubeBuilder::CalculateCorePoints() const
 {
 	const float InnerOffset = Params.GetInnerOffset();
 	
@@ -152,7 +152,7 @@ TArray<FVector> FChamferCubeBuilder::CalculateCorePoints() const
  * @param UV - 顶点UV坐标
  * @return int32 - 顶点在几何体中的索引
  */
-int32 FChamferCubeBuilder::GetOrAddVertex(FChamferCubeGeometry& Geometry, const FVector& Pos, const FVector& Normal, const FVector2D& UV)
+int32 FBevelCubeBuilder::GetOrAddVertex(FBevelCubeGeometry& Geometry, const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
 	// 尝试查找已存在的顶点
 	if (int32* FoundIndex = UniqueVerticesMap.Find(Pos))
@@ -161,7 +161,7 @@ int32 FChamferCubeBuilder::GetOrAddVertex(FChamferCubeGeometry& Geometry, const 
 	}
 
 	// 添加新顶点并记录其索引
-	const int32 NewIndex = AddVertex(Geometry, Pos, Normal, UV);
+    const int32 NewIndex = AddVertex(Geometry, Pos, Normal, UV);
 	UniqueVerticesMap.Add(Pos, NewIndex);
 	return NewIndex;
 }
@@ -176,7 +176,7 @@ int32 FChamferCubeBuilder::GetOrAddVertex(FChamferCubeGeometry& Geometry, const 
  * @param UV - 顶点UV坐标
  * @return int32 - 新顶点的索引
  */
-int32 FChamferCubeBuilder::AddVertex(FChamferCubeGeometry& Geometry, const FVector& Pos, const FVector& Normal, const FVector2D& UV)
+int32 FBevelCubeBuilder::AddVertex(FBevelCubeGeometry& Geometry, const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
 	Geometry.Vertices.Add(Pos);
 	Geometry.Normals.Add(Normal);
@@ -194,7 +194,7 @@ int32 FChamferCubeBuilder::AddVertex(FChamferCubeGeometry& Geometry, const FVect
  * @param Normal - 顶点法线
  * @return FVector - 计算得到的切线向量
  */
-FVector FChamferCubeBuilder::CalculateTangent(const FVector& Normal) const
+FVector FBevelCubeBuilder::CalculateTangent(const FVector& Normal) const
 {
 	// 首先尝试使用上向量计算切线
 	FVector TangentDirection = FVector::CrossProduct(Normal, FVector::UpVector);
@@ -216,7 +216,7 @@ FVector FChamferCubeBuilder::CalculateTangent(const FVector& Normal) const
  * @param Geometry - 目标几何体
  * @param V1,V2,V3,V4 - 四边形的四个顶点索引（按逆时针顺序）
  */
-void FChamferCubeBuilder::AddQuad(FChamferCubeGeometry& Geometry, int32 V1, int32 V2, int32 V3, int32 V4)
+void FBevelCubeBuilder::AddQuad(FBevelCubeGeometry& Geometry, int32 V1, int32 V2, int32 V3, int32 V4)
 {
 	// 将四边形分解为两个三角形
 	AddTriangle(Geometry, V1, V2, V3);  // 第一个三角形
@@ -229,7 +229,7 @@ void FChamferCubeBuilder::AddQuad(FChamferCubeGeometry& Geometry, int32 V1, int3
  * @param Geometry - 目标几何体
  * @param V1,V2,V3 - 三角形的三个顶点索引（按逆时针顺序）
  */
-void FChamferCubeBuilder::AddTriangle(FChamferCubeGeometry& Geometry, int32 V1, int32 V2, int32 V3)
+void FBevelCubeBuilder::AddTriangle(FBevelCubeGeometry& Geometry, int32 V1, int32 V2, int32 V3)
 {
 	// 按逆时针顺序添加顶点索引
 	Geometry.Triangles.Add(V1);
@@ -243,7 +243,7 @@ void FChamferCubeBuilder::AddTriangle(FChamferCubeGeometry& Geometry, int32 V1, 
  * 
  * @param Geometry - 目标几何体
  */
-void FChamferCubeBuilder::GenerateMainFaces(FChamferCubeGeometry& Geometry)
+void FBevelCubeBuilder::GenerateMainFaces(FBevelCubeGeometry& Geometry)
 {
 	const float HalfSize = Params.GetHalfSize();
 	const float InnerOffset = Params.GetInnerOffset();
@@ -329,10 +329,10 @@ void FChamferCubeBuilder::GenerateMainFaces(FChamferCubeGeometry& Geometry)
 	}
 }
 
-void FChamferCubeBuilder::GenerateEdgeChamfers(FChamferCubeGeometry& Geometry, const TArray<FVector>& CorePoints)
+void FBevelCubeBuilder::GenerateEdgeBevels(FBevelCubeGeometry& Geometry, const TArray<FVector>& CorePoints)
 {
 	// 边缘倒角定义结构
-	struct FEdgeChamferDef
+    struct FEdgeBevelDef
 	{
 		int32 Core1Idx;
 		int32 Core2Idx;
@@ -341,7 +341,7 @@ void FChamferCubeBuilder::GenerateEdgeChamfers(FChamferCubeGeometry& Geometry, c
 	};
 
 	// 定义所有边缘的倒角数据
-	TArray<FEdgeChamferDef> EdgeDefs = {
+    TArray<FEdgeBevelDef> EdgeDefs = {
 		// +X 方向的边缘
 		{ 0, 1, FVector(0,-1,0), FVector(0,0,-1) },
 		{ 2, 3, FVector(0,0,-1), FVector(0,1,0) },
@@ -362,13 +362,13 @@ void FChamferCubeBuilder::GenerateEdgeChamfers(FChamferCubeGeometry& Geometry, c
 	};
 
 	// 为每条边生成倒角
-	for (const FEdgeChamferDef& EdgeDef : EdgeDefs)
+    for (const FEdgeBevelDef& EdgeDef : EdgeDefs)
 	{
 		GenerateEdgeStrip(Geometry, CorePoints, EdgeDef.Core1Idx, EdgeDef.Core2Idx, EdgeDef.Normal1, EdgeDef.Normal2);
 	}
 }
 
-void FChamferCubeBuilder::GenerateCornerChamfers(FChamferCubeGeometry& Geometry, const TArray<FVector>& CorePoints)
+void FBevelCubeBuilder::GenerateCornerBevels(FBevelCubeGeometry& Geometry, const TArray<FVector>& CorePoints)
 {
 	if (CorePoints.Num() < 8)
 	{
@@ -393,20 +393,20 @@ void FChamferCubeBuilder::GenerateCornerChamfers(FChamferCubeGeometry& Geometry,
 
 		// 创建顶点网格
 		TArray<TArray<int32>> CornerVerticesGrid;
-		CornerVerticesGrid.SetNum(Params.Sections + 1);
+		CornerVerticesGrid.SetNum(Params.BevelSections + 1);
 
-		for (int32 Lat = 0; Lat <= Params.Sections; ++Lat)
+		for (int32 Lat = 0; Lat <= Params.BevelSections; ++Lat)
 		{
-			CornerVerticesGrid[Lat].SetNum(Params.Sections + 1 - Lat);
+			CornerVerticesGrid[Lat].SetNum(Params.BevelSections + 1 - Lat);
 		}
 
 		// 生成四分之一球体的顶点
-		for (int32 Lat = 0; Lat <= Params.Sections; ++Lat)
+		for (int32 Lat = 0; Lat <= Params.BevelSections; ++Lat)
 		{
-			for (int32 Lon = 0; Lon <= Params.Sections - Lat; ++Lon)
+			for (int32 Lon = 0; Lon <= Params.BevelSections - Lat; ++Lon)
 			{
-				const float LonAlpha = static_cast<float>(Lon) / Params.Sections;
-				const float LatAlpha = static_cast<float>(Lat) / Params.Sections;
+				const float LonAlpha = static_cast<float>(Lon) / Params.BevelSections;
+				const float LatAlpha = static_cast<float>(Lat) / Params.BevelSections;
 
 				// 使用辅助函数生成顶点
 				TArray<FVector> Vertices = GenerateCornerVertices(CurrentCorePoint, AxisX, AxisY, AxisZ, Lat, Lon);
@@ -424,9 +424,9 @@ void FChamferCubeBuilder::GenerateCornerChamfers(FChamferCubeGeometry& Geometry,
 		}
 
 		// 生成四分之一球体的三角形
-		for (int32 Lat = 0; Lat < Params.Sections; ++Lat)
+		for (int32 Lat = 0; Lat < Params.BevelSections; ++Lat)
 		{
-			for (int32 Lon = 0; Lon < Params.Sections - Lat; ++Lon)
+			for (int32 Lon = 0; Lon < Params.BevelSections - Lat; ++Lon)
 			{
 				GenerateCornerTriangles(Geometry, CornerVerticesGrid, Lat, Lon, bSpecialCornerRenderingOrder);
 			}
@@ -435,16 +435,16 @@ void FChamferCubeBuilder::GenerateCornerChamfers(FChamferCubeGeometry& Geometry,
 }
 
 // ============================================================================
-// AChamferCube 实现
+// ABevelCube 实现
 // ============================================================================
 
-AChamferCube::AChamferCube()
+ABevelCube::ABevelCube()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	InitializeComponents();
 }
 
-void AChamferCube::InitializeComponents()
+void ABevelCube::InitializeComponents()
 {
 	ProceduralMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("GeneratedMesh"));
 	RootComponent = ProceduralMesh;
@@ -453,7 +453,7 @@ void AChamferCube::InitializeComponents()
 	ApplyMaterial();
 }
 
-void AChamferCube::SetupCollision()
+void ABevelCube::SetupCollision()
 {
 	if (ProceduralMesh)
 	{
@@ -472,7 +472,7 @@ void AChamferCube::SetupCollision()
 	}
 }
 
-void AChamferCube::ApplyMaterial()
+void ABevelCube::ApplyMaterial()
 {
 	if (ProceduralMesh)
 	{
@@ -496,33 +496,33 @@ void AChamferCube::ApplyMaterial()
 	}
 }
 
-void AChamferCube::BeginPlay()
+void ABevelCube::BeginPlay()
 {
 	Super::BeginPlay();
 	RegenerateMesh();
 }
 
-void AChamferCube::OnConstruction(const FTransform& Transform)
+void ABevelCube::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	RegenerateMesh();
 }
 
-void AChamferCube::Tick(float DeltaTime)
+void ABevelCube::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 }
 
-void AChamferCube::GenerateChamferedCube(float Size, float ChamferSize, int32 Sections)
+void ABevelCube::GenerateBeveledCube(float Size, float BevelSize, int32 Sections)
 {
 	CubeSize = Size;
-	CubeChamferSize = ChamferSize;
-	ChamferSections = Sections;
+    CubeBevelSize = BevelSize;
+    BevelSections = Sections;
 	
 	RegenerateMesh();
 }
 
-void AChamferCube::RegenerateMesh()
+void ABevelCube::RegenerateMesh()
 {
 	if (!ProceduralMesh)
 	{
@@ -534,15 +534,15 @@ void AChamferCube::RegenerateMesh()
 	ProceduralMesh->ClearAllMeshSections();
 
 	// 创建几何生成器
-	FChamferCubeBuilder::FBuildParameters BuildParams;
+    FBevelCubeBuilder::FBuildParameters BuildParams;
 	BuildParams.Size = CubeSize;
-	BuildParams.ChamferSize = CubeChamferSize;
-	BuildParams.Sections = ChamferSections;
+    BuildParams.BevelSize = CubeBevelSize;
+    BuildParams.BevelSections = BevelSections;
 
-	GeometryBuilder = MakeUnique<FChamferCubeBuilder>(BuildParams);
+    GeometryBuilder = MakeUnique<FBevelCubeBuilder>(BuildParams);
 
 	// 生成几何体
-	FChamferCubeGeometry Geometry;
+    FBevelCubeGeometry Geometry;
 	if (GeometryBuilder->Generate(Geometry))
 	{
 		// 创建网格段
@@ -557,20 +557,20 @@ void AChamferCube::RegenerateMesh()
 			bGenerateCollision
 		);
 
-		UE_LOG(LogTemp, Log, TEXT("ChamferCube generated successfully: %d vertices, %d triangles"), 
+        UE_LOG(LogTemp, Log, TEXT("BevelCube generated successfully: %d vertices, %d triangles"), 
 			Geometry.GetVertexCount(), Geometry.GetTriangleCount());
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("Failed to generate ChamferCube geometry"));
+        UE_LOG(LogTemp, Error, TEXT("Failed to generate BevelCube geometry"));
 	}
 }
 
 // ============================================================================
-// FChamferCubeBuilder 辅助函数实现（类似 Pyramid 的辅助函数）
+// FBevelCubeBuilder 辅助函数实现（类似 Pyramid 的辅助函数）
 // ============================================================================
 
-TArray<FVector> FChamferCubeBuilder::GenerateRectangleVertices(const FVector& Center, const FVector& SizeX, const FVector& SizeY) const
+TArray<FVector> FBevelCubeBuilder::GenerateRectangleVertices(const FVector& Center, const FVector& SizeX, const FVector& SizeY) const
 {
 	TArray<FVector> Vertices;
 	Vertices.Reserve(4);
@@ -585,7 +585,7 @@ TArray<FVector> FChamferCubeBuilder::GenerateRectangleVertices(const FVector& Ce
 	return Vertices;
 }
 
-void FChamferCubeBuilder::GenerateQuadSides(FChamferCubeGeometry& Geometry, const TArray<FVector>& Verts, const FVector& Normal, const TArray<FVector2D>& UVs)
+void FBevelCubeBuilder::GenerateQuadSides(FBevelCubeGeometry& Geometry, const TArray<FVector>& Verts, const FVector& Normal, const TArray<FVector2D>& UVs)
 {
 	if (Verts.Num() != 4 || UVs.Num() != 4)
 	{
@@ -604,10 +604,10 @@ void FChamferCubeBuilder::GenerateQuadSides(FChamferCubeGeometry& Geometry, cons
 }
 
 // ============================================================================
-// FChamferCubeBuilder 倒角辅助函数实现
+// FBevelCubeBuilder 倒角辅助函数实现
 // ============================================================================
 
-TArray<FVector> FChamferCubeBuilder::GenerateEdgeVertices(const FVector& CorePoint1, const FVector& CorePoint2, const FVector& Normal1, const FVector& Normal2, float Alpha) const
+TArray<FVector> FBevelCubeBuilder::GenerateEdgeVertices(const FVector& CorePoint1, const FVector& CorePoint2, const FVector& Normal1, const FVector& Normal2, float Alpha) const
 {
 	TArray<FVector> Vertices;
 	Vertices.Reserve(2);
@@ -616,8 +616,8 @@ TArray<FVector> FChamferCubeBuilder::GenerateEdgeVertices(const FVector& CorePoi
 	FVector CurrentNormal = FMath::Lerp(Normal1, Normal2, Alpha).GetSafeNormal();
 	
 	// 生成边缘的两个顶点
-	FVector PosStart = CorePoint1 + CurrentNormal * Params.ChamferSize;
-	FVector PosEnd = CorePoint2 + CurrentNormal * Params.ChamferSize;
+    FVector PosStart = CorePoint1 + CurrentNormal * Params.BevelSize;
+    FVector PosEnd = CorePoint2 + CurrentNormal * Params.BevelSize;
 	
 	Vertices.Add(PosStart);
 	Vertices.Add(PosEnd);
@@ -625,18 +625,18 @@ TArray<FVector> FChamferCubeBuilder::GenerateEdgeVertices(const FVector& CorePoi
 	return Vertices;
 }
 
-void FChamferCubeBuilder::GenerateEdgeStrip(FChamferCubeGeometry& Geometry, const TArray<FVector>& CorePoints, int32 Core1Idx, int32 Core2Idx, const FVector& Normal1, const FVector& Normal2)
+void FBevelCubeBuilder::GenerateEdgeStrip(FBevelCubeGeometry& Geometry, const TArray<FVector>& CorePoints, int32 Core1Idx, int32 Core2Idx, const FVector& Normal1, const FVector& Normal2)
 {
 	TArray<int32> PrevStripStartIndices;
 	TArray<int32> PrevStripEndIndices;
 
-	for (int32 s = 0; s <= Params.Sections; ++s)
+	for (int32 s = 0; s <= Params.BevelSections; ++s)
 	{
-		const float Alpha = static_cast<float>(s) / Params.Sections;
+		const float Alpha = static_cast<float>(s) / Params.BevelSections;
 		FVector CurrentNormal = FMath::Lerp(Normal1, Normal2, Alpha).GetSafeNormal();
 
-		FVector PosStart = CorePoints[Core1Idx] + CurrentNormal * Params.ChamferSize;
-		FVector PosEnd = CorePoints[Core2Idx] + CurrentNormal * Params.ChamferSize;
+        FVector PosStart = CorePoints[Core1Idx] + CurrentNormal * Params.BevelSize;
+        FVector PosEnd = CorePoints[Core2Idx] + CurrentNormal * Params.BevelSize;
 
 		FVector2D UV1(Alpha, 0.0f);
 		FVector2D UV2(Alpha, 1.0f);
@@ -654,13 +654,13 @@ void FChamferCubeBuilder::GenerateEdgeStrip(FChamferCubeGeometry& Geometry, cons
 	}
 }
 
-TArray<FVector> FChamferCubeBuilder::GenerateCornerVertices(const FVector& CorePoint, const FVector& AxisX, const FVector& AxisY, const FVector& AxisZ, int32 Lat, int32 Lon) const
+TArray<FVector> FBevelCubeBuilder::GenerateCornerVertices(const FVector& CorePoint, const FVector& AxisX, const FVector& AxisY, const FVector& AxisZ, int32 Lat, int32 Lon) const
 {
 	TArray<FVector> Vertices;
 	Vertices.Reserve(1);
 	
-	const float LatAlpha = static_cast<float>(Lat) / Params.Sections;
-	const float LonAlpha = static_cast<float>(Lon) / Params.Sections;
+	const float LatAlpha = static_cast<float>(Lat) / Params.BevelSections;
+	const float LonAlpha = static_cast<float>(Lon) / Params.BevelSections;
 
 	// 计算法线（三轴插值）
 	FVector CurrentNormal = (AxisX * (1.0f - LatAlpha - LonAlpha) +
@@ -669,13 +669,13 @@ TArray<FVector> FChamferCubeBuilder::GenerateCornerVertices(const FVector& CoreP
 	CurrentNormal.Normalize();
 
 	// 计算顶点位置
-	FVector CurrentPos = CorePoint + CurrentNormal * Params.ChamferSize;
+    FVector CurrentPos = CorePoint + CurrentNormal * Params.BevelSize;
 	Vertices.Add(CurrentPos);
 	
 	return Vertices;
 }
 
-void FChamferCubeBuilder::GenerateCornerTriangles(FChamferCubeGeometry& Geometry, const TArray<TArray<int32>>& CornerVerticesGrid, int32 Lat, int32 Lon, bool bSpecialOrder)
+void FBevelCubeBuilder::GenerateCornerTriangles(FBevelCubeGeometry& Geometry, const TArray<TArray<int32>>& CornerVerticesGrid, int32 Lat, int32 Lon, bool bSpecialOrder)
 {
 	const int32 V00 = CornerVerticesGrid[Lat][Lon];
 	const int32 V10 = CornerVerticesGrid[Lat + 1][Lon];

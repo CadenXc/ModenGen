@@ -237,27 +237,27 @@ public:
         ToolTip = "截锥体高度方向的分段数"))
     int32 HeightSegments = 4;
 
-    //~ Begin Chamfer Parameters
+    //~ Begin Bevel Parameters
     /** 倒角半径 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Chamfer", 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Bevel", 
         meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "50.0", 
-        DisplayName = "Chamfer Radius", 
+        DisplayName = "Bevel Radius", 
         ToolTip = "边缘倒角的半径"))
-    float ChamferRadius = 5.0f;
+    float BevelRadius = 5.0f;
 
     /** 倒角分段数 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Chamfer", 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Bevel", 
         meta = (ClampMin = "1", UIMin = "1", UIMax = "8", 
-        DisplayName = "Chamfer Segments", 
+        DisplayName = "Bevel Segments", 
         ToolTip = "倒角的分段数，影响倒角的平滑度"))
-    int32 ChamferSections = 4;
+    int32 BevelSections = 4;
 
     /** 倒角突出量 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Chamfer", 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Bevel", 
         meta = (UIMin = "0.0", UIMax = "1.0", 
-        DisplayName = "Chamfer Bulge", 
+        DisplayName = "Bevel Bulge", 
         ToolTip = "倒角的突出程度，0为直线，1为最大突出"))
-    float ChamferBulgeAmount = 0.2f;
+    float BevelBulgeAmount = 0.2f;
 
     //~ Begin Deformation Parameters
     /** 弯曲程度 */
@@ -298,10 +298,10 @@ public:
                Height > 0.0f &&
                Sides >= 3 &&
                HeightSegments >= 1 &&
-               ChamferRadius >= 0.0f &&
-               ChamferSections >= 1 &&
-               ChamferBulgeAmount >= 0.0f &&
-               ChamferBulgeAmount <= 1.0f &&
+               BevelRadius >= 0.0f &&
+               BevelSections >= 1 &&
+               BevelBulgeAmount >= 0.0f &&
+               BevelBulgeAmount <= 1.0f &&
                MinBendRadius > 0.0f &&
                ArcAngle >= 0.0f &&
                ArcAngle <= 360.0f &&
@@ -390,10 +390,10 @@ private:
     void CreateBottomGeometry(float Z);
 
     /** 生成顶部倒角几何体 */
-    void CreateTopChamferGeometry(float StartZ);
+    void CreateTopBevelGeometry(float StartZ);
 
     /** 生成底部倒角几何体 */
-    void CreateBottomChamferGeometry(float StartZ);
+    void CreateBottomBevelGeometry(float StartZ);
 
     /** 生成端面几何体 */
     void CreateEndCaps();
@@ -402,10 +402,10 @@ private:
     void CreateEndCapTriangles(float Angle, const FVector& Normal, bool IsStart);
 
     /** 生成倒角弧形三角形 */
-    void CreateChamferArcTriangles(float Angle, const FVector& Normal, bool IsStart, float Z1, float Z2, bool IsTop);
+    void CreateBevelArcTriangles(float Angle, const FVector& Normal, bool IsStart, float Z1, float Z2, bool IsTop);
 
     /** 生成带端面的倒角弧形三角形 */
-    void CreateChamferArcTrianglesWithCaps(float Angle, const FVector& Normal, bool IsStart, float Z1, float Z2, bool IsTop, int32 CenterVertex, int32 CapCenterVertex);
+    void CreateBevelArcTrianglesWithCaps(float Angle, const FVector& Normal, bool IsStart, float Z1, float Z2, bool IsTop, int32 CenterVertex, int32 CapCenterVertex);
 
     //~ Begin Vertex Management Section
     /** 添加顶点到网格 */
@@ -485,12 +485,12 @@ private:
     /** 测试法线标准化 */
     void TestNormalNormalization();
 
-    //~ Begin Chamfer Generation Section
+    //~ Begin Bevel Generation Section
     /**
      * 倒角控制点结构
      * 用于生成平滑的倒角曲线
      */
-    struct FChamferArcControlPoints
+    struct FBevelArcControlPoints
     {
         FVector StartPoint;    // 起点：侧边顶点
         FVector EndPoint;      // 终点：顶/底面顶点
@@ -498,13 +498,13 @@ private:
     };
 
     /** 计算倒角控制点 */
-    FChamferArcControlPoints CalculateChamferControlPoints(const FVector& SideVertex, const FVector& TopBottomVertex);
+    FBevelArcControlPoints CalculateBevelControlPoints(const FVector& SideVertex, const FVector& TopBottomVertex);
 
     /** 计算倒角曲线上的点 */
-    FVector CalculateChamferArcPoint(const FChamferArcControlPoints& ControlPoints, float t);
+    FVector CalculateBevelArcPoint(const FBevelArcControlPoints& ControlPoints, float t);
 
     /** 计算倒角曲线的切线 */
-    FVector CalculateChamferArcTangent(const FChamferArcControlPoints& ControlPoints, float t);
+    FVector CalculateBevelArcTangent(const FBevelArcControlPoints& ControlPoints, float t);
 
     //~ Begin Mesh Update Section
     /** 更新程序化网格组件 */
