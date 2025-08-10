@@ -17,7 +17,7 @@ bool FHollowPrismParameters::IsValid() const
     }
 
     // 检查边数
-    if (Sides < 3)
+    if (Sides < 3 || InnerSides < 3 || OuterSides < 3)
     {
         return false;
     }
@@ -55,21 +55,21 @@ int32 FHollowPrismParameters::CalculateVertexCountEstimate() const
     }
 
     // 基础顶点：内外环的顶点
-    int32 BaseVertices = Sides * 2;
+    int32 BaseVertices = InnerSides + OuterSides;
     
     // 倒角顶点：如果有倒角，每个边缘需要额外的顶点
     int32 BevelVertices = 0;
     if (BevelRadius > 0.0f)
     {
         // 顶部和底面的倒角顶点
-        BevelVertices = Sides * BevelSections * 4; // 内外环各2个
+        BevelVertices = (InnerSides + OuterSides) * BevelSections * 2; // 内外环各2个
     }
     
     // 端面顶点：如果不是完整圆环
     int32 EndCapVertices = 0;
     if (!IsFullCircle())
     {
-        EndCapVertices = Sides * 2; // 内外环的端面
+        EndCapVertices = InnerSides + OuterSides; // 内外环的端面
     }
 
     return BaseVertices + BevelVertices + EndCapVertices;
@@ -83,21 +83,21 @@ int32 FHollowPrismParameters::CalculateTriangleCountEstimate() const
     }
 
     // 基础三角形：侧面的四边形（每个四边形分解为两个三角形）
-    int32 BaseTriangles = Sides * 2;
+    int32 BaseTriangles = InnerSides + OuterSides;
     
     // 倒角三角形：如果有倒角，每个边缘需要额外的三角形
     int32 BevelTriangles = 0;
     if (BevelRadius > 0.0f)
     {
         // 顶部和底面的倒角三角形
-        BevelTriangles = Sides * BevelSections * 4; // 内外环各2个
+        BevelTriangles = (InnerSides + OuterSides) * BevelSections * 2; // 内外环各2个
     }
     
     // 端面三角形：如果不是完整圆环
     int32 EndCapTriangles = 0;
     if (!IsFullCircle())
     {
-        EndCapTriangles = Sides * 2; // 内外环的端面
+        EndCapTriangles = InnerSides + OuterSides; // 内外环的端面
     }
 
     return BaseTriangles + BevelTriangles + EndCapTriangles;
@@ -114,6 +114,8 @@ bool FHollowPrismParameters::operator==(const FHollowPrismParameters& Other) con
            OuterRadius == Other.OuterRadius &&
            Height == Other.Height &&
            Sides == Other.Sides &&
+           InnerSides == Other.InnerSides &&
+           OuterSides == Other.OuterSides &&
            ArcAngle == Other.ArcAngle &&
            BevelRadius == Other.BevelRadius &&
            BevelSections == Other.BevelSections &&

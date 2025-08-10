@@ -35,24 +35,17 @@ private:
     FPyramidParameters Params;
 
     //~ Begin Private Methods
-    /** 生成底面 */
     void GenerateBaseFace();
     
-    /** 生成倒角部分 */
     void GenerateBevelSection();
     
-    /** 生成金字塔侧面 */
     void GeneratePyramidSides();
     
-    /** 生成多边形面 */
     void GeneratePolygonFace(const TArray<FVector>& PolygonVerts, const FVector& Normal, bool bReverseOrder = false, float UVOffsetZ = 0.0f);
     
-    /** 生成侧面条带 */
     void GenerateSideStrip(const TArray<FVector>& BottomVerts, const TArray<FVector>& TopVerts, bool bReverseNormal = false, float UVOffsetY = 0.0f, float UVScaleY = 1.0f);
     
-    /** 生成圆形顶点 */
     TArray<FVector> GenerateCircleVertices(float Radius, float Z, int32 NumSides) const;
     
-    /** 生成倒角顶点 */
     TArray<FVector> GenerateBevelVertices(float BottomRadius, float TopRadius, float Z, int32 NumSides) const;
 };

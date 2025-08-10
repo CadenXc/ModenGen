@@ -50,7 +50,7 @@ void AFrustum::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
     static const TArray<FName> RelevantProperties = {
         "TopRadius", "BottomRadius", "Height",
         "Sides", "HeightSegments",
-        "ChamferRadius", "ChamferSections",
+        "BevelRadius", "BevelSections",
         "BendAmount", "MinBendRadius", "ArcAngle",
         "CapThickness"
     };
@@ -81,7 +81,7 @@ void AFrustum::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyC
     static const TArray<FName> RelevantProperties = {
         "TopRadius", "BottomRadius", "Height",
         "Sides", "HeightSegments",
-        "ChamferRadius", "ChamferSections",
+        "BevelRadius", "BevelSections",
         "BendAmount", "MinBendRadius", "ArcAngle",
         "CapThickness"
     };

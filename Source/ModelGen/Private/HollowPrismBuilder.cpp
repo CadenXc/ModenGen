@@ -12,8 +12,8 @@ FHollowPrismBuilder::FHollowPrismBuilder(const FHollowPrismParameters& InParams)
 bool FHollowPrismBuilder::Generate(FModelGenMeshData& OutMeshData)
 {
     UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::Generate - Starting generation"));
-    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::Generate - Parameters: InnerRadius=%.2f, OuterRadius=%.2f, Height=%.2f, Sides=%d"), 
-           Params.InnerRadius, Params.OuterRadius, Params.Height, Params.Sides);
+    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::Generate - Parameters: InnerRadius=%.2f, OuterRadius=%.2f, Height=%.2f, InnerSides=%d, OuterSides=%d"), 
+           Params.InnerRadius, Params.OuterRadius, Params.Height, Params.InnerSides, Params.OuterSides);
     
     if (!ValidateParameters())
     {
@@ -69,21 +69,16 @@ void FHollowPrismBuilder::GenerateBaseGeometry()
 {
     const float HalfHeight = Params.GetHalfHeight();
     
-    // 生成侧面墙壁
     GenerateSideWalls();
+    GenerateTopCapWithTriangles();
+    GenerateBottomCapWithTriangles();
     
-    // 生成顶底面
-    GenerateTopCapWithQuads();
-    GenerateBottomCapWithQuads();
-    
-    // 生成倒角几何体
     if (Params.BevelRadius > 0.0f)
     {
         GenerateTopBevelGeometry();
         GenerateBottomBevelGeometry();
     }
     
-    // 生成端面（如果不是完整的360度）
     if (!Params.IsFullCircle())
     {
         GenerateEndCaps();
@@ -92,13 +87,8 @@ void FHollowPrismBuilder::GenerateBaseGeometry()
 
 void FHollowPrismBuilder::GenerateSideWalls()
 {
-    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateSideWalls - Starting side wall generation"));
-    
-    // 生成内墙和外墙
     GenerateInnerWalls();
     GenerateOuterWalls();
-    
-    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateSideWalls - Completed side wall generation"));
 }
 
 void FHollowPrismBuilder::GenerateInnerWalls()
@@ -106,19 +96,17 @@ void FHollowPrismBuilder::GenerateInnerWalls()
     const float HalfHeight = Params.GetHalfHeight();
     const float ArcAngleRadians = FMath::DegreesToRadians(Params.ArcAngle);
     const float StartAngle = -ArcAngleRadians / 2.0f;
-    const float AngleStep = ArcAngleRadians / Params.Sides;
-    
-    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateInnerWalls - Generating %d inner walls"), Params.Sides);
+    const float AngleStep = ArcAngleRadians / Params.InnerSides;
     
     // 存储内墙顶点索引
     TArray<int32> InnerTopVertices, InnerBottomVertices;
     
     // 生成内环的顶点
-    for (int32 i = 0; i <= Params.Sides; ++i)
+    for (int32 i = 0; i <= Params.InnerSides; ++i)
     {
         const float Angle = StartAngle + i * AngleStep;
         
-        // 内环顶点/
+        // 内环顶点
         const FVector InnerPos(Params.InnerRadius * FMath::Cos(Angle), 
                               Params.InnerRadius * FMath::Sin(Angle), 
                               HalfHeight - Params.BevelRadius);
@@ -126,27 +114,23 @@ void FHollowPrismBuilder::GenerateInnerWalls()
         if (Params.bFlipNormals) InnerNormal = -InnerNormal;
         
         const int32 InnerTopVertex = GetOrAddVertex(InnerPos, InnerNormal, 
-            FVector2D(static_cast<float>(i) / Params.Sides, 1.0f));
+            FVector2D(static_cast<float>(i) / Params.InnerSides, 1.0f));
         InnerTopVertices.Add(InnerTopVertex);
         
         const FVector InnerBottomPos(Params.InnerRadius * FMath::Cos(Angle), 
                                    Params.InnerRadius * FMath::Sin(Angle), 
                                    -HalfHeight + Params.BevelRadius);
         const int32 InnerBottomVertex = GetOrAddVertex(InnerBottomPos, InnerNormal, 
-            FVector2D(static_cast<float>(i) / Params.Sides, 0.0f));
+            FVector2D(static_cast<float>(i) / Params.InnerSides, 0.0f));
         InnerBottomVertices.Add(InnerBottomVertex);
     }
     
-    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateInnerWalls - Generated %d inner vertices per ring"), InnerTopVertices.Num());
-    
     // 生成内墙四边形
-    for (int32 i = 0; i < Params.Sides; ++i)
+    for (int32 i = 0; i < Params.InnerSides; ++i)
     {
         AddQuad(InnerTopVertices[i], InnerBottomVertices[i], 
                InnerBottomVertices[i + 1], InnerTopVertices[i + 1]);
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateInnerWalls - Generated %d inner wall quads"), Params.Sides);
 }
 
 void FHollowPrismBuilder::GenerateOuterWalls()
@@ -154,15 +138,15 @@ void FHollowPrismBuilder::GenerateOuterWalls()
     const float HalfHeight = Params.GetHalfHeight();
     const float ArcAngleRadians = FMath::DegreesToRadians(Params.ArcAngle);
     const float StartAngle = -ArcAngleRadians / 2.0f;
-    const float AngleStep = ArcAngleRadians / Params.Sides;
+    const float AngleStep = ArcAngleRadians / Params.OuterSides;
     
-    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateOuterWalls - Generating %d outer walls"), Params.Sides);
+    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateOuterWalls - Generating %d outer walls"), Params.OuterSides);
     
     // 存储外墙顶点索引
     TArray<int32> OuterTopVertices, OuterBottomVertices;
     
     // 生成外环的顶点
-    for (int32 i = 0; i <= Params.Sides; ++i)
+    for (int32 i = 0; i <= Params.OuterSides; ++i)
     {
         const float Angle = StartAngle + i * AngleStep;
         
@@ -174,37 +158,38 @@ void FHollowPrismBuilder::GenerateOuterWalls()
         if (Params.bFlipNormals) OuterNormal = -OuterNormal;
         
         const int32 OuterTopVertex = GetOrAddVertex(OuterPos, OuterNormal, 
-            FVector2D(static_cast<float>(i) / Params.Sides, 1.0f));
+            FVector2D(static_cast<float>(i) / Params.OuterSides, 1.0f));
         OuterTopVertices.Add(OuterTopVertex);
         
         const FVector OuterBottomPos(Params.OuterRadius * FMath::Cos(Angle), 
                                    Params.OuterRadius * FMath::Sin(Angle), 
                                    -HalfHeight + Params.BevelRadius);
         const int32 OuterBottomVertex = GetOrAddVertex(OuterBottomPos, OuterNormal, 
-            FVector2D(static_cast<float>(i) / Params.Sides, 0.0f));
+            FVector2D(static_cast<float>(i) / Params.OuterSides, 0.0f));
         OuterBottomVertices.Add(OuterBottomVertex);
     }
     
     UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateOuterWalls - Generated %d outer vertices per ring"), OuterTopVertices.Num());
     
     // 生成外墙四边形
-    for (int32 i = 0; i < Params.Sides; ++i)
+    for (int32 i = 0; i < Params.OuterSides; ++i)
     {
         AddQuad(OuterTopVertices[i], OuterTopVertices[i + 1], 
                OuterBottomVertices[i + 1], OuterBottomVertices[i]);
     }
     
-    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateOuterWalls - Generated %d outer wall quads"), Params.Sides);
+    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateOuterWalls - Generated %d outer wall quads"), Params.OuterSides);
 }
 
-void FHollowPrismBuilder::GenerateTopCapWithQuads()
+void FHollowPrismBuilder::GenerateTopCapWithTriangles()
 {
     const float HalfHeight = Params.GetHalfHeight();
     const float ArcAngleRadians = FMath::DegreesToRadians(Params.ArcAngle);
     const float StartAngle = -ArcAngleRadians / 2.0f;
-    const float AngleStep = ArcAngleRadians / Params.Sides;
     
-    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateTopCapWithQuads - Generating top cap"));
+    // 使用不同的角度步长来生成内外环
+    const float InnerAngleStep = ArcAngleRadians / Params.InnerSides;
+    const float OuterAngleStep = ArcAngleRadians / Params.OuterSides;
     
     // 顶面法线向上
     FVector Normal(0.0f, 0.0f, 1.0f);
@@ -212,7 +197,7 @@ void FHollowPrismBuilder::GenerateTopCapWithQuads()
     {
         Normal = -Normal;
     }
-    
+
     // 考虑倒角影响，调整半径
     const float InnerRadius = Params.InnerRadius + Params.BevelRadius;
     const float OuterRadius = Params.OuterRadius - Params.BevelRadius;
@@ -220,46 +205,93 @@ void FHollowPrismBuilder::GenerateTopCapWithQuads()
     // 存储顶点索引
     TArray<int32> InnerVertices, OuterVertices;
     
-    // 生成内外环顶点
-    for (int32 i = 0; i <= Params.Sides; ++i)
+    // 生成内环顶点
+    for (int32 i = 0; i <= Params.InnerSides; ++i)
     {
-        const float Angle = StartAngle + i * AngleStep;
+        const float Angle = StartAngle + i * InnerAngleStep;
         
         // 内环顶点
-        const FVector InnerPos(InnerRadius * FMath::Cos(Angle), 
-                              InnerRadius * FMath::Sin(Angle), 
-                              HalfHeight);
-        const int32 InnerVertex = GetOrAddVertex(InnerPos, Normal, 
-            FVector2D(static_cast<float>(i) / Params.Sides, 0.5f));
+        const FVector InnerPos(InnerRadius * FMath::Cos(Angle), InnerRadius * FMath::Sin(Angle), HalfHeight);
+        const int32 InnerVertex = GetOrAddVertex(InnerPos, Normal, FVector2D(static_cast<float>(i) / Params.InnerSides, 0.5f));
         InnerVertices.Add(InnerVertex);
+    }
+
+    // 生成外环顶点
+    for (int32 i = 0; i <= Params.OuterSides; ++i)
+    {
+        const float Angle = StartAngle + i * OuterAngleStep;
         
         // 外环顶点
-        const FVector OuterPos(OuterRadius * FMath::Cos(Angle), 
-                              OuterRadius * FMath::Sin(Angle), 
-                              HalfHeight);
-        const int32 OuterVertex = GetOrAddVertex(OuterPos, Normal, 
-            FVector2D(static_cast<float>(i) / Params.Sides, 1.0f));
+        const FVector OuterPos(OuterRadius * FMath::Cos(Angle), OuterRadius * FMath::Sin(Angle), HalfHeight);
+        const int32 OuterVertex = GetOrAddVertex(OuterPos, Normal, FVector2D(static_cast<float>(i) / Params.OuterSides, 1.0f));
         OuterVertices.Add(OuterVertex);
     }
     
-    // 生成顶面四边形
-    for (int32 i = 0; i < Params.Sides; ++i)
-    {
-        AddQuad(InnerVertices[i], InnerVertices[i + 1], 
-               OuterVertices[i + 1], OuterVertices[i]);
-    }
+    // 生成顶面三角形 - 使用改进的三角化算法避免重叠和交叉
+    // 计算内外环的公共边数，确保完全覆盖
+    const int32 MaxSides = FMath::Max(Params.InnerSides, Params.OuterSides);
     
-    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateTopCapWithQuads - Generated %d quads"), Params.Sides);
+    for (int32 i = 0; i < MaxSides; ++i)
+    {
+        // 计算当前角度位置
+        const float CurrentAngleRatio = static_cast<float>(i) / MaxSides;
+        
+        // 计算内环和外环对应的顶点索引
+        const float InnerIndex = CurrentAngleRatio * Params.InnerSides;
+        const float OuterIndex = CurrentAngleRatio * Params.OuterSides;
+        
+        // 计算下一个角度位置
+        const float NextAngleRatio = static_cast<float>(i + 1) / MaxSides;
+        const float NextInnerIndex = NextAngleRatio * Params.InnerSides;
+        const float NextOuterIndex = NextAngleRatio * Params.OuterSides;
+        
+        // 获取当前和下一个内环顶点
+        const int32 InnerIndexFloor = FMath::FloorToInt(InnerIndex);
+        const int32 InnerIndexCeil = FMath::Min(InnerIndexFloor + 1, Params.InnerSides);
+        const int32 NextInnerIndexFloor = FMath::FloorToInt(NextInnerIndex);
+        const int32 NextInnerIndexCeil = FMath::Min(NextInnerIndexFloor + 1, Params.InnerSides);
+        
+        // 获取当前和下一个外环顶点
+        const int32 OuterIndexFloor = FMath::FloorToInt(OuterIndex);
+        const int32 OuterIndexCeil = FMath::Min(OuterIndexFloor + 1, Params.OuterSides);
+        const int32 NextOuterIndexFloor = FMath::FloorToInt(NextOuterIndex);
+        const int32 NextOuterIndexCeil = FMath::Min(NextOuterIndexFloor + 1, Params.OuterSides);
+        
+        // 根据权重选择最佳的内环顶点
+        const float InnerWeight = InnerIndex - InnerIndexFloor;
+        const int32 BestInnerVertex = (InnerWeight < 0.5f) ? InnerIndexFloor : InnerIndexCeil;
+        
+        const float NextInnerWeight = NextInnerIndex - NextInnerIndexFloor;
+        const int32 BestNextInnerVertex = (NextInnerWeight < 0.5f) ? NextInnerIndexFloor : NextInnerIndexCeil;
+        
+        // 根据权重选择最佳的外环顶点
+        const float OuterWeight = OuterIndex - OuterIndexFloor;
+        const int32 BestOuterVertex = (OuterWeight < 0.5f) ? OuterIndexFloor : OuterIndexCeil;
+        
+        const float NextOuterWeight = NextOuterIndex - NextOuterIndexFloor;
+        const int32 BestNextOuterVertex = (NextOuterWeight < 0.5f) ? NextOuterIndexFloor : NextOuterIndexCeil;
+        
+        // 生成两个三角形来覆盖当前扇形区域
+        // 对于顶面，法线指向正Z方向，需要逆时针顶点顺序
+        // 第一个三角形：当前内环顶点 -> 下一个外环顶点 -> 当前外环顶点
+        AddTriangle(InnerVertices[BestInnerVertex], OuterVertices[BestNextOuterVertex], OuterVertices[BestOuterVertex]);
+        
+        // 第二个三角形：当前内环顶点 -> 下一个内环顶点 -> 下一个外环顶点
+        AddTriangle(InnerVertices[BestInnerVertex], InnerVertices[BestNextInnerVertex], OuterVertices[BestNextOuterVertex]);
+    }
 }
 
-void FHollowPrismBuilder::GenerateBottomCapWithQuads()
+void FHollowPrismBuilder::GenerateBottomCapWithTriangles()
 {
     const float HalfHeight = Params.GetHalfHeight();
     const float ArcAngleRadians = FMath::DegreesToRadians(Params.ArcAngle);
     const float StartAngle = -ArcAngleRadians / 2.0f;
-    const float AngleStep = ArcAngleRadians / Params.Sides;
     
-    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateBottomCapWithQuads - Generating bottom cap"));
+    // 使用不同的角度步长来生成内外环
+    const float InnerAngleStep = ArcAngleRadians / Params.InnerSides;
+    const float OuterAngleStep = ArcAngleRadians / Params.OuterSides;
+    
+    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateBottomCapWithTriangles - Generating bottom cap"));
     
     // 底面法线向下
     FVector Normal(0.0f, 0.0f, -1.0f);
@@ -275,36 +307,89 @@ void FHollowPrismBuilder::GenerateBottomCapWithQuads()
     // 存储顶点索引
     TArray<int32> InnerVertices, OuterVertices;
     
-    // 生成内外环顶点
-    for (int32 i = 0; i <= Params.Sides; ++i)
+    // 生成内环顶点
+    for (int32 i = 0; i <= Params.InnerSides; ++i)
     {
-        const float Angle = StartAngle + i * AngleStep;
+        const float Angle = StartAngle + i * InnerAngleStep;
         
         // 内环顶点
         const FVector InnerPos(InnerRadius * FMath::Cos(Angle), 
                               InnerRadius * FMath::Sin(Angle), 
                               -HalfHeight);
         const int32 InnerVertex = GetOrAddVertex(InnerPos, Normal, 
-            FVector2D(static_cast<float>(i) / Params.Sides, 0.5f));
+            FVector2D(static_cast<float>(i) / Params.InnerSides, 0.5f));
         InnerVertices.Add(InnerVertex);
+    }
+    
+    // 生成外环顶点
+    for (int32 i = 0; i <= Params.OuterSides; ++i)
+    {
+        const float Angle = StartAngle + i * OuterAngleStep;
         
         // 外环顶点
         const FVector OuterPos(OuterRadius * FMath::Cos(Angle), 
                               OuterRadius * FMath::Sin(Angle), 
                               -HalfHeight);
         const int32 OuterVertex = GetOrAddVertex(OuterPos, Normal, 
-            FVector2D(static_cast<float>(i) / Params.Sides, 1.0f));
+            FVector2D(static_cast<float>(i) / Params.OuterSides, 1.0f));
         OuterVertices.Add(OuterVertex);
     }
     
-    // 生成底面四边形
-    for (int32 i = 0; i < Params.Sides; ++i)
+    // 生成底面三角形 - 使用改进的三角化算法避免重叠和交叉
+    // 计算内外环的公共边数，确保完全覆盖
+    const int32 MaxSides = FMath::Max(Params.InnerSides, Params.OuterSides);
+    
+    for (int32 i = 0; i < MaxSides; ++i)
     {
-        AddQuad(OuterVertices[i], OuterVertices[i + 1], 
-               InnerVertices[i + 1], InnerVertices[i]);
+        // 计算当前角度位置
+        const float CurrentAngleRatio = static_cast<float>(i) / MaxSides;
+        
+        // 计算内环和外环对应的顶点索引
+        const float InnerIndex = CurrentAngleRatio * Params.InnerSides;
+        const float OuterIndex = CurrentAngleRatio * Params.OuterSides;
+        
+        // 计算下一个角度位置
+        const float NextAngleRatio = static_cast<float>(i + 1) / MaxSides;
+        const float NextInnerIndex = NextAngleRatio * Params.InnerSides;
+        const float NextOuterIndex = NextAngleRatio * Params.OuterSides;
+        
+        // 获取当前和下一个内环顶点
+        const int32 InnerIndexFloor = FMath::FloorToInt(InnerIndex);
+        const int32 InnerIndexCeil = FMath::Min(InnerIndexFloor + 1, Params.InnerSides);
+        const int32 NextInnerIndexFloor = FMath::FloorToInt(NextInnerIndex);
+        const int32 NextInnerIndexCeil = FMath::Min(NextInnerIndexFloor + 1, Params.InnerSides);
+        
+        // 获取当前和下一个外环顶点
+        const int32 OuterIndexFloor = FMath::FloorToInt(OuterIndex);
+        const int32 OuterIndexCeil = FMath::Min(OuterIndexFloor + 1, Params.OuterSides);
+        const int32 NextOuterIndexFloor = FMath::FloorToInt(NextOuterIndex);
+        const int32 NextOuterIndexCeil = FMath::Min(NextOuterIndexFloor + 1, Params.OuterSides);
+        
+        // 根据权重选择最佳的内环顶点
+        const float InnerWeight = InnerIndex - InnerIndexFloor;
+        const int32 BestInnerVertex = (InnerWeight < 0.5f) ? InnerIndexFloor : InnerIndexCeil;
+        
+        const float NextInnerWeight = NextInnerIndex - NextInnerIndexFloor;
+        const int32 BestNextInnerVertex = (NextInnerWeight < 0.5f) ? NextInnerIndexFloor : NextInnerIndexCeil;
+        
+        // 根据权重选择最佳的外环顶点
+        const float OuterWeight = OuterIndex - OuterIndexFloor;
+        const int32 BestOuterVertex = (OuterWeight < 0.5f) ? OuterIndexFloor : OuterIndexCeil;
+        
+        const float NextOuterWeight = NextOuterIndex - NextOuterIndexFloor;
+        const int32 BestNextOuterVertex = (NextOuterWeight < 0.5f) ? NextOuterIndexFloor : NextOuterIndexCeil;
+        
+        // 生成两个三角形来覆盖当前扇形区域
+        // 对于底面，法线指向负Z方向，需要顺时针顶点顺序
+        // 第一个三角形：当前内环顶点 -> 当前外环顶点 -> 下一个外环顶点
+        AddTriangle(InnerVertices[BestInnerVertex], OuterVertices[BestOuterVertex], OuterVertices[BestNextOuterVertex]);
+        
+        // 第二个三角形：当前内环顶点 -> 下一个外环顶点 -> 下一个内环顶点
+        AddTriangle(InnerVertices[BestInnerVertex], OuterVertices[BestNextOuterVertex], InnerVertices[BestNextInnerVertex]);
     }
     
-    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateBottomCapWithQuads - Generated %d quads"), Params.Sides);
+    UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateBottomCapWithTriangles - Generated triangles for inner sides: %d, outer sides: %d"), 
+           Params.InnerSides, Params.OuterSides);
 }
 
 void FHollowPrismBuilder::GenerateTopBevelGeometry()
@@ -331,34 +416,34 @@ void FHollowPrismBuilder::GenerateBottomBevelGeometry()
 
 void FHollowPrismBuilder::GenerateTopInnerBevel()
 {
-    const float ChamferRadius = Params.BevelRadius;
-    const int32 ChamferSections = Params.BevelSections;
+    const float BevelRadiusLocal = Params.BevelRadius;
+    const int32 BevelSectionsLocal = Params.BevelSections;
     const float HalfHeight = Params.GetHalfHeight();
 
-    if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
+    if (BevelRadiusLocal <= 0.0f || BevelSectionsLocal <= 0) return;
 
     UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateTopInnerBevel - Generating top inner bevel"));
 
     TArray<int32> PrevRing;
 
-    for (int32 i = 0; i <= ChamferSections; ++i)
+    for (int32 i = 0; i <= BevelSectionsLocal; ++i)
     {
-        const float alpha = static_cast<float>(i) / ChamferSections;
+        const float alpha = static_cast<float>(i) / BevelSectionsLocal;
 
         // 内环倒角：从内半径开始，向外扩展
         const float StartRadius = Params.InnerRadius;
-        const float EndRadius = Params.InnerRadius + ChamferRadius;
+        const float EndRadius = Params.InnerRadius + BevelRadiusLocal;
         const float CurrentRadius = FMath::Lerp(StartRadius, EndRadius, alpha);
-        const float CurrentZ = FMath::Lerp(HalfHeight - ChamferRadius, HalfHeight, alpha);
+        const float CurrentZ = FMath::Lerp(HalfHeight - BevelRadiusLocal, HalfHeight, alpha);
 
         TArray<int32> CurrentRing;
-        CurrentRing.Reserve(Params.Sides + 1);
+        CurrentRing.Reserve(Params.InnerSides + 1);
 
-        for (int32 s = 0; s <= Params.Sides; ++s)
+        for (int32 s = 0; s <= Params.InnerSides; ++s)
         {
             const float ArcAngleRadians = FMath::DegreesToRadians(Params.ArcAngle);
             const float StartAngle = -ArcAngleRadians / 2.0f;
-            const float LocalAngleStep = ArcAngleRadians / Params.Sides;
+            const float LocalAngleStep = ArcAngleRadians / Params.InnerSides;
             const float angle = StartAngle + s * LocalAngleStep;
 
             const FVector Position = FVector(
@@ -383,7 +468,7 @@ void FHollowPrismBuilder::GenerateTopInnerBevel()
                 Normal = -Normal;
             }
 
-            const float U = static_cast<float>(s) / Params.Sides;
+            const float U = static_cast<float>(s) / Params.InnerSides;
             const float V = (CurrentZ + HalfHeight) / Params.Height;
 
             CurrentRing.Add(GetOrAddVertex(Position, Normal, FVector2D(U, V)));
@@ -392,7 +477,7 @@ void FHollowPrismBuilder::GenerateTopInnerBevel()
         // 连接相邻环
         if (i > 0 && PrevRing.Num() > 0)
         {
-            for (int32 s = 0; s < Params.Sides; ++s)
+            for (int32 s = 0; s < Params.InnerSides; ++s)
             {
                 const int32 V00 = PrevRing[s];
                 const int32 V10 = CurrentRing[s];
@@ -409,34 +494,34 @@ void FHollowPrismBuilder::GenerateTopInnerBevel()
 
 void FHollowPrismBuilder::GenerateTopOuterBevel()
 {
-    const float ChamferRadius = Params.BevelRadius;
-    const int32 ChamferSections = Params.BevelSections;
+    const float BevelRadiusLocal = Params.BevelRadius;
+    const int32 BevelSectionsLocal = Params.BevelSections;
     const float HalfHeight = Params.GetHalfHeight();
 
-    if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
+    if (BevelRadiusLocal <= 0.0f || BevelSectionsLocal <= 0) return;
 
     UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateTopOuterBevel - Generating top outer bevel"));
 
     TArray<int32> PrevRing;
 
-    for (int32 i = 0; i <= ChamferSections; ++i)
+    for (int32 i = 0; i <= BevelSectionsLocal; ++i)
     {
-        const float alpha = static_cast<float>(i) / ChamferSections;
+        const float alpha = static_cast<float>(i) / BevelSectionsLocal;
 
         // 外环倒角：从外半径开始，向内收缩
         const float StartRadius = Params.OuterRadius;
-        const float EndRadius = Params.OuterRadius - ChamferRadius;
+        const float EndRadius = Params.OuterRadius - BevelRadiusLocal;
         const float CurrentRadius = FMath::Lerp(StartRadius, EndRadius, alpha);
-        const float CurrentZ = FMath::Lerp(HalfHeight - ChamferRadius, HalfHeight, alpha);
+        const float CurrentZ = FMath::Lerp(HalfHeight - BevelRadiusLocal, HalfHeight, alpha);
 
         TArray<int32> CurrentRing;
-        CurrentRing.Reserve(Params.Sides + 1);
+        CurrentRing.Reserve(Params.OuterSides + 1);
 
-        for (int32 s = 0; s <= Params.Sides; ++s)
+        for (int32 s = 0; s <= Params.OuterSides; ++s)
         {
             const float ArcAngleRadians = FMath::DegreesToRadians(Params.ArcAngle);
             const float StartAngle = -ArcAngleRadians / 2.0f;
-            const float LocalAngleStep = ArcAngleRadians / Params.Sides;
+            const float LocalAngleStep = ArcAngleRadians / Params.OuterSides;
             const float angle = StartAngle + s * LocalAngleStep;
 
             const FVector Position = FVector(
@@ -461,7 +546,7 @@ void FHollowPrismBuilder::GenerateTopOuterBevel()
                 Normal = -Normal;
             }
 
-            const float U = static_cast<float>(s) / Params.Sides;
+            const float U = static_cast<float>(s) / Params.OuterSides;
             const float V = (CurrentZ + HalfHeight) / Params.Height;
 
             CurrentRing.Add(GetOrAddVertex(Position, Normal, FVector2D(U, V)));
@@ -470,7 +555,7 @@ void FHollowPrismBuilder::GenerateTopOuterBevel()
         // 连接相邻环
         if (i > 0 && PrevRing.Num() > 0)
         {
-            for (int32 s = 0; s < Params.Sides; ++s)
+            for (int32 s = 0; s < Params.OuterSides; ++s)
             {
                 const int32 V00 = PrevRing[s];
                 const int32 V10 = CurrentRing[s];
@@ -487,34 +572,34 @@ void FHollowPrismBuilder::GenerateTopOuterBevel()
 
 void FHollowPrismBuilder::GenerateBottomInnerBevel()
 {
-    const float ChamferRadius = Params.BevelRadius;
-    const int32 ChamferSections = Params.BevelSections;
+    const float BevelRadiusLocal = Params.BevelRadius;
+    const int32 BevelSectionsLocal = Params.BevelSections;
     const float HalfHeight = Params.GetHalfHeight();
 
-    if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
+    if (BevelRadiusLocal <= 0.0f || BevelSectionsLocal <= 0) return;
 
     UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateBottomInnerBevel - Generating bottom inner bevel"));
 
     TArray<int32> PrevRing;
 
-    for (int32 i = 0; i <= ChamferSections; ++i)
+    for (int32 i = 0; i <= BevelSectionsLocal; ++i)
     {
-        const float alpha = static_cast<float>(i) / ChamferSections;
+        const float alpha = static_cast<float>(i) / BevelSectionsLocal;
 
         // 内环倒角：从内半径开始，向外扩展
         const float StartRadius = Params.InnerRadius;
-        const float EndRadius = Params.InnerRadius + ChamferRadius;
+        const float EndRadius = Params.InnerRadius + BevelRadiusLocal;
         const float CurrentRadius = FMath::Lerp(StartRadius, EndRadius, alpha);
-        const float CurrentZ = FMath::Lerp(-HalfHeight + ChamferRadius, -HalfHeight, alpha);
+        const float CurrentZ = FMath::Lerp(-HalfHeight + BevelRadiusLocal, -HalfHeight, alpha);
 
         TArray<int32> CurrentRing;
-        CurrentRing.Reserve(Params.Sides + 1);
+        CurrentRing.Reserve(Params.InnerSides + 1);
 
-        for (int32 s = 0; s <= Params.Sides; ++s)
+        for (int32 s = 0; s <= Params.InnerSides; ++s)
         {
             const float ArcAngleRadians = FMath::DegreesToRadians(Params.ArcAngle);
             const float StartAngle = -ArcAngleRadians / 2.0f;
-            const float LocalAngleStep = ArcAngleRadians / Params.Sides;
+            const float LocalAngleStep = ArcAngleRadians / Params.InnerSides;
             const float angle = StartAngle + s * LocalAngleStep;
 
             const FVector Position = FVector(
@@ -539,7 +624,7 @@ void FHollowPrismBuilder::GenerateBottomInnerBevel()
                 Normal = -Normal;
             }
 
-            const float U = static_cast<float>(s) / Params.Sides;
+            const float U = static_cast<float>(s) / Params.InnerSides;
             const float V = (CurrentZ + HalfHeight) / Params.Height;
 
             CurrentRing.Add(GetOrAddVertex(Position, Normal, FVector2D(U, V)));
@@ -548,7 +633,7 @@ void FHollowPrismBuilder::GenerateBottomInnerBevel()
         // 连接相邻环
         if (i > 0 && PrevRing.Num() > 0)
         {
-            for (int32 s = 0; s < Params.Sides; ++s)
+            for (int32 s = 0; s < Params.InnerSides; ++s)
             {
                 const int32 V00 = PrevRing[s];
                 const int32 V10 = CurrentRing[s];
@@ -565,34 +650,34 @@ void FHollowPrismBuilder::GenerateBottomInnerBevel()
 
 void FHollowPrismBuilder::GenerateBottomOuterBevel()
 {
-    const float ChamferRadius = Params.BevelRadius;
-    const int32 ChamferSections = Params.BevelSections;
+    const float BevelRadiusLocal = Params.BevelRadius;
+    const int32 BevelSectionsLocal = Params.BevelSections;
     const float HalfHeight = Params.GetHalfHeight();
 
-    if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
+    if (BevelRadiusLocal <= 0.0f || BevelSectionsLocal <= 0) return;
 
     UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateBottomOuterBevel - Generating bottom outer bevel"));
 
     TArray<int32> PrevRing;
 
-    for (int32 i = 0; i <= ChamferSections; ++i)
+    for (int32 i = 0; i <= BevelSectionsLocal; ++i)
     {
-        const float alpha = static_cast<float>(i) / ChamferSections;
+        const float alpha = static_cast<float>(i) / BevelSectionsLocal;
 
         // 外环倒角：从外半径开始，向内收缩
         const float StartRadius = Params.OuterRadius;
-        const float EndRadius = Params.OuterRadius - ChamferRadius;
+        const float EndRadius = Params.OuterRadius - BevelRadiusLocal;
         const float CurrentRadius = FMath::Lerp(StartRadius, EndRadius, alpha);
-        const float CurrentZ = FMath::Lerp(-HalfHeight + ChamferRadius, -HalfHeight, alpha);
+        const float CurrentZ = FMath::Lerp(-HalfHeight + BevelRadiusLocal, -HalfHeight, alpha);
 
         TArray<int32> CurrentRing;
-        CurrentRing.Reserve(Params.Sides + 1);
+        CurrentRing.Reserve(Params.OuterSides + 1);
 
-        for (int32 s = 0; s <= Params.Sides; ++s)
+        for (int32 s = 0; s <= Params.OuterSides; ++s)
         {
             const float ArcAngleRadians = FMath::DegreesToRadians(Params.ArcAngle);
             const float StartAngle = -ArcAngleRadians / 2.0f;
-            const float LocalAngleStep = ArcAngleRadians / Params.Sides;
+            const float LocalAngleStep = ArcAngleRadians / Params.OuterSides;
             const float angle = StartAngle + s * LocalAngleStep;
 
             const FVector Position = FVector(
@@ -617,7 +702,7 @@ void FHollowPrismBuilder::GenerateBottomOuterBevel()
                 Normal = -Normal;
             }
 
-            const float U = static_cast<float>(s) / Params.Sides;
+            const float U = static_cast<float>(s) / Params.OuterSides;
             const float V = (CurrentZ + HalfHeight) / Params.Height;
 
             CurrentRing.Add(GetOrAddVertex(Position, Normal, FVector2D(U, V)));
@@ -626,7 +711,7 @@ void FHollowPrismBuilder::GenerateBottomOuterBevel()
         // 连接相邻环
         if (i > 0 && PrevRing.Num() > 0)
         {
-            for (int32 s = 0; s < Params.Sides; ++s)
+            for (int32 s = 0; s < Params.OuterSides; ++s)
             {
                 const int32 V00 = PrevRing[s];
                 const int32 V10 = CurrentRing[s];
@@ -662,17 +747,17 @@ void FHollowPrismBuilder::GenerateEndCaps()
 void FHollowPrismBuilder::GenerateEndCap(float Angle, const FVector& Normal, bool IsStart)
 {
     const float HalfHeight = Params.GetHalfHeight();
-    const float ChamferRadius = Params.BevelRadius;
+    const float BevelRadiusLocal = Params.BevelRadius;
 
     UE_LOG(LogTemp, Log, TEXT("FHollowPrismBuilder::GenerateEndCap - Generating end cap at angle %.2f"), Angle);
 
     // 计算倒角高度
-    const float TopChamferHeight = FMath::Min(ChamferRadius, Params.OuterRadius - Params.InnerRadius);
-    const float BottomChamferHeight = FMath::Min(ChamferRadius, Params.OuterRadius - Params.InnerRadius);
+    const float TopBevelHeight = FMath::Min(BevelRadiusLocal, Params.OuterRadius - Params.InnerRadius);
+    const float BottomBevelHeight = FMath::Min(BevelRadiusLocal, Params.OuterRadius - Params.InnerRadius);
 
     // 调整主体几何体的范围，避免与倒角重叠
-    const float StartZ = -HalfHeight + BottomChamferHeight;
-    const float EndZ = HalfHeight - TopChamferHeight;
+    const float StartZ = -HalfHeight + BottomBevelHeight;
+    const float EndZ = HalfHeight - TopBevelHeight;
 
     // 按照指定顺序存储顶点：上底中心 -> 上倒角圆弧 -> 侧边 -> 下倒角圆弧 -> 下底中心
     TArray<int32> OrderedVertices;
@@ -688,10 +773,10 @@ void FHollowPrismBuilder::GenerateEndCap(float Angle, const FVector& Normal, boo
     // 2. 上倒角弧线顶点（从顶面到侧边）
     if (Params.BevelRadius > 0.0f)
     {
-        const int32 TopChamferSections = Params.BevelSections;
-        for (int32 i = 0; i < TopChamferSections; ++i) // 从顶面到侧边
+        const int32 TopBevelSections = Params.BevelSections;
+        for (int32 i = 0; i < TopBevelSections; ++i) // 从顶面到侧边
         {
-            const float Alpha = static_cast<float>(i) / TopChamferSections;
+            const float Alpha = static_cast<float>(i) / TopBevelSections;
             
             // 从顶面开始（HalfHeight位置）到侧边（EndZ位置）
             const float CurrentZ = FMath::Lerp(HalfHeight, EndZ, Alpha);
@@ -706,14 +791,14 @@ void FHollowPrismBuilder::GenerateEndCap(float Angle, const FVector& Normal, boo
             const float CurrentOuterRadius = FMath::Lerp(TopOuterRadius, SideOuterRadius, Alpha);
             
             // 内环顶点
-            const FVector InnerChamferPos = FVector(CurrentInnerRadius * FMath::Cos(Angle), CurrentInnerRadius * FMath::Sin(Angle), CurrentZ);
-            const int32 InnerChamferVertex = GetOrAddVertex(InnerChamferPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Params.Height));
-            OrderedVertices.Add(InnerChamferVertex);
+            const FVector InnerBevelPos = FVector(CurrentInnerRadius * FMath::Cos(Angle), CurrentInnerRadius * FMath::Sin(Angle), CurrentZ);
+            const int32 InnerBevelVertex = GetOrAddVertex(InnerBevelPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Params.Height));
+            OrderedVertices.Add(InnerBevelVertex);
             
             // 外环顶点
-            const FVector OuterChamferPos = FVector(CurrentOuterRadius * FMath::Cos(Angle), CurrentOuterRadius * FMath::Sin(Angle), CurrentZ);
-            const int32 OuterChamferVertex = GetOrAddVertex(OuterChamferPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Params.Height));
-            OrderedVertices.Add(OuterChamferVertex);
+            const FVector OuterBevelPos = FVector(CurrentOuterRadius * FMath::Cos(Angle), CurrentOuterRadius * FMath::Sin(Angle), CurrentZ);
+            const int32 OuterBevelVertex = GetOrAddVertex(OuterBevelPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Params.Height));
+            OrderedVertices.Add(OuterBevelVertex);
         }
     }
 
@@ -736,10 +821,10 @@ void FHollowPrismBuilder::GenerateEndCap(float Angle, const FVector& Normal, boo
     // 4. 下倒角弧线顶点（从侧边到底面）
     if (Params.BevelRadius > 0.0f)
     {
-        const int32 BottomChamferSections = Params.BevelSections;
-        for (int32 i = 1; i <= BottomChamferSections; ++i) // 从侧边到底面
+        const int32 BottomBevelSections = Params.BevelSections;
+        for (int32 i = 1; i <= BottomBevelSections; ++i) // 从侧边到底面
         {
-            const float Alpha = static_cast<float>(i) / BottomChamferSections;
+            const float Alpha = static_cast<float>(i) / BottomBevelSections;
             
             // 从侧边开始（StartZ位置）到底面（-HalfHeight位置）
             const float CurrentZ = FMath::Lerp(StartZ, -HalfHeight, Alpha);
@@ -754,14 +839,14 @@ void FHollowPrismBuilder::GenerateEndCap(float Angle, const FVector& Normal, boo
             const float CurrentOuterRadius = FMath::Lerp(SideOuterRadius, BottomOuterRadius, Alpha);
             
             // 内环顶点
-            const FVector InnerChamferPos = FVector(CurrentInnerRadius * FMath::Cos(Angle), CurrentInnerRadius * FMath::Sin(Angle), CurrentZ);
-            const int32 InnerChamferVertex = GetOrAddVertex(InnerChamferPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Params.Height));
-            OrderedVertices.Add(InnerChamferVertex);
+            const FVector InnerBevelPos = FVector(CurrentInnerRadius * FMath::Cos(Angle), CurrentInnerRadius * FMath::Sin(Angle), CurrentZ);
+            const int32 InnerBevelVertex = GetOrAddVertex(InnerBevelPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Params.Height));
+            OrderedVertices.Add(InnerBevelVertex);
             
             // 外环顶点
-            const FVector OuterChamferPos = FVector(CurrentOuterRadius * FMath::Cos(Angle), CurrentOuterRadius * FMath::Sin(Angle), CurrentZ);
-            const int32 OuterChamferVertex = GetOrAddVertex(OuterChamferPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Params.Height));
-            OrderedVertices.Add(OuterChamferVertex);
+            const FVector OuterBevelPos = FVector(CurrentOuterRadius * FMath::Cos(Angle), CurrentOuterRadius * FMath::Sin(Angle), CurrentZ);
+            const int32 OuterBevelVertex = GetOrAddVertex(OuterBevelPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Params.Height));
+            OrderedVertices.Add(OuterBevelVertex);
         }
     }
 

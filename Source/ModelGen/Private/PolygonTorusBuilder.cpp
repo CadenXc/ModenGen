@@ -203,7 +203,7 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     
     const float MajorRad = Params.MajorRadius;
     const float MinorRad = Params.MinorRadius;
-    const int32 MinorSegs = Params.MinorSegments;  // 使用次分段数作为端盖分段数
+    const int32 MinorSegs = Params.MinorSegments;
     const float AngleRad = FMath::DegreesToRadians(Params.TorusAngle);
     
     UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateAdvancedEndCaps - Parameters: MajorRad=%f, MinorRad=%f, MinorSegs=%d, AngleRad=%f"), 
@@ -246,8 +246,8 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
             const int32 NextI = (i + 1) % MinorSegs;
             
             const int32 V0 = StartCenterIndex;
-            const int32 V1 = NextI;  // 修正：交换V1和V2的顺序
-            const int32 V2 = i;       // 第一个截面的顶点
+            const int32 V1 = NextI;
+            const int32 V2 = i;
             AddTriangle(V0, V1, V2);
         }
     }
@@ -261,7 +261,7 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
             const int32 NextI = (i + 1) % MinorSegs;
             
             const int32 V0 = EndCenterIndex;
-            const int32 V1 = LastSectionStart + i;      // 修正：交换V1和V2的顺序
+            const int32 V1 = LastSectionStart + i;
             const int32 V2 = LastSectionStart + NextI;
             AddTriangle(V0, V1, V2);
         }

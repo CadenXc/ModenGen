@@ -11,16 +11,13 @@ ABevelCube::ABevelCube()
 {
     PrimaryActorTick.bCanEverTick = false;
 
-    // 创建程序化网格组件
     ProceduralMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProceduralMesh"));
     RootComponent = ProceduralMesh;
 
-    // 初始化默认参数
     Parameters.Size = 100.0f;
     Parameters.BevelSize = 10.0f;
     Parameters.BevelSections = 3;
 
-    // 初始化组件
     InitializeComponents();
 }
 
@@ -28,7 +25,6 @@ void ABevelCube::BeginPlay()
 {
     Super::BeginPlay();
     
-    // 在游戏开始时生成网格
     RegenerateMesh();
 }
 
@@ -36,7 +32,6 @@ void ABevelCube::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
     
-    // 在编辑器中构建时生成网格
     RegenerateMesh();
 }
 
@@ -49,14 +44,11 @@ void ABevelCube::InitializeComponents()
 {
     if (ProceduralMesh)
     {
-        // 设置程序化网格组件的默认属性
         ProceduralMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
         ProceduralMesh->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
         
-        // 应用材质
         ApplyMaterial();
         
-        // 设置碰撞
         SetupCollision();
     }
 }
@@ -86,11 +78,9 @@ void ABevelCube::RegenerateMesh()
         return;
     }
 
-    // 清除之前的网格数据
     ProceduralMesh->ClearAllMeshSections();
     UE_LOG(LogTemp, Log, TEXT("Cleared all mesh sections"));
 
-    // 验证参数
     if (!Parameters.IsValid())
     {
         UE_LOG(LogTemp, Warning, TEXT("Invalid BevelCube parameters: Size=%f, BevelSize=%f, BevelSections=%d"), 
@@ -120,10 +110,8 @@ void ABevelCube::RegenerateMesh()
         // 将网格数据应用到程序化网格组件
         MeshData.ToProceduralMesh(ProceduralMesh, 0);
         
-        // 应用材质
         ApplyMaterial();
         
-        // 设置碰撞
         SetupCollision();
         
         UE_LOG(LogTemp, Log, TEXT("BevelCube generated successfully: %d vertices, %d triangles"), 
@@ -137,11 +125,9 @@ void ABevelCube::RegenerateMesh()
 
 void ABevelCube::GenerateBeveledCube(float Size, float BevelSize, int32 Sections)
 {
-    // 更新参数
     Parameters.Size = Size;
     Parameters.BevelSize = BevelSize;
     Parameters.BevelSections = Sections;
     
-    // 重新生成网格
     RegenerateMesh();
 }

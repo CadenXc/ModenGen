@@ -30,11 +30,8 @@ public:
     virtual int32 CalculateTriangleCountEstimate() const override;
 
 private:
-    //~ Begin Private Members
-    /** 生成参数 */
     FFrustumParameters Params;
 
-    //~ Begin Private Methods
     /** 生成基础几何体 */
     void GenerateBaseGeometry();
     
@@ -48,10 +45,10 @@ private:
     void GenerateBottomGeometry(float Z);
     
     /** 生成顶部倒角几何体 */
-    void GenerateTopChamferGeometry(float StartZ);
+    void GenerateTopBevelGeometry(float StartZ);
     
     /** 生成底部倒角几何体 */
-    void GenerateBottomChamferGeometry(float StartZ);
+    void GenerateBottomBevelGeometry(float StartZ);
     
     /** 生成端面 */
     void GenerateEndCaps();
@@ -60,31 +57,31 @@ private:
     void GenerateEndCapTriangles(float Angle, const FVector& Normal, bool IsStart);
     
     /** 生成倒角弧三角形 */
-    void GenerateChamferArcTriangles(float Angle, const FVector& Normal, bool IsStart, 
+    void GenerateBevelArcTriangles(float Angle, const FVector& Normal, bool IsStart, 
                                     float Z1, float Z2, bool IsTop);
     
     /** 生成带端面的倒角弧三角形 */
-    void GenerateChamferArcTrianglesWithCaps(float Angle, const FVector& Normal, bool IsStart, 
+    void GenerateBevelArcTrianglesWithCaps(float Angle, const FVector& Normal, bool IsStart, 
                                             float Z1, float Z2, bool IsTop, int32 CenterVertex, 
                                             int32 CapCenterVertex);
 
-    //~ Begin Chamfer Helper Structures
+    //~ Begin Bevel Helper Structures
     /** 倒角几何体控制点结构 */
-    struct FChamferArcControlPoints
+    struct FBevelArcControlPoints
     {
         FVector StartPoint;      // 起点：侧边顶点
         FVector EndPoint;        // 终点：顶/底面顶点
         FVector ControlPoint;    // 控制点：原始顶点位置
     };
 
-    //~ Begin Chamfer Helper Methods
+    //~ Begin Bevel Helper Methods
     /** 计算倒角控制点 */
-    FChamferArcControlPoints CalculateChamferControlPoints(const FVector& SideVertex, 
+    FBevelArcControlPoints CalculateBevelControlPoints(const FVector& SideVertex, 
                                                           const FVector& TopBottomVertex);
     
     /** 计算倒角弧点 */
-    FVector CalculateChamferArcPoint(const FChamferArcControlPoints& ControlPoints, float t);
+    FVector CalculateBevelArcPoint(const FBevelArcControlPoints& ControlPoints, float t);
     
     /** 计算倒角弧切线 */
-    FVector CalculateChamferArcTangent(const FChamferArcControlPoints& ControlPoints, float t);
+    FVector CalculateBevelArcTangent(const FBevelArcControlPoints& ControlPoints, float t);
 };

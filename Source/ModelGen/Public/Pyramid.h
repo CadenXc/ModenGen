@@ -47,15 +47,12 @@ public:
 
 protected:
     //~ Begin Parameters
-    /** 生成参数 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid|Parameters")
     FPyramidParameters Parameters;
 
-    /** 材质 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid|Materials")
     UMaterialInterface* Material;
 
-    /** 是否生成碰撞体 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid|Collision")
     bool bGenerateCollision = true;
 
@@ -64,25 +61,17 @@ protected:
     bool bUseAsyncCooking = true;
 
 private:
-    //~ Begin Components
-    /** 程序化网格组件 */
     UPROPERTY(VisibleAnywhere, Category = "Pyramid|Components")
     UProceduralMeshComponent* ProceduralMesh;
 
-    //~ Begin Private Methods
-    /** 初始化组件 */
     void InitializeComponents();
     
-    /** 应用材质 */
     void ApplyMaterial();
     
-    /** 设置碰撞 */
     void SetupCollision();
     
-    /** 重新生成网格 */
     void RegenerateMesh();
     
-    /** 使用指定参数生成金字塔 */
     UFUNCTION(BlueprintCallable, Category = "Pyramid|Generation")
     void GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides);
 };

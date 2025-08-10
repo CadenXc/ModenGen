@@ -17,7 +17,7 @@ bool FFrustumParameters::IsValid() const
     }
 
     // 检查倒角参数
-    if (ChamferRadius < 0.0f || ChamferSections < 1)
+    if (BevelRadius < 0.0f || BevelSections < 1)
     {
         return false;
     }
@@ -57,13 +57,13 @@ int32 FFrustumParameters::CalculateVertexCountEstimate() const
     int32 SideVertices = HeightSegments * Sides;
     
     // 倒角顶点：如果有倒角，每个边缘需要额外的顶点
-    int32 ChamferVertices = 0;
-    if (ChamferRadius > 0.0f)
+    int32 BevelVertices = 0;
+    if (BevelRadius > 0.0f)
     {
         // 顶部和底面的倒角顶点
-        ChamferVertices = Sides * ChamferSections * 2;
+        BevelVertices = Sides * BevelSections * 2;
         // 侧面的倒角顶点
-        ChamferVertices += HeightSegments * Sides * ChamferSections;
+        BevelVertices += HeightSegments * Sides * BevelSections;
     }
     
     // 端面顶点：如果有端面厚度
@@ -73,7 +73,7 @@ int32 FFrustumParameters::CalculateVertexCountEstimate() const
         CapVertices = Sides * 2; // 顶部和底面的端面中心点
     }
 
-    return BaseVertices + SideVertices + ChamferVertices + CapVertices;
+    return BaseVertices + SideVertices + BevelVertices + CapVertices;
 }
 
 int32 FFrustumParameters::CalculateTriangleCountEstimate() const
@@ -90,13 +90,13 @@ int32 FFrustumParameters::CalculateTriangleCountEstimate() const
     int32 SideTriangles = HeightSegments * Sides * 2;
     
     // 倒角三角形：如果有倒角，每个边缘需要额外的三角形
-    int32 ChamferTriangles = 0;
-    if (ChamferRadius > 0.0f)
+    int32 BevelTriangles = 0;
+    if (BevelRadius > 0.0f)
     {
         // 顶部和底面的倒角三角形
-        ChamferTriangles = Sides * ChamferSections * 2;
+        BevelTriangles = Sides * BevelSections * 2;
         // 侧面的倒角三角形
-        ChamferTriangles += HeightSegments * Sides * ChamferSections * 2;
+        BevelTriangles += HeightSegments * Sides * BevelSections * 2;
     }
     
     // 端面三角形：如果有端面厚度
@@ -106,7 +106,7 @@ int32 FFrustumParameters::CalculateTriangleCountEstimate() const
         CapTriangles = Sides * 2; // 顶部和底面的端面三角形
     }
 
-    return BaseTriangles + SideTriangles + ChamferTriangles + CapTriangles;
+    return BaseTriangles + SideTriangles + BevelTriangles + CapTriangles;
 }
 
 void FFrustumParameters::PostEditChangeProperty(const FName& PropertyName)
@@ -121,8 +121,8 @@ bool FFrustumParameters::operator==(const FFrustumParameters& Other) const
            Height == Other.Height &&
            Sides == Other.Sides &&
            HeightSegments == Other.HeightSegments &&
-           ChamferRadius == Other.ChamferRadius &&
-           ChamferSections == Other.ChamferSections &&
+           BevelRadius == Other.BevelRadius &&
+           BevelSections == Other.BevelSections &&
            BendAmount == Other.BendAmount &&
            MinBendRadius == Other.MinBendRadius &&
            ArcAngle == Other.ArcAngle &&

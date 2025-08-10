@@ -59,10 +59,8 @@ void APyramid::InitializeComponents()
         ProceduralMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
         ProceduralMesh->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
         
-        // 应用材质
         ApplyMaterial();
         
-        // 设置碰撞
         SetupCollision();
     }
 }
@@ -132,10 +130,8 @@ void APyramid::RegenerateMesh()
         // 将网格数据应用到程序化网格组件
         MeshData.ToProceduralMesh(ProceduralMesh, 0);
         
-        // 应用材质
         ApplyMaterial();
         
-        // 设置碰撞
         SetupCollision();
         
         UE_LOG(LogTemp, Log, TEXT("Pyramid generated successfully: %d vertices, %d triangles"),

@@ -14,7 +14,6 @@ bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
 {
     UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::Generate - Starting generation"));
     
-    // 验证生成参数
     if (!ValidateParameters())
     {
         UE_LOG(LogTemp, Error, TEXT("无效的圆角立方体生成参数"));
@@ -23,13 +22,11 @@ bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
 
     UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::Generate - Parameters validated successfully"));
 
-    // 清除之前的几何数据
     Clear();
     ReserveMemory();
 
     UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::Generate - Memory reserved"));
 
-    // 计算立方体的核心点（倒角起始点）
     TArray<FVector> CorePoints = CalculateCorePoints();
     UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::Generate - Core points calculated: %d points"), CorePoints.Num());
 
@@ -39,15 +36,9 @@ bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
     GenerateMainFaces();
     UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::Generate - Main faces generated, current vertices: %d"), MeshData.GetVertexCount());
     
-    // 2. 生成边缘倒角（12条边）
-    UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::Generate - Generating edge bevels"));
     GenerateEdgeBevels(CorePoints);
-    UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::Generate - Edge bevels generated, current vertices: %d"), MeshData.GetVertexCount());
     
-    // 3. 生成角落倒角（8个角）
-    UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::Generate - Generating corner bevels"));
     GenerateCornerBevels(CorePoints);
-    UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::Generate - Corner bevels generated, current vertices: %d"), MeshData.GetVertexCount());
 
     // 验证生成的网格数据
     if (!ValidateGeneratedData())
@@ -88,15 +79,15 @@ TArray<FVector> FBevelCubeBuilder::CalculateCorePoints() const
     
     // 按照以下顺序添加8个角落的核心点：
     // 下面四个点（Z轴负方向）
-    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, -InnerOffset)); // 左后下
-    CorePoints.Add(FVector(InnerOffset, -InnerOffset, -InnerOffset));  // 右后下
-    CorePoints.Add(FVector(-InnerOffset, InnerOffset, -InnerOffset));  // 左前下
-    CorePoints.Add(FVector(InnerOffset, InnerOffset, -InnerOffset));   // 右前下
+    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, -InnerOffset));
+    CorePoints.Add(FVector(InnerOffset, -InnerOffset, -InnerOffset));
+    CorePoints.Add(FVector(-InnerOffset, InnerOffset, -InnerOffset));
+    CorePoints.Add(FVector(InnerOffset, InnerOffset, -InnerOffset));
     // 上面四个点（Z轴正方向）
-    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, InnerOffset));  // 左后上
-    CorePoints.Add(FVector(InnerOffset, -InnerOffset, InnerOffset));   // 右后上
-    CorePoints.Add(FVector(-InnerOffset, InnerOffset, InnerOffset));   // 左前上
-    CorePoints.Add(FVector(InnerOffset, InnerOffset, InnerOffset));    // 右前上
+    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, InnerOffset));
+    CorePoints.Add(FVector(InnerOffset, -InnerOffset, InnerOffset));
+    CorePoints.Add(FVector(-InnerOffset, InnerOffset, InnerOffset));
+    CorePoints.Add(FVector(InnerOffset, InnerOffset, InnerOffset));
     
     return CorePoints;
 }
@@ -181,27 +172,15 @@ void FBevelCubeBuilder::GenerateMainFaces()
     for (int32 FaceIndex = 0; FaceIndex < Faces.Num(); ++FaceIndex)
     {
         const FaceData& Face = Faces[FaceIndex];
-        UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::GenerateMainFaces - Generating face %d"), FaceIndex);
         
-        // 生成面的四个顶点
         TArray<FVector> FaceVerts = GenerateRectangleVertices(Face.Center, Face.SizeX, Face.SizeY);
-        UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::GenerateMainFaces - Face %d vertices: %d"), FaceIndex, FaceVerts.Num());
         
-        // 使用这些顶点和UV创建面的几何体
         GenerateQuadSides(FaceVerts, Face.Normal, UVs);
-        
-        UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::GenerateMainFaces - Face %d completed, total vertices: %d"), 
-               FaceIndex, MeshData.GetVertexCount());
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::GenerateMainFaces - Completed, total vertices: %d, triangles: %d"), 
-           MeshData.GetVertexCount(), MeshData.GetTriangleCount());
 }
 
 void FBevelCubeBuilder::GenerateEdgeBevels(const TArray<FVector>& CorePoints)
 {
-    UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::GenerateEdgeBevels - Starting edge bevels generation"));
-    
     // 边缘倒角定义结构
     struct FEdgeBevelDef
     {
@@ -260,8 +239,6 @@ void FBevelCubeBuilder::GenerateCornerBevels(const TArray<FVector>& CorePoints)
         UE_LOG(LogTemp, Error, TEXT("Invalid CorePoints array size. Expected 8 elements."));
         return;
     }
-
-    UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::GenerateCornerBevels - Generating 8 corner bevels"));
 
     // 为每个角落生成倒角
     for (int32 CornerIndex = 0; CornerIndex < 8; ++CornerIndex)
@@ -406,39 +383,28 @@ TArray<FVector> FBevelCubeBuilder::GenerateRectangleVertices(const FVector& Cent
     Vertices.Reserve(4);
     
     // 生成矩形的四个顶点（按照右手法则：从法线方向看，顶点按逆时针排列）
-    Vertices.Add(Center - SizeX - SizeY); // 0: 左下
-    Vertices.Add(Center - SizeX + SizeY); // 1: 左上  
-    Vertices.Add(Center + SizeX + SizeY); // 2: 右上
-    Vertices.Add(Center + SizeX - SizeY); // 3: 右下
+    Vertices.Add(Center - SizeX - SizeY);
+    Vertices.Add(Center - SizeX + SizeY);
+    Vertices.Add(Center + SizeX + SizeY);
+    Vertices.Add(Center + SizeX - SizeY);
     
     return Vertices;
 }
 
 void FBevelCubeBuilder::GenerateQuadSides(const TArray<FVector>& Verts, const FVector& Normal, const TArray<FVector2D>& UVs)
 {
-    UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::GenerateQuadSides - Starting quad generation"));
-    
     if (Verts.Num() != 4 || UVs.Num() != 4)
     {
         UE_LOG(LogTemp, Warning, TEXT("GenerateQuadSides: 需要4个顶点和4个UV坐标, Verts: %d, UVs: %d"), Verts.Num(), UVs.Num());
         return;
     }
     
-    UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::GenerateQuadSides - Adding 4 vertices"));
-    
-    // 添加四个顶点，每个顶点都使用相同的法线
     int32 V0 = GetOrAddVertex(Verts[0], Normal, UVs[0]);
     int32 V1 = GetOrAddVertex(Verts[1], Normal, UVs[1]);
     int32 V2 = GetOrAddVertex(Verts[2], Normal, UVs[2]);
     int32 V3 = GetOrAddVertex(Verts[3], Normal, UVs[3]);
     
-    UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::GenerateQuadSides - Vertices added: V0=%d, V1=%d, V2=%d, V3=%d"), V0, V1, V2, V3);
-    
-    // 添加四边形（两个三角形）
     AddQuad(V0, V1, V2, V3);
-    
-    UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::GenerateQuadSides - Quad added, total vertices: %d, triangles: %d"), 
-           MeshData.GetVertexCount(), MeshData.GetTriangleCount());
 }
 
 TArray<FVector> FBevelCubeBuilder::GenerateEdgeVertices(const FVector& CorePoint1, const FVector& CorePoint2, 

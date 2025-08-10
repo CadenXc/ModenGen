@@ -29,8 +29,6 @@ class UProceduralMeshComponent;
 class FHollowPrismBuilder;
 struct FModelGenMeshData;
 
-
-
 /**
  * 程序化生成的空心棱柱Actor
  * 支持实时参数调整和预览
@@ -55,43 +53,30 @@ public:
 #endif
 
 protected:
-    //~ Begin Parameters
-    /** 生成参数 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Parameters")
     FHollowPrismParameters Parameters;
 
-    /** 材质 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Materials")
     UMaterialInterface* Material;
 
-    /** 是否生成碰撞体 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Collision")
     bool bGenerateCollision = true;
 
-    /** 是否使用异步碰撞体烘焙 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Collision")
     bool bUseAsyncCooking = true;
 
 private:
-    //~ Begin Components
-    /** 程序化网格组件 */
     UPROPERTY(VisibleAnywhere, Category = "HollowPrism|Components")
     UProceduralMeshComponent* ProceduralMesh;
 
-    //~ Begin Private Methods
-    /** 初始化组件 */
     void InitializeComponents();
     
-    /** 应用材质 */
     void ApplyMaterial();
     
-    /** 设置碰撞 */
     void SetupCollision();
     
-    /** 重新生成网格 */
     void RegenerateMesh();
     
-    /** 重新生成网格（蓝图可调用） */
     UFUNCTION(BlueprintCallable, Category = "HollowPrism|Generation")
     void RegenerateMeshBlueprint();
 };

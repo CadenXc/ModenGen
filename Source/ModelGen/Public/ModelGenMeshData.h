@@ -93,16 +93,19 @@ public:
                    const FLinearColor& Color = FLinearColor::White);
     
     /** 添加三角形 */
-    void AddTriangle(int32 V1, int32 V2, int32 V3, int32 MaterialIndex = 0);
+    void AddTriangle(int32 V0, int32 V1, int32 V2, int32 MaterialIndex = 0);
     
     /** 添加四边形（两个三角形） */
-    void AddQuad(int32 V1, int32 V2, int32 V3, int32 V4, int32 MaterialIndex = 0);
+    void AddQuad(int32 V0, int32 V1, int32 V2, int32 V3, int32 MaterialIndex = 0);
     
     /** 合并另一个网格数据 */
     void Merge(const FModelGenMeshData& Other);
     
     /** 转换为UProceduralMeshComponent可用的格式 */
     void ToProceduralMesh(UProceduralMeshComponent* MeshComponent, int32 SectionIndex = 0) const;
+
+    /** 使用引擎工具计算切线（MikkTSpace）以匹配DCC显示 */
+    void CalculateTangents();
 
 private:
     /** 计算切线向量 */

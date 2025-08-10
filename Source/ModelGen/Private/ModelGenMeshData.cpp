@@ -2,6 +2,7 @@
 
 #include "ModelGenMeshData.h"
 #include "ProceduralMeshComponent.h"
+#include "KismetProceduralMeshLibrary.h"
 
 void FModelGenMeshData::Clear()
 {
@@ -67,12 +68,10 @@ void FModelGenMeshData::AddTriangle(int32 V1, int32 V2, int32 V3, int32 Material
     MaterialCount = FMath::Max(MaterialCount, MaterialIndex + 1);
 }
 
-void FModelGenMeshData::AddQuad(int32 V1, int32 V2, int32 V3, int32 V4, int32 MaterialIndex)
+void FModelGenMeshData::AddQuad(int32 V0, int32 V1, int32 V2, int32 V3, int32 MaterialIndex)
 {
-    // 第一个三角形：V1 -> V2 -> V3
-    AddTriangle(V1, V2, V3, MaterialIndex);
-    // 第二个三角形：V1 -> V3 -> V4
-    AddTriangle(V1, V3, V4, MaterialIndex);
+    AddTriangle(V0, V1, V2, MaterialIndex);
+    AddTriangle(V0, V2, V3, MaterialIndex);
 }
 
 void FModelGenMeshData::Merge(const FModelGenMeshData& Other)
@@ -131,10 +130,25 @@ void FModelGenMeshData::ToProceduralMesh(UProceduralMeshComponent* MeshComponent
         UVs,
         VertexColors,
         Tangents,
-        true // bCreateCollision
+        true
     );
     
     UE_LOG(LogTemp, Log, TEXT("FModelGenMeshData::ToProceduralMesh - Mesh section created successfully"));
+}
+
+void FModelGenMeshData::CalculateTangents()
+{
+    if (Vertices.Num() == 0 || Triangles.Num() == 0 || UVs.Num() != Vertices.Num())
+    {
+        return;
+    }
+
+    // 使用引擎提供的切线计算，遵循 MikkTSpace
+    TArray<FVector> OutNormals = Normals; // 可由函数覆盖
+    TArray<FProcMeshTangent> OutTangents = Tangents;
+    UKismetProceduralMeshLibrary::CalculateTangentsForMesh(Vertices, Triangles, UVs, OutNormals, OutTangents);
+    Normals = MoveTemp(OutNormals);
+    Tangents = MoveTemp(OutTangents);
 }
 
 FVector FModelGenMeshData::CalculateTangent(const FVector& Normal) const

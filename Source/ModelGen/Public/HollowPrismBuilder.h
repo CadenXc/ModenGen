@@ -14,9 +14,6 @@
 #include "ModelGenMeshBuilder.h"
 #include "HollowPrismParameters.h"
 
-/**
- * 空心棱柱网格构建器
- */
 class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
 {
 public:
@@ -30,54 +27,35 @@ public:
     virtual int32 CalculateTriangleCountEstimate() const override;
 
 private:
-    //~ Begin Private Members
-    /** 生成参数 */
     FHollowPrismParameters Params;
 
-    //~ Begin Private Methods
     /** 生成基础几何体 */
     void GenerateBaseGeometry();
     
     /** 生成侧面墙壁 */
     void GenerateSideWalls();
-    
-    /** 生成内墙 */
     void GenerateInnerWalls();
-    
-    /** 生成外墙 */
     void GenerateOuterWalls();
     
-    /** 生成顶面（使用四边形） */
-    void GenerateTopCapWithQuads();
+    void GenerateTopCapWithTriangles();
+    void GenerateBottomCapWithTriangles();
     
-    /** 生成底面（使用四边形） */
-    void GenerateBottomCapWithQuads();
-    
-    /** 生成顶部倒角几何 */
+    // 生成顶部倒角几何
     void GenerateTopBevelGeometry();
     
-    /** 生成底部倒角几何 */
+    //生成底部倒角几何
     void GenerateBottomBevelGeometry();
     
-    /** 生成顶部内环倒角 */
+    // 生成倒角
     void GenerateTopInnerBevel();
-    
-    /** 生成顶部外环倒角 */
     void GenerateTopOuterBevel();
-    
-    /** 生成底部内环倒角 */
     void GenerateBottomInnerBevel();
-    
-    /** 生成底部外环倒角 */
     void GenerateBottomOuterBevel();
     
-    /** 生成端盖 */
     void GenerateEndCaps();
     
-    /** 生成单个端盖 */
     void GenerateEndCap(float Angle, const FVector& Normal, bool IsStart);
     
-    /** 计算环形顶点 */
     void CalculateRingVertices(float Radius, int32 Sides, float Z, float ArcAngle,
                               TArray<FVector>& OutVertices, TArray<FVector2D>& OutUVs, float UVScale = 1.0f);
 };

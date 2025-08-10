@@ -69,15 +69,15 @@ int32 FFrustumBuilder::CalculateTriangleCountEstimate() const
 void FFrustumBuilder::GenerateBaseGeometry()
 {
     const float HalfHeight = Params.GetHalfHeight();
-    const float ChamferRadius = Params.ChamferRadius;
+    const float BevelRadius = Params.BevelRadius;
     
     // 计算倒角高度
-    const float TopChamferHeight = FMath::Min(ChamferRadius, Params.TopRadius);
-    const float BottomChamferHeight = FMath::Min(ChamferRadius, Params.BottomRadius);
+    const float TopBevelHeight = FMath::Min(BevelRadius, Params.TopRadius);
+    const float BottomBevelHeight = FMath::Min(BevelRadius, Params.BottomRadius);
     
     // 调整主体几何体的范围，避免与倒角重叠
-    const float StartZ = -HalfHeight + BottomChamferHeight;
-    const float EndZ = HalfHeight - TopChamferHeight;
+    const float StartZ = -HalfHeight + BottomBevelHeight;
+    const float EndZ = HalfHeight - TopBevelHeight;
     
     // 生成几何部件 - 确保不重叠
     if (EndZ > StartZ) // 只有当主体高度大于0时才生成主体
@@ -86,10 +86,10 @@ void FFrustumBuilder::GenerateBaseGeometry()
     }
     
     // 生成倒角几何体
-    if (Params.ChamferRadius > 0.0f)
+    if (Params.BevelRadius > 0.0f)
     {
-        GenerateTopChamferGeometry(EndZ);
-        GenerateBottomChamferGeometry(StartZ);
+        GenerateTopBevelGeometry(EndZ);
+        GenerateBottomBevelGeometry(StartZ);
     }
     
     // 生成顶底面几何体
@@ -205,7 +205,7 @@ void FFrustumBuilder::GenerateTopGeometry(float Z)
         const float NextAngle = (SideIndex + 1) * AngleStep;
         
         // 顶面使用固定半径，不受弯曲影响
-        const float CurrentRadius = Params.TopRadius - Params.ChamferRadius;
+        const float CurrentRadius = Params.TopRadius - Params.BevelRadius;
         
         // 计算顶点位置
         const FVector CurrentPos(CurrentRadius * FMath::Cos(CurrentAngle), 
@@ -248,7 +248,7 @@ void FFrustumBuilder::GenerateBottomGeometry(float Z)
         const float NextAngle = (SideIndex + 1) * AngleStep;
         
         // 底面使用固定半径，不受弯曲影响
-        const float CurrentRadius = Params.BottomRadius - Params.ChamferRadius;
+        const float CurrentRadius = Params.BottomRadius - Params.BevelRadius;
         
         // 计算顶点位置
         const FVector CurrentPos(CurrentRadius * FMath::Cos(CurrentAngle), 
@@ -269,20 +269,20 @@ void FFrustumBuilder::GenerateBottomGeometry(float Z)
     }
 }
 
-void FFrustumBuilder::GenerateTopChamferGeometry(float StartZ)
+void FFrustumBuilder::GenerateTopBevelGeometry(float StartZ)
 {
     const float HalfHeight = Params.GetHalfHeight();
-    const float ChamferRadius = Params.ChamferRadius;
-    const int32 ChamferSections = Params.ChamferSections;
+    const float BevelRadius = Params.BevelRadius;
+    const int32 BevelSections = Params.BevelSections;
     const float AngleStep = FMath::DegreesToRadians(Params.ArcAngle) / Params.Sides;
 
-    if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
+    if (BevelRadius <= 0.0f || BevelSections <= 0) return;
 
     TArray<int32> PrevRing;
 
-    for (int32 i = 0; i <= ChamferSections; ++i)
+    for (int32 i = 0; i <= BevelSections; ++i)
     {
-        const float alpha = static_cast<float>(i) / ChamferSections; // 沿倒角弧线的进度
+        const float alpha = static_cast<float>(i) / BevelSections; // 沿倒角弧线的进度
 
         // 倒角起点：主侧面几何体的最顶层边缘顶点
         const float Alpha_Height = (StartZ + HalfHeight) / Params.Height;
@@ -294,7 +294,7 @@ void FFrustumBuilder::GenerateTopChamferGeometry(float StartZ)
         );
 
         // 倒角终点：在顶面上，半径减去倒角半径
-        const float TopRadius = FMath::Max(0.0f, Params.TopRadius - Params.ChamferRadius);
+        const float TopRadius = FMath::Max(0.0f, Params.TopRadius - Params.BevelRadius);
 
         // 使用线性插值而不是贝塞尔曲线
         const float CurrentRadius = FMath::Lerp(BentRadius, TopRadius, alpha);
@@ -363,20 +363,20 @@ void FFrustumBuilder::GenerateTopChamferGeometry(float StartZ)
     }
 }
 
-void FFrustumBuilder::GenerateBottomChamferGeometry(float StartZ)
+void FFrustumBuilder::GenerateBottomBevelGeometry(float StartZ)
 {
     const float HalfHeight = Params.GetHalfHeight();
-    const float ChamferRadius = Params.ChamferRadius;
-    const int32 ChamferSections = Params.ChamferSections;
+    const float BevelRadius = Params.BevelRadius;
+    const int32 BevelSections = Params.BevelSections;
     const float AngleStep = FMath::DegreesToRadians(Params.ArcAngle) / Params.Sides;
 
-    if (ChamferRadius <= 0.0f || ChamferSections <= 0) return;
+    if (BevelRadius <= 0.0f || BevelSections <= 0) return;
 
     TArray<int32> PrevRing;
 
-    for (int32 i = 0; i <= ChamferSections; ++i)
+    for (int32 i = 0; i <= BevelSections; ++i)
     {
-        const float alpha = static_cast<float>(i) / ChamferSections;
+        const float alpha = static_cast<float>(i) / BevelSections;
 
         // 倒角起点：主侧面几何体的最底层边缘顶点
         const float Alpha_Height = (StartZ + HalfHeight) / Params.Height;
@@ -388,7 +388,7 @@ void FFrustumBuilder::GenerateBottomChamferGeometry(float StartZ)
         );
 
         // 倒角终点：在底面上，半径减去倒角半径
-        const float BottomRadius = FMath::Max(0.0f, Params.BottomRadius - Params.ChamferRadius);
+        const float BottomRadius = FMath::Max(0.0f, Params.BottomRadius - Params.BevelRadius);
 
         // 使用线性插值而不是贝塞尔曲线
         const float CurrentRadius = FMath::Lerp(BentRadius, BottomRadius, alpha);
@@ -461,7 +461,7 @@ void FFrustumBuilder::GenerateEndCaps()
     const float HalfHeight = Params.GetHalfHeight();
     const float StartAngle = 0.0f;
     const float EndAngle = FMath::DegreesToRadians(Params.ArcAngle);
-    const float ChamferRadius = Params.ChamferRadius;
+    const float BevelRadius = Params.BevelRadius;
 
     // 起始端面法线：指向圆弧外部（远离中心）
     const FVector StartNormal = FVector(FMath::Sin(StartAngle), -FMath::Cos(StartAngle), 0.0f);
@@ -470,12 +470,12 @@ void FFrustumBuilder::GenerateEndCaps()
     const FVector EndNormal = FVector(FMath::Sin(EndAngle), -FMath::Cos(EndAngle), 0.0f);
 
     // 计算倒角高度
-    const float TopChamferHeight = FMath::Min(ChamferRadius, Params.TopRadius);
-    const float BottomChamferHeight = FMath::Min(ChamferRadius, Params.BottomRadius);
+    const float TopBevelHeight = FMath::Min(BevelRadius, Params.TopRadius);
+    const float BottomBevelHeight = FMath::Min(BevelRadius, Params.BottomRadius);
 
     // 调整主体几何体的范围，避免与倒角重叠
-    const float StartZ = -HalfHeight + BottomChamferHeight;
-    const float EndZ = HalfHeight - TopChamferHeight;
+    const float StartZ = -HalfHeight + BottomBevelHeight;
+    const float EndZ = HalfHeight - TopBevelHeight;
 
     // 创建端面几何体 - 使用三角形连接到中心点
     GenerateEndCapTriangles(StartAngle, StartNormal, true);  // 起始端面
@@ -485,15 +485,15 @@ void FFrustumBuilder::GenerateEndCaps()
 void FFrustumBuilder::GenerateEndCapTriangles(float Angle, const FVector& Normal, bool IsStart)
 {
     const float HalfHeight = Params.GetHalfHeight();
-    const float ChamferRadius = Params.ChamferRadius;
+    const float BevelRadius = Params.BevelRadius;
     
     // 计算倒角高度
-    const float TopChamferHeight = FMath::Min(ChamferRadius, Params.TopRadius);
-    const float BottomChamferHeight = FMath::Min(ChamferRadius, Params.BottomRadius);
+    const float TopBevelHeight = FMath::Min(BevelRadius, Params.TopRadius);
+    const float BottomBevelHeight = FMath::Min(BevelRadius, Params.BottomRadius);
     
     // 调整主体几何体的范围，避免与倒角重叠
-    const float StartZ = -HalfHeight + BottomChamferHeight;
-    const float EndZ = HalfHeight - TopChamferHeight;
+    const float StartZ = -HalfHeight + BottomBevelHeight;
+    const float EndZ = HalfHeight - TopBevelHeight;
 
     // 中心点（0,0,0）
     const int32 CenterVertex = GetOrAddVertex(
@@ -514,12 +514,12 @@ void FFrustumBuilder::GenerateEndCapTriangles(float Angle, const FVector& Normal
     OrderedVertices.Add(TopCenterVertex);
 
     // 2. 上倒角弧线顶点（从顶面到侧边）
-    if (Params.ChamferRadius > 0.0f)
+    if (Params.BevelRadius > 0.0f)
     {
-        const int32 TopChamferSections = Params.ChamferSections;
-        for (int32 i = 0; i < TopChamferSections; ++i) // 从顶面到侧边
+        const int32 TopBevelSections = Params.BevelSections;
+        for (int32 i = 0; i < TopBevelSections; ++i) // 从顶面到侧边
         {
-            const float Alpha = static_cast<float>(i) / TopChamferSections;
+            const float Alpha = static_cast<float>(i) / TopBevelSections;
             
             // 从顶面开始（HalfHeight位置）到侧边（EndZ位置）
             const float CurrentZ = FMath::Lerp(HalfHeight, EndZ, Alpha);
@@ -534,12 +534,12 @@ void FFrustumBuilder::GenerateEndCapTriangles(float Angle, const FVector& Normal
             );
             
             // 从顶面半径到侧边半径（减去倒角半径，与主体几何体保持一致）
-            const float TopRadius = FMath::Max(0.0f, Params.TopRadius - Params.ChamferRadius);
+            const float TopRadius = FMath::Max(0.0f, Params.TopRadius - Params.BevelRadius);
             const float CurrentRadius = FMath::Lerp(TopRadius, BentRadius_EndZ, Alpha);
             
-            const FVector ChamferPos = FVector(CurrentRadius * FMath::Cos(Angle), CurrentRadius * FMath::Sin(Angle), CurrentZ);
-            const int32 ChamferVertex = GetOrAddVertex(ChamferPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Params.Height));
-            OrderedVertices.Add(ChamferVertex);
+            const FVector BevelPos = FVector(CurrentRadius * FMath::Cos(Angle), CurrentRadius * FMath::Sin(Angle), CurrentZ);
+            const int32 BevelVertex = GetOrAddVertex(BevelPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Params.Height));
+            OrderedVertices.Add(BevelVertex);
         }
     }
 
@@ -563,12 +563,12 @@ void FFrustumBuilder::GenerateEndCapTriangles(float Angle, const FVector& Normal
     }
 
     // 4. 下倒角弧线顶点（从侧边到底面）
-    if (Params.ChamferRadius > 0.0f)
+    if (Params.BevelRadius > 0.0f)
     {
-        const int32 BottomChamferSections = Params.ChamferSections;
-        for (int32 i = 0; i < BottomChamferSections; ++i) // 从侧边到底面
+        const int32 BottomBevelSections = Params.BevelSections;
+        for (int32 i = 0; i < BottomBevelSections; ++i) // 从侧边到底面
         {
-            const float Alpha = static_cast<float>(i) / BottomChamferSections;
+            const float Alpha = static_cast<float>(i) / BottomBevelSections;
             
             // 从侧边开始（StartZ位置）到底面（-HalfHeight位置）
             const float CurrentZ = FMath::Lerp(StartZ, -HalfHeight, Alpha);
@@ -583,12 +583,12 @@ void FFrustumBuilder::GenerateEndCapTriangles(float Angle, const FVector& Normal
             );
             
             // 从侧边半径到底面半径（减去倒角半径，与主体几何体保持一致）
-            const float BottomRadius = FMath::Max(0.0f, Params.BottomRadius - Params.ChamferRadius);
+            const float BottomRadius = FMath::Max(0.0f, Params.BottomRadius - Params.BevelRadius);
             const float CurrentRadius = FMath::Lerp(BentRadius_StartZ, BottomRadius, Alpha);
             
-            const FVector ChamferPos = FVector(CurrentRadius * FMath::Cos(Angle), CurrentRadius * FMath::Sin(Angle), CurrentZ);
-            const int32 ChamferVertex = GetOrAddVertex(ChamferPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Params.Height));
-            OrderedVertices.Add(ChamferVertex);
+            const FVector BevelPos = FVector(CurrentRadius * FMath::Cos(Angle), CurrentRadius * FMath::Sin(Angle), CurrentZ);
+            const int32 BevelVertex = GetOrAddVertex(BevelPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Params.Height));
+            OrderedVertices.Add(BevelVertex);
         }
     }
 
@@ -618,12 +618,12 @@ void FFrustumBuilder::GenerateEndCapTriangles(float Angle, const FVector& Normal
     }
 }
 
-void FFrustumBuilder::GenerateChamferArcTriangles(float Angle, const FVector& Normal, bool IsStart, 
+void FFrustumBuilder::GenerateBevelArcTriangles(float Angle, const FVector& Normal, bool IsStart, 
                                                   float Z1, float Z2, bool IsTop)
 {
     const float HalfHeight = Params.GetHalfHeight();
-    const float ChamferRadius = Params.ChamferRadius;
-    const int32 ChamferSections = Params.ChamferSections;
+    const float BevelRadius = Params.BevelRadius;
+    const int32 BevelSections = Params.BevelSections;
     
     // 中心点（0,0,0）
     const int32 CenterVertex = GetOrAddVertex(
@@ -644,7 +644,7 @@ void FFrustumBuilder::GenerateChamferArcTriangles(float Angle, const FVector& No
             Radius_Start + Params.BendAmount * BendFactor_Start * Radius_Start,
             Params.MinBendRadius
         );
-        EndRadius = FMath::Max(0.0f, Params.TopRadius - Params.ChamferRadius);
+        EndRadius = FMath::Max(0.0f, Params.TopRadius - Params.BevelRadius);
     }
     else
     {
@@ -656,13 +656,13 @@ void FFrustumBuilder::GenerateChamferArcTriangles(float Angle, const FVector& No
             Radius_Start + Params.BendAmount * BendFactor_Start * Radius_Start,
             Params.MinBendRadius
         );
-        EndRadius = FMath::Max(0.0f, Params.BottomRadius - Params.ChamferRadius);
+        EndRadius = FMath::Max(0.0f, Params.BottomRadius - Params.BevelRadius);
     }
 
     // 生成倒角弧线的三角形
-    for (int32 i = 0; i < ChamferSections; ++i)
+    for (int32 i = 0; i < BevelSections; ++i)
     {
-        const float Alpha = static_cast<float>(i) / ChamferSections;
+        const float Alpha = static_cast<float>(i) / BevelSections;
         const float CurrentRadius = FMath::Lerp(StartRadius, EndRadius, Alpha);
         const float CurrentZ = FMath::Lerp(Z1, Z2, Alpha);
 
@@ -671,7 +671,7 @@ void FFrustumBuilder::GenerateChamferArcTriangles(float Angle, const FVector& No
         const int32 ArcVertex = GetOrAddVertex(ArcPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Params.Height));
 
         // 下一个倒角弧线点
-        const float NextAlpha = static_cast<float>(i + 1) / ChamferSections;
+        const float NextAlpha = static_cast<float>(i + 1) / BevelSections;
         const float NextRadius = FMath::Lerp(StartRadius, EndRadius, NextAlpha);
         const float NextZ = FMath::Lerp(Z1, Z2, NextAlpha);
 
@@ -683,13 +683,13 @@ void FFrustumBuilder::GenerateChamferArcTriangles(float Angle, const FVector& No
     }
 }
 
-void FFrustumBuilder::GenerateChamferArcTrianglesWithCaps(float Angle, const FVector& Normal, bool IsStart, 
+void FFrustumBuilder::GenerateBevelArcTrianglesWithCaps(float Angle, const FVector& Normal, bool IsStart, 
                                                           float Z1, float Z2, bool IsTop, int32 CenterVertex, 
                                                           int32 CapCenterVertex)
 {
     const float HalfHeight = Params.GetHalfHeight();
-    const float ChamferRadius = Params.ChamferRadius;
-    const int32 ChamferSections = Params.ChamferSections;
+    const float BevelRadius = Params.BevelRadius;
+    const int32 BevelSections = Params.BevelSections;
     
     // 计算倒角弧线的起点和终点半径
     float StartRadius, EndRadius;
@@ -703,7 +703,7 @@ void FFrustumBuilder::GenerateChamferArcTrianglesWithCaps(float Angle, const FVe
             Radius_Start + Params.BendAmount * BendFactor_Start * Radius_Start,
             Params.MinBendRadius
         );
-        EndRadius = FMath::Max(0.0f, Params.TopRadius - Params.ChamferRadius);
+        EndRadius = FMath::Max(0.0f, Params.TopRadius - Params.BevelRadius);
     }
     else
     {
@@ -715,13 +715,13 @@ void FFrustumBuilder::GenerateChamferArcTrianglesWithCaps(float Angle, const FVe
             Radius_Start + Params.BendAmount * BendFactor_Start * Radius_Start,
             Params.MinBendRadius
         );
-        EndRadius = FMath::Max(0.0f, Params.BottomRadius - Params.ChamferRadius);
+        EndRadius = FMath::Max(0.0f, Params.BottomRadius - Params.BevelRadius);
     }
 
     // 生成倒角弧线的三角形
-    for (int32 i = 0; i < ChamferSections; ++i)
+    for (int32 i = 0; i < BevelSections; ++i)
     {
-        const float Alpha = static_cast<float>(i) / ChamferSections;
+        const float Alpha = static_cast<float>(i) / BevelSections;
         const float CurrentRadius = FMath::Lerp(StartRadius, EndRadius, Alpha);
         const float CurrentZ = FMath::Lerp(Z1, Z2, Alpha);
 
@@ -730,7 +730,7 @@ void FFrustumBuilder::GenerateChamferArcTrianglesWithCaps(float Angle, const FVe
         const int32 ArcVertex = GetOrAddVertex(ArcPos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (CurrentZ + HalfHeight) / Params.Height));
 
         // 下一个倒角弧线点
-        const float NextAlpha = static_cast<float>(i + 1) / ChamferSections;
+        const float NextAlpha = static_cast<float>(i + 1) / BevelSections;
         const float NextRadius = FMath::Lerp(StartRadius, EndRadius, NextAlpha);
         const float NextZ = FMath::Lerp(Z1, Z2, NextAlpha);
 
@@ -749,7 +749,7 @@ void FFrustumBuilder::GenerateChamferArcTrianglesWithCaps(float Angle, const FVe
     const FVector StartEdgePos = FVector(StartRadius_Edge * FMath::Cos(Angle), StartRadius_Edge * FMath::Sin(Angle), StartZ_Edge);
     const int32 StartEdgeVertex = GetOrAddVertex(StartEdgePos, Normal, FVector2D(IsStart ? 0.0f : 1.0f, (StartZ_Edge + HalfHeight) / Params.Height));
 
-    // 最边缘的点是倒角弧线的终点（i=ChamferSections）
+    // 最边缘的点是倒角弧线的终点（i=BevelSections）
     const float EndAlpha = 1.0f;
     const float EndRadius_Edge = FMath::Lerp(StartRadius, EndRadius, EndAlpha);
     const float EndZ_Edge = FMath::Lerp(Z1, Z2, EndAlpha);
@@ -773,17 +773,17 @@ void FFrustumBuilder::GenerateChamferArcTrianglesWithCaps(float Angle, const FVe
     }
 }
 
-FFrustumBuilder::FChamferArcControlPoints FFrustumBuilder::CalculateChamferControlPoints(const FVector& SideVertex, 
+FFrustumBuilder::FBevelArcControlPoints FFrustumBuilder::CalculateBevelControlPoints(const FVector& SideVertex, 
                                                                                         const FVector& TopBottomVertex)
 {
-    FChamferArcControlPoints ControlPoints;
+    FBevelArcControlPoints ControlPoints;
     ControlPoints.StartPoint = SideVertex;
     ControlPoints.EndPoint = TopBottomVertex;
     ControlPoints.ControlPoint = (SideVertex + TopBottomVertex) * 0.5f;
     return ControlPoints;
 }
 
-FVector FFrustumBuilder::CalculateChamferArcPoint(const FChamferArcControlPoints& ControlPoints, float t)
+FVector FFrustumBuilder::CalculateBevelArcPoint(const FBevelArcControlPoints& ControlPoints, float t)
 {
     // 二次贝塞尔曲线计算
     const float OneMinusT = 1.0f - t;
@@ -792,7 +792,7 @@ FVector FFrustumBuilder::CalculateChamferArcPoint(const FChamferArcControlPoints
            t * t * ControlPoints.EndPoint;
 }
 
-FVector FFrustumBuilder::CalculateChamferArcTangent(const FChamferArcControlPoints& ControlPoints, float t)
+FVector FFrustumBuilder::CalculateBevelArcTangent(const FBevelArcControlPoints& ControlPoints, float t)
 {
     // 二次贝塞尔曲线切线计算
     const float OneMinusT = 1.0f - t;

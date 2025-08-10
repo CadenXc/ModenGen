@@ -190,8 +190,8 @@ void AHollowPrism::RegenerateMesh()
     bFirstGeneration = false;
 
     UE_LOG(LogTemp, Log, TEXT("HollowPrism::RegenerateMesh - Starting mesh generation"));
-    UE_LOG(LogTemp, Log, TEXT("HollowPrism::RegenerateMesh - Parameters: InnerRadius=%.2f, OuterRadius=%.2f, Height=%.2f, Sides=%d"), 
-           Parameters.InnerRadius, Parameters.OuterRadius, Parameters.Height, Parameters.Sides);
+    UE_LOG(LogTemp, Log, TEXT("HollowPrism::RegenerateMesh - Parameters: InnerRadius=%.2f, OuterRadius=%.2f, Height=%.2f, InnerSides=%d, OuterSides=%d"), 
+           Parameters.InnerRadius, Parameters.OuterRadius, Parameters.Height, Parameters.InnerSides, Parameters.OuterSides);
 
     // 清除现有网格
     ProceduralMesh->ClearAllMeshSections();
