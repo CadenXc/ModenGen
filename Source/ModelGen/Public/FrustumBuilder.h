@@ -31,6 +31,10 @@ public:
 
 private:
     FFrustumParameters Params;
+    
+    // 侧边环的顶点索引，用于倒角弧线生成
+    TArray<int32> SideBottomRing;
+    TArray<int32> SideTopRing;
 
     void GenerateBaseGeometry();
     
@@ -46,6 +50,8 @@ private:
     
     void GenerateEndCaps();
     
+    void GenerateThickEndCaps();
+    
     void GenerateEndCapTriangles(float Angle, const FVector& Normal, bool IsStart);
     
     void GenerateBevelArcTriangles(float Angle, const FVector& Normal, bool IsStart, 
@@ -54,6 +60,9 @@ private:
     void GenerateBevelArcTrianglesWithCaps(float Angle, const FVector& Normal, bool IsStart, 
                                             float Z1, float Z2, bool IsTop, int32 CenterVertex, 
                                             int32 CapCenterVertex);
+
+private:
+    void GenerateThickEndCap(float Z, float Thickness, bool IsTop);
 
     struct FBevelArcControlPoints
     {

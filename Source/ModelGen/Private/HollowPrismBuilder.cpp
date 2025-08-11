@@ -740,8 +740,8 @@ void FHollowPrismBuilder::GenerateEndCaps()
     const float EndAngle = ArcAngleRadians / 2.0f;
 
     // 生成起始端盖和结束端盖
-    GenerateEndCap(StartAngle, FVector(-1, 0, 0), true);   // 起始端盖
-    GenerateEndCap(EndAngle, FVector(1, 0, 0), false);      // 结束端盖
+    //GenerateEndCap(StartAngle, FVector(-1, 0, 0), true);   // 起始端盖
+    //GenerateEndCap(EndAngle, FVector(1, 0, 0), false);      // 结束端盖
 }
 
 void FHollowPrismBuilder::GenerateEndCap(float Angle, const FVector& Normal, bool IsStart)
