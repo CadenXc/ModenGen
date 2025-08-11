@@ -41,8 +41,18 @@ public:
     //~ Begin Tessellation Parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Tessellation", 
         meta = (ClampMin = "3", UIMin = "3", DisplayName = "Sides", 
-        ToolTip = "截锥体侧面的数量"))
+        ToolTip = "截锥体侧面的数量（当TopSides和BottomSides相同时使用）"))
     int32 Sides = 16;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Tessellation", 
+        meta = (ClampMin = "3", UIMin = "3", DisplayName = "Top Sides", 
+        ToolTip = "截锥体顶部的边数"))
+    int32 TopSides = 16;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Tessellation", 
+        meta = (ClampMin = "3", UIMin = "3", DisplayName = "Bottom Sides", 
+        ToolTip = "截锥体底部的边数"))
+    int32 BottomSides = 16;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Tessellation", 
         meta = (ClampMin = "1", UIMin = "1", DisplayName = "Height Segments", 

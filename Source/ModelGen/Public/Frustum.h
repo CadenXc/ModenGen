@@ -90,6 +90,11 @@ private:
     UFUNCTION(BlueprintCallable, Category = "Frustum|Generation")
     void GenerateFrustum(float TopRadius, float BottomRadius, float Height, int32 Sides);
     
+    /** 使用不同的顶部和底部边数生成截锥体 */
+    UFUNCTION(BlueprintCallable, Category = "Frustum|Generation")
+    void GenerateFrustumWithDifferentSides(float TopRadius, float BottomRadius, float Height, 
+                                          int32 TopSides, int32 BottomSides);
+    
     /** 重新生成网格（蓝图可调用） */
     UFUNCTION(BlueprintCallable, Category = "Frustum|Generation")
     void RegenerateMeshBlueprint();

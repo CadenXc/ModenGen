@@ -49,7 +49,7 @@ void AFrustum::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
     // 检查其他相关属性
     static const TArray<FName> RelevantProperties = {
         "TopRadius", "BottomRadius", "Height",
-        "Sides", "HeightSegments",
+        "Sides", "TopSides", "BottomSides", "HeightSegments",
         "BevelRadius", "BevelSections",
         "BendAmount", "MinBendRadius", "ArcAngle",
         "CapThickness"
@@ -80,7 +80,7 @@ void AFrustum::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyC
     // 检查其他相关属性
     static const TArray<FName> RelevantProperties = {
         "TopRadius", "BottomRadius", "Height",
-        "Sides", "HeightSegments",
+        "Sides", "TopSides", "BottomSides", "HeightSegments",
         "BevelRadius", "BevelSections",
         "BendAmount", "MinBendRadius", "ArcAngle",
         "CapThickness"
@@ -235,6 +235,23 @@ void AFrustum::GenerateFrustum(float TopRadius, float BottomRadius, float Height
     Parameters.BottomRadius = BottomRadius;
     Parameters.Height = Height;
     Parameters.Sides = Sides;
+    Parameters.TopSides = Sides;      // 默认设置为相同的边数
+    Parameters.BottomSides = Sides;   // 默认设置为相同的边数
+    
+    // 重新生成网格
+    RegenerateMesh();
+}
+
+void AFrustum::GenerateFrustumWithDifferentSides(float TopRadius, float BottomRadius, float Height, 
+                                                 int32 TopSides, int32 BottomSides)
+{
+    // 更新参数
+    Parameters.TopRadius = TopRadius;
+    Parameters.BottomRadius = BottomRadius;
+    Parameters.Height = Height;
+    Parameters.TopSides = TopSides;
+    Parameters.BottomSides = BottomSides;
+    Parameters.Sides = FMath::Max(TopSides, BottomSides); // 设置Sides为最大边数
     
     // 重新生成网格
     RegenerateMesh();

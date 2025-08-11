@@ -38,50 +38,35 @@ class MODELGEN_API ABevelCube : public AActor
 
 public:
     ABevelCube();
-
-    //~ Begin AActor Interface
     virtual void BeginPlay() override;
     virtual void OnConstruction(const FTransform& Transform) override;
     virtual void Tick(float DeltaTime) override;
 
 protected:
-    //~ Begin Parameters
-    /** 生成参数 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters")
     FBevelCubeParameters Parameters;
 
-    /** 材质 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Materials")
     UMaterialInterface* Material;
 
-    /** 是否生成碰撞体 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Collision")
     bool bGenerateCollision = true;
 
-    /** 是否使用异步碰撞体烘焙 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Collision")
     bool bUseAsyncCooking = true;
 
 private:
-    //~ Begin Components
-    /** 程序化网格组件 */
     UPROPERTY(VisibleAnywhere, Category = "BevelCube|Components")
     UProceduralMeshComponent* ProceduralMesh;
 
-    //~ Begin Private Methods
-    /** 初始化组件 */
     void InitializeComponents();
     
-    /** 应用材质 */
     void ApplyMaterial();
     
-    /** 设置碰撞 */
     void SetupCollision();
     
-    /** 重新生成网格 */
     void RegenerateMesh();
     
-    /** 使用指定参数生成圆角立方体 */
     UFUNCTION(BlueprintCallable, Category = "BevelCube|Generation")
     void GenerateBeveledCube(float Size, float BevelSize, int32 Sections);
 };

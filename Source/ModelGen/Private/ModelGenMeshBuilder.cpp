@@ -9,16 +9,36 @@ FModelGenMeshBuilder::FModelGenMeshBuilder()
 
 int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
+    // 创建一个复合键，包含位置、法线和UV
+    // 使用字符串作为键，确保所有属性都匹配
+    FString VertexKey = FString::Printf(TEXT("%.6f,%.6f,%.6f|%.6f,%.6f,%.6f|%.6f,%.6f"),
+        Pos.X, Pos.Y, Pos.Z,
+        Normal.X, Normal.Y, Normal.Z,
+        UV.X, UV.Y);
+
     // 尝试查找已存在的顶点
-    if (int32* FoundIndex = UniqueVerticesMap.Find(Pos))
+    if (int32* FoundIndex = UniqueVerticesMap.Find(VertexKey))
     {
         return *FoundIndex;
     }
 
     // 添加新顶点并记录其索引
     const int32 NewIndex = AddVertex(Pos, Normal, UV);
-    UniqueVerticesMap.Add(Pos, NewIndex);
+    UniqueVerticesMap.Add(VertexKey, NewIndex);
+
+    IndexToPosMap.Add(NewIndex, Pos);
     return NewIndex;
+}
+
+FVector FModelGenMeshBuilder::GetPosByIndex(int32 Index)
+{
+    // 直接从映射中获取位置
+    if (const FVector* FoundPos = IndexToPosMap.Find(Index))
+    {
+        return *FoundPos;
+    }
+
+    return FVector::ZeroVector;
 }
 
 int32 FModelGenMeshBuilder::AddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV)

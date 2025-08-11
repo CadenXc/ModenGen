@@ -30,17 +30,12 @@ bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
     TArray<FVector> CorePoints = CalculateCorePoints();
     UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::Generate - Core points calculated: %d points"), CorePoints.Num());
 
-    // 按照以下顺序生成几何体：
-    // 1. 生成主要面（6个面）
-    UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::Generate - Generating main faces"));
     GenerateMainFaces();
-    UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::Generate - Main faces generated, current vertices: %d"), MeshData.GetVertexCount());
     
     GenerateEdgeBevels(CorePoints);
     
     GenerateCornerBevels(CorePoints);
 
-    // 验证生成的网格数据
     if (!ValidateGeneratedData())
     {
         UE_LOG(LogTemp, Error, TEXT("生成的圆角立方体网格数据无效"));
@@ -50,7 +45,6 @@ bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
     UE_LOG(LogTemp, Log, TEXT("FBevelCubeBuilder::Generate - Final mesh data: %d vertices, %d triangles"), 
            MeshData.GetVertexCount(), MeshData.GetTriangleCount());
 
-    // 输出网格数据
     OutMeshData = MeshData;
     return true;
 }
@@ -77,13 +71,11 @@ TArray<FVector> FBevelCubeBuilder::CalculateCorePoints() const
     TArray<FVector> CorePoints;
     CorePoints.Reserve(8);
     
-    // 按照以下顺序添加8个角落的核心点：
-    // 下面四个点（Z轴负方向）
+    // 8个角落的核心点：
     CorePoints.Add(FVector(-InnerOffset, -InnerOffset, -InnerOffset));
     CorePoints.Add(FVector(InnerOffset, -InnerOffset, -InnerOffset));
     CorePoints.Add(FVector(-InnerOffset, InnerOffset, -InnerOffset));
     CorePoints.Add(FVector(InnerOffset, InnerOffset, -InnerOffset));
-    // 上面四个点（Z轴正方向）
     CorePoints.Add(FVector(-InnerOffset, -InnerOffset, InnerOffset));
     CorePoints.Add(FVector(InnerOffset, -InnerOffset, InnerOffset));
     CorePoints.Add(FVector(-InnerOffset, InnerOffset, InnerOffset));

@@ -14,6 +14,9 @@
 #include "CoreMinimal.h"
 #include "ModelGenMeshBuilder.h"
 
+// 数学常量 - 使用UE4内置的PI常量
+constexpr float PI = UE_PI;
+
 namespace ModelGen
 {
 namespace BuilderUtils

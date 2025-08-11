@@ -43,12 +43,16 @@ protected:
     FModelGenMeshData MeshData;
     
     /** 用于顶点去重的映射表 */
-    TMap<FVector, int32> UniqueVerticesMap;
+    TMap<FString, int32> UniqueVerticesMap;
+
+    TMap<int32, FVector> IndexToPosMap;
 
     //~ Begin Protected Methods
     /** 获取或添加顶点，确保顶点不重复 */
     int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
     
+    FVector GetPosByIndex(int32 index);
+
     /** 添加新顶点到网格数据 */
     int32 AddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
     

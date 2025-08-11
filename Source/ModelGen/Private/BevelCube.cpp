@@ -97,7 +97,6 @@ void ABevelCube::RegenerateMesh()
 
     if (Builder.Generate(MeshData))
     {
-        // 验证生成的网格数据
         if (!MeshData.IsValid())
         {
             UE_LOG(LogTemp, Error, TEXT("Generated mesh data is invalid"));
@@ -107,7 +106,6 @@ void ABevelCube::RegenerateMesh()
         UE_LOG(LogTemp, Log, TEXT("Mesh data generated successfully: %d vertices, %d triangles"), 
                MeshData.GetVertexCount(), MeshData.GetTriangleCount());
 
-        // 将网格数据应用到程序化网格组件
         MeshData.ToProceduralMesh(ProceduralMesh, 0);
         
         ApplyMaterial();

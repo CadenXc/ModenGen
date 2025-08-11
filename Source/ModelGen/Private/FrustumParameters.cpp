@@ -16,6 +16,12 @@ bool FFrustumParameters::IsValid() const
         return false;
     }
 
+    // 检查顶部和底部边数参数
+    if (TopSides < 3 || BottomSides < 3)
+    {
+        return false;
+    }
+
     // 检查倒角参数
     if (BevelRadius < 0.0f || BevelSections < 1)
     {
@@ -51,26 +57,27 @@ int32 FFrustumParameters::CalculateVertexCountEstimate() const
     }
 
     // 基础顶点：顶部和底面的顶点
-    int32 BaseVertices = Sides * 2;
+    int32 BaseVertices = TopSides + BottomSides;
     
-    // 侧面顶点：高度分段数 * 侧面数
-    int32 SideVertices = HeightSegments * Sides;
+    // 侧面顶点：高度分段数 * 最大边数（用于插值）
+    int32 MaxSides = FMath::Max(TopSides, BottomSides);
+    int32 SideVertices = HeightSegments * MaxSides;
     
     // 倒角顶点：如果有倒角，每个边缘需要额外的顶点
     int32 BevelVertices = 0;
     if (BevelRadius > 0.0f)
     {
         // 顶部和底面的倒角顶点
-        BevelVertices = Sides * BevelSections * 2;
+        BevelVertices = TopSides * BevelSections + BottomSides * BevelSections;
         // 侧面的倒角顶点
-        BevelVertices += HeightSegments * Sides * BevelSections;
+        BevelVertices += HeightSegments * MaxSides * BevelSections;
     }
     
     // 端面顶点：如果有端面厚度
     int32 CapVertices = 0;
     if (CapThickness > 0.0f)
     {
-        CapVertices = Sides * 2; // 顶部和底面的端面中心点
+        CapVertices = TopSides + BottomSides; // 顶部和底面的端面中心点
     }
 
     return BaseVertices + SideVertices + BevelVertices + CapVertices;
@@ -84,26 +91,27 @@ int32 FFrustumParameters::CalculateTriangleCountEstimate() const
     }
 
     // 基础三角形：顶部和底面的三角形
-    int32 BaseTriangles = Sides * 2;
+    int32 BaseTriangles = TopSides + BottomSides;
     
-    // 侧面三角形：高度分段数 * 侧面数 * 2（每个四边形分解为两个三角形）
-    int32 SideTriangles = HeightSegments * Sides * 2;
+    // 侧面三角形：高度分段数 * 最大边数 * 2（每个四边形分解为两个三角形）
+    int32 MaxSides = FMath::Max(TopSides, BottomSides);
+    int32 SideTriangles = HeightSegments * MaxSides * 2;
     
     // 倒角三角形：如果有倒角，每个边缘需要额外的三角形
     int32 BevelTriangles = 0;
     if (BevelRadius > 0.0f)
     {
         // 顶部和底面的倒角三角形
-        BevelTriangles = Sides * BevelSections * 2;
+        BevelTriangles = TopSides * BevelSections * 2 + BottomSides * BevelSections * 2;
         // 侧面的倒角三角形
-        BevelTriangles += HeightSegments * Sides * BevelSections * 2;
+        BevelTriangles += HeightSegments * MaxSides * BevelSections * 2;
     }
     
     // 端面三角形：如果有端面厚度
     int32 CapTriangles = 0;
     if (CapThickness > 0.0f)
     {
-        CapTriangles = Sides * 2; // 顶部和底面的端面三角形
+        CapTriangles = TopSides + BottomSides; // 顶部和底面的端面三角形
     }
 
     return BaseTriangles + SideTriangles + BevelTriangles + CapTriangles;
@@ -120,6 +128,8 @@ bool FFrustumParameters::operator==(const FFrustumParameters& Other) const
            BottomRadius == Other.BottomRadius &&
            Height == Other.Height &&
            Sides == Other.Sides &&
+           TopSides == Other.TopSides &&
+           BottomSides == Other.BottomSides &&
            HeightSegments == Other.HeightSegments &&
            BevelRadius == Other.BevelRadius &&
            BevelSections == Other.BevelSections &&

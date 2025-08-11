@@ -97,3 +97,4 @@ public:
     bool operator==(const FHollowPrismParameters& Other) const;
     bool operator!=(const FHollowPrismParameters& Other) const;
 };
+
