@@ -30,9 +30,8 @@ int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& No
     return NewIndex;
 }
 
-FVector FModelGenMeshBuilder::GetPosByIndex(int32 Index)
+FVector FModelGenMeshBuilder::GetPosByIndex(int32 Index) const
 {
-    // 直接从映射中获取位置
     if (const FVector* FoundPos = IndexToPosMap.Find(Index))
     {
         return *FoundPos;
@@ -46,29 +45,19 @@ int32 FModelGenMeshBuilder::AddVertex(const FVector& Pos, const FVector& Normal,
     return MeshData.AddVertex(Pos, Normal, UV);
 }
 
-void FModelGenMeshBuilder::AddTriangle(int32 V1, int32 V2, int32 V3)
+void FModelGenMeshBuilder::AddTriangle(int32 V0, int32 V1, int32 V2)
 {
-    MeshData.AddTriangle(V1, V2, V3);
+    MeshData.AddTriangle(V0, V1, V2);
 }
 
-void FModelGenMeshBuilder::AddQuad(int32 V1, int32 V2, int32 V3, int32 V4)
+void FModelGenMeshBuilder::AddQuad(int32 V0, int32 V1, int32 V2, int32 V3)
 {
-    MeshData.AddQuad(V1, V2, V3, V4);
+    MeshData.AddQuad(V0, V1, V2, V3);
 }
 
 FVector FModelGenMeshBuilder::CalculateTangent(const FVector& Normal) const
 {
-    // 首先尝试使用上向量计算切线
-    FVector TangentDirection = FVector::CrossProduct(Normal, FVector::UpVector);
-    
-    // 如果结果接近零向量，改用右向量计算
-    if (TangentDirection.IsNearlyZero())
-    {
-        TangentDirection = FVector::CrossProduct(Normal, FVector::RightVector);
-    }
-    
-    TangentDirection.Normalize();
-    return TangentDirection;
+    return MeshData.CalculateTangent(Normal);
 }
 
 void FModelGenMeshBuilder::Clear()

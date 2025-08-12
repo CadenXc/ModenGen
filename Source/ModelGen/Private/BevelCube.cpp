@@ -15,8 +15,8 @@ ABevelCube::ABevelCube()
     RootComponent = ProceduralMesh;
 
     Parameters.Size = 100.0f;
-    Parameters.BevelSize = 10.0f;
-    Parameters.BevelSections = 3;
+    Parameters.BevelRadius = 10.0f;
+    Parameters.BevelSegments = 3;
 
     InitializeComponents();
 }
@@ -84,12 +84,12 @@ void ABevelCube::RegenerateMesh()
     if (!Parameters.IsValid())
     {
         UE_LOG(LogTemp, Warning, TEXT("Invalid BevelCube parameters: Size=%f, BevelSize=%f, BevelSections=%d"), 
-               Parameters.Size, Parameters.BevelSize, Parameters.BevelSections);
+               Parameters.Size, Parameters.BevelRadius, Parameters.BevelSegments);
         return;
     }
 
     UE_LOG(LogTemp, Log, TEXT("Starting BevelCube generation with parameters: Size=%f, BevelSize=%f, BevelSections=%d"), 
-           Parameters.Size, Parameters.BevelSize, Parameters.BevelSections);
+           Parameters.Size, Parameters.BevelRadius, Parameters.BevelSegments);
 
     // 创建构建器并生成网格数据
     FBevelCubeBuilder Builder(Parameters);
@@ -124,8 +124,8 @@ void ABevelCube::RegenerateMesh()
 void ABevelCube::GenerateBeveledCube(float Size, float BevelSize, int32 Sections)
 {
     Parameters.Size = Size;
-    Parameters.BevelSize = BevelSize;
-    Parameters.BevelSections = Sections;
+    Parameters.BevelRadius = BevelSize;
+    Parameters.BevelSegments = Sections;
     
     RegenerateMesh();
 }

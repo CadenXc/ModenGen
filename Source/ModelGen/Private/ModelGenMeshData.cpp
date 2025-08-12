@@ -79,7 +79,6 @@ void FModelGenMeshData::Merge(const FModelGenMeshData& Other)
     const int32 VertexOffset = Vertices.Num();
     const int32 TriangleOffset = Triangles.Num();
     
-    // 合并顶点数据
     Vertices.Append(Other.Vertices);
     Normals.Append(Other.Normals);
     UVs.Append(Other.UVs);
@@ -92,10 +91,8 @@ void FModelGenMeshData::Merge(const FModelGenMeshData& Other)
         Triangles.Add(Other.Triangles[i] + VertexOffset);
     }
     
-    // 合并材质索引
     MaterialIndices.Append(Other.MaterialIndices);
     
-    // 更新统计信息
     VertexCount = Vertices.Num();
     TriangleCount = Triangles.Num() / 3;
     MaterialCount = FMath::Max(MaterialCount, Other.MaterialCount);
@@ -103,8 +100,6 @@ void FModelGenMeshData::Merge(const FModelGenMeshData& Other)
 
 void FModelGenMeshData::ToProceduralMesh(UProceduralMeshComponent* MeshComponent, int32 SectionIndex) const
 {
-    UE_LOG(LogTemp, Log, TEXT("FModelGenMeshData::ToProceduralMesh - Starting conversion"));
-    
     if (!MeshComponent)
     {
         UE_LOG(LogTemp, Error, TEXT("FModelGenMeshData::ToProceduralMesh - MeshComponent is null"));
@@ -122,18 +117,7 @@ void FModelGenMeshData::ToProceduralMesh(UProceduralMeshComponent* MeshComponent
     UE_LOG(LogTemp, Log, TEXT("FModelGenMeshData::ToProceduralMesh - Creating mesh section with %d vertices, %d triangles"), 
            Vertices.Num(), Triangles.Num());
     
-    MeshComponent->CreateMeshSection_LinearColor(
-        SectionIndex,
-        Vertices,
-        Triangles,
-        Normals,
-        UVs,
-        VertexColors,
-        Tangents,
-        true
-    );
-    
-    UE_LOG(LogTemp, Log, TEXT("FModelGenMeshData::ToProceduralMesh - Mesh section created successfully"));
+    MeshComponent->CreateMeshSection_LinearColor( SectionIndex, Vertices, Triangles, Normals, UVs, VertexColors, Tangents, true);
 }
 
 void FModelGenMeshData::CalculateTangents()
