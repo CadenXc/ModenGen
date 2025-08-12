@@ -79,4 +79,7 @@ private:
     
     UFUNCTION(BlueprintCallable, Category = "HollowPrism|Generation")
     void RegenerateMeshBlueprint();
+    
+    UFUNCTION(BlueprintCallable, Category = "HollowPrism|Materials")
+    void SetMaterial(UMaterialInterface* NewMaterial);
 };

@@ -39,7 +39,20 @@ bool FModelGenMeshData::IsValid() const
                                    UVs.Num() == Vertices.Num() &&
                                    Tangents.Num() == Vertices.Num();
     
-    return bHasBasicGeometry && bValidTriangleCount && bMatchingArraySizes;
+    // 添加额外的安全检查
+    const bool bValidIndices = [this]() -> bool
+    {
+        for (int32 Index : Triangles)
+        {
+            if (Index < 0 || Index >= Vertices.Num())
+            {
+                return false;
+            }
+        }
+        return true;
+    }();
+    
+    return bHasBasicGeometry && bValidTriangleCount && bMatchingArraySizes && bValidIndices;
 }
 
 int32 FModelGenMeshData::AddVertex(const FVector& Position, const FVector& Normal, 
@@ -111,11 +124,23 @@ void FModelGenMeshData::ToProceduralMesh(UProceduralMeshComponent* MeshComponent
         UE_LOG(LogTemp, Error, TEXT("FModelGenMeshData::ToProceduralMesh - Mesh data is not valid"));
         UE_LOG(LogTemp, Error, TEXT("FModelGenMeshData::ToProceduralMesh - Vertices: %d, Triangles: %d, Normals: %d, UVs: %d, Tangents: %d"), 
                Vertices.Num(), Triangles.Num(), Normals.Num(), UVs.Num(), Tangents.Num());
+        UE_LOG(LogTemp, Error, TEXT("FModelGenMeshData::ToProceduralMesh - TriangleCount: %d, MaterialCount: %d"), 
+               TriangleCount, MaterialCount);
+        
+        // 检查三角形索引的有效性
+        for (int32 i = 0; i < FMath::Min(Triangles.Num(), 30); ++i) // 只检查前30个索引
+        {
+            if (i % 3 == 0)
+            {
+                UE_LOG(LogTemp, Error, TEXT("FModelGenMeshData::ToProceduralMesh - Triangle %d: [%d, %d, %d]"), 
+                       i / 3, Triangles[i], Triangles[i + 1], Triangles[i + 2]);
+            }
+        }
         return;
     }
     
     UE_LOG(LogTemp, Log, TEXT("FModelGenMeshData::ToProceduralMesh - Creating mesh section with %d vertices, %d triangles"), 
-           Vertices.Num(), Triangles.Num());
+           Vertices.Num(), TriangleCount);
     
     MeshComponent->CreateMeshSection_LinearColor( SectionIndex, Vertices, Triangles, Normals, UVs, VertexColors, Tangents, true);
 }

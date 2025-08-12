@@ -56,8 +56,16 @@ void AHollowPrism::PostEditChangeProperty(FPropertyChangedEvent& PropertyChanged
 
     if (RelevantProperties.Contains(PropertyName))
     {
-        // 减少日志输出以提高性能
-        RegenerateMesh();
+        // 如果是材质变化，直接应用材质而不重新生成网格
+        if (PropertyName == "Material")
+        {
+            ApplyMaterial();
+        }
+        else
+        {
+            // 其他属性变化时重新生成网格
+            RegenerateMesh();
+        }
     }
 }
 
@@ -83,8 +91,16 @@ void AHollowPrism::PostEditChangeChainProperty(FPropertyChangedChainEvent& Prope
 
     if (RelevantProperties.Contains(PropertyName))
     {
-        // 减少日志输出以提高性能
-        RegenerateMesh();
+        // 如果是材质变化，直接应用材质而不重新生成网格
+        if (PropertyName == "Material")
+        {
+            ApplyMaterial();
+        }
+        else
+        {
+            // 其他属性变化时重新生成网格
+            RegenerateMesh();
+        }
     }
 }
 #endif
@@ -106,33 +122,18 @@ void AHollowPrism::InitializeComponents()
         ProceduralMesh->bUseAsyncCooking = bUseAsyncCooking;
         ProceduralMesh->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
         ProceduralMesh->SetSimulatePhysics(false);
+        
+        // 应用材质和碰撞设置
+        ApplyMaterial();
+        SetupCollision();
     }
 }
 
 void AHollowPrism::ApplyMaterial()
 {
-    if (!ProceduralMesh)
-    {
-        return;
-    }
-
-    if (Material)
+    if (ProceduralMesh && Material)
     {
         ProceduralMesh->SetMaterial(0, Material);
-    }
-    else
-    {
-        // 使用默认材质 - 使用更安全的加载方式
-        static UMaterial* DefaultMaterial = nullptr;
-        if (!DefaultMaterial)
-        {
-            DefaultMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
-        }
-        
-        if (DefaultMaterial)
-        {
-            ProceduralMesh->SetMaterial(0, DefaultMaterial);
-        }
     }
 }
 
@@ -178,15 +179,21 @@ void AHollowPrism::RegenerateMesh()
 
     // 参数缓存：检查参数是否真的改变了
     static FHollowPrismParameters LastParameters;
+    static UMaterialInterface* LastMaterial = nullptr;
     static bool bFirstGeneration = true;
     
-    if (!bFirstGeneration && LastParameters == Parameters)
+    // 检查参数或材质是否改变
+    bool bParametersChanged = bFirstGeneration || LastParameters != Parameters;
+    bool bMaterialChanged = bFirstGeneration || LastMaterial != Material;
+    
+    if (!bFirstGeneration && !bParametersChanged && !bMaterialChanged)
     {
-        // 参数没有改变，跳过生成
+        // 参数和材质都没有改变，跳过生成
         return;
     }
     
     LastParameters = Parameters;
+    LastMaterial = Material;
     bFirstGeneration = false;
 
     UE_LOG(LogTemp, Log, TEXT("HollowPrism::RegenerateMesh - Starting mesh generation"));
@@ -210,6 +217,13 @@ void AHollowPrism::RegenerateMesh()
         // 应用材质和碰撞设置
         ApplyMaterial();
         SetupCollision();
+        
+        // 如果只是材质变化，确保材质被正确应用
+        if (bMaterialChanged && !bParametersChanged)
+        {
+            UE_LOG(LogTemp, Log, TEXT("HollowPrism::RegenerateMesh - Material changed, reapplying material"));
+            ApplyMaterial();
+        }
 
         UE_LOG(LogTemp, Log, TEXT("HollowPrism generated successfully: %d vertices, %d triangles"), 
                MeshData.GetVertexCount(), MeshData.GetTriangleCount());
@@ -223,4 +237,16 @@ void AHollowPrism::RegenerateMesh()
 void AHollowPrism::RegenerateMeshBlueprint()
 {
     RegenerateMesh();
+}
+
+void AHollowPrism::SetMaterial(UMaterialInterface* NewMaterial)
+{
+    if (Material != NewMaterial)
+    {
+        Material = NewMaterial;
+        ApplyMaterial();
+        
+        UE_LOG(LogTemp, Log, TEXT("HollowPrism::SetMaterial - Material changed to: %s"), 
+               NewMaterial ? *NewMaterial->GetName() : TEXT("None"));
+    }
 }

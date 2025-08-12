@@ -45,6 +45,15 @@ private:
     /** 生成端盖 */
     void GenerateAdvancedEndCaps();
     
+    /** 应用平滑光照 */
+    void ApplySmoothing();
+    
+    /** 应用横面平滑光照 */
+    void ApplyHorizontalSmoothing();
+    
+    /** 应用竖面平滑光照 */
+    void ApplyVerticalSmoothing();
+    
     /** 验证和修正参数 */
     void ValidateAndClampParameters();
     

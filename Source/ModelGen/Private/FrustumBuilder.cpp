@@ -1,9 +1,6 @@
 // Copyright (c) 2024. All rights reserved.
 
 #include "FrustumBuilder.h"
-
-#include "Engine/Engine.h"
-#include "Kismet/KismetMathLibrary.h"
 #include "ModelGenMeshData.h"
 
 FFrustumBuilder::FFrustumBuilder(const FFrustumParameters& InParams) : Params(InParams)
@@ -68,23 +65,7 @@ int32 FFrustumBuilder::CalculateTriangleCountEstimate() const
 
 void FFrustumBuilder::GenerateBaseGeometry()
 {
-    const float HalfHeight = Params.GetHalfHeight();
-    const float BevelRadius = Params.BevelRadius;
-
-    // 计算倒角高度 - 使用通用方法
-    const float TopBevelHeight = CalculateBevelHeight(Params.TopRadius);
-    const float BottomBevelHeight = CalculateBevelHeight(Params.BottomRadius);
-
-    // 调整主体几何体的范围，避免与倒角重叠
-    const float StartZ = -HalfHeight + BottomBevelHeight;
-    const float EndZ = HalfHeight - TopBevelHeight;
-
-    // 生成几何部件 - 确保不重叠
-    if (EndZ > StartZ)    // 只有当主体高度大于0时才生成主体
-    {
-        // 生成侧边几何体 - 使用完整高度范围以正确连接顶底面
-        CreateSideGeometry();
-    }
+	CreateSideGeometry();
 
     // 生成倒角几何体
     if (Params.BevelRadius > 0.0f)
@@ -142,7 +123,7 @@ void FFrustumBuilder::CreateSideGeometry()
         1.0f
     );
 
-    // 计算并存储下底顶点和上底顶点的对应关系
+    // 计算下底顶点和上底顶点的对应关系
     TArray<int32> BottomToTopMapping;
     BottomToTopMapping.SetNum(BottomRingOrigin.Num());
     for (int32 BottomIndex = 0; BottomIndex < BottomRingOrigin.Num(); ++BottomIndex)
@@ -164,7 +145,6 @@ void FFrustumBuilder::CreateSideGeometry()
         {
             const float CurrentHeight = -HalfHeight + h * HeightStep;
             const float HeightRatio = static_cast<float>(h) / Params.HeightSegments;
-            const float BendFactor = 1 + Params.BendAmount * FMath::Sin(HeightRatio * PI);
 
             TArray<int32> CurrentRing;
 
@@ -173,72 +153,36 @@ void FFrustumBuilder::CreateSideGeometry()
             {
                 const int32 TopIndex = BottomToTopMapping[BottomIndex];
 
-                // 获取对应的上下顶点位置
-                const FVector& TopPos = GetPosByIndex(TopRingOrigin[TopIndex]);
-                const FVector& BottomPos = GetPosByIndex(BottomRingOrigin[BottomIndex]);
-
-                // 根据Z值对X和Y进行线性插值
-                const float XR = FMath::Lerp(BottomPos.X, TopPos.X, HeightRatio) * BendFactor;
-                const float YR = FMath::Lerp(BottomPos.Y, TopPos.Y, HeightRatio) * BendFactor;
-                float X = 0;
-                float Y = 0;
-                const FVector CenterPoint(0.0f, 0.0f, CurrentHeight);
-
-                // 计算弯曲后的顶点位置
-                FVector BentPos(XR, YR, CurrentHeight);
-
-                // 计算顶点到中心点的距离
-                const float DistanceToCenter = FMath::Sqrt(FMath::Pow(XR, 2) + FMath::Pow(YR, 2));
-
-                // 修复弯曲逻辑：允许完全收缩到原点
-                if (DistanceToCenter < KINDA_SMALL_NUMBER)
-                {
-                    // 如果弯曲后几乎在原点，直接使用原点
-                    X = 0.0f;
-                    Y = 0.0f;
-                }
-                else if (DistanceToCenter < Params.MinBendRadius && Params.MinBendRadius > KINDA_SMALL_NUMBER)
-                {
-                    // 只有当MinBendRadius > 0时才应用最小半径限制
-                    // 计算从中心点到当前顶点的方向向量
-                    FVector Direction = (BentPos - CenterPoint).GetSafeNormal();
-
-                    // 将顶点调整到最小弯曲半径的距离
-                    BentPos = CenterPoint + Direction * Params.MinBendRadius;
-
-                    // 更新X和Y坐标
-                    X = BentPos.X;
-                    Y = BentPos.Y;
-                }
-                else
-                {
-                    // 距离足够，直接使用弯曲后的坐标
-                    X = XR;
-                    Y = YR;
-                }
+                // 根据Z值对X和Y进行线性插值（不应用弯曲）
+                const float XR = FMath::Lerp(GetPosByIndex(BottomRingOrigin[BottomIndex]).X, GetPosByIndex(TopRingOrigin[TopIndex]).X, HeightRatio);
+                const float YR = FMath::Lerp(GetPosByIndex(BottomRingOrigin[BottomIndex]).Y, GetPosByIndex(TopRingOrigin[TopIndex]).Y, HeightRatio);
+                
+                // 计算当前高度对应的基础半径
+                const float BaseRadius = FMath::Lerp(Params.BottomRadius, Params.TopRadius, HeightRatio);
+                
+                // 使用统一的弯曲半径计算方法
+                const float BentRadius = CalculateBentRadius(BaseRadius, HeightRatio);
+                
+                // 应用弯曲：将顶点从中心向外推或向内拉
+                const float Scale = BentRadius / BaseRadius;
+                const float X = XR * Scale;
+                const float Y = YR * Scale;
+                
+                // X和Y已经在上面计算完成，现在直接使用
 
                 // 生成插值后的顶点位置
                 const FVector InterpolatedPos(X, Y, CurrentHeight);
 
-                // 使用合理的默认法线，让UE能够基于三角形面自动计算正确的法线
-                // 对于侧面，使用从中心轴指向顶点的方向作为初始法线
-                FVector Normal;
-                if (FMath::Abs(X) > KINDA_SMALL_NUMBER || FMath::Abs(Y) > KINDA_SMALL_NUMBER)
+                // 计算法线：从中心轴指向顶点
+                FVector Normal = FVector(X, Y, 0.0f).GetSafeNormal();
+                if (Normal.IsNearlyZero())
                 {
-                    // 如果顶点不在中心轴上，使用从中心轴指向顶点的方向
-                    Normal = FVector(X, Y, 0.0f).GetSafeNormal();
-                }
-                else
-                {
-                    // 如果顶点在中心轴上，使用默认方向
                     Normal = FVector(1.0f, 0.0f, 0.0f);
                 }
                 
-                // 计算UV坐标 - 基于原始边数，而不是实际顶点数
-                const FVector2D UV(
-                    static_cast<float>(BottomIndex) /
-                        (Params.ArcAngle < 360.0f - KINDA_SMALL_NUMBER ? Params.BottomSides + 1 : Params.BottomSides),
-                    HeightRatio);
+                // 计算UV坐标
+                const float U = static_cast<float>(BottomIndex) / Params.BottomSides;
+                const FVector2D UV(U, HeightRatio);
 
                 // 添加顶点到MeshData并获取索引
                 const int32 VertexIndex = GetOrAddVertex(InterpolatedPos, Normal, UV);
@@ -256,17 +200,17 @@ void FFrustumBuilder::CreateSideGeometry()
         TArray<int32> CurrentRing = VertexRings[i];
         TArray<int32> NextRing = VertexRings[i + 1];
 
-        // 生成四边形，确保法线方向正确（指向外部）
+        // 生成四边形，确保法线方向正确
         for (int32 CurrentIndex = 0; CurrentIndex < CurrentRing.Num(); ++CurrentIndex)
         {
-            // 当 ArcAngle < 360 时，不要连接最后一个顶点到第一个顶点
-            const int32 NextCurrentIndex =
-                (Params.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) ? (CurrentIndex + 1) % CurrentRing.Num() : (CurrentIndex + 1);
+            // 当 ArcAngle = 360 时，连接最后一个顶点到第一个顶点
+            const int32 NextCurrentIndex = (Params.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) ? 
+                (CurrentIndex + 1) % CurrentRing.Num() : (CurrentIndex + 1);
 
             // 如果下一个索引超出范围，跳过这个四边形
             if (NextCurrentIndex >= CurrentRing.Num())
                 continue;
-
+            
             // 计算对应的下顶点索引
             const float CurrentRatio = static_cast<float>(CurrentIndex) / CurrentRing.Num();
             const float NextCurrentRatio = static_cast<float>(NextCurrentIndex) / CurrentRing.Num();
@@ -275,8 +219,6 @@ void FFrustumBuilder::CreateSideGeometry()
             const int32 NextRingNextIndex = FMath::Clamp(FMath::RoundToInt(NextCurrentRatio * NextRing.Num()), 0, NextRing.Num() - 1);
 
             // 使用四边形连接，确保法线方向正确
-            // 顶点顺序：当前环当前顶点 -> 下一个环当前顶点 -> 下一个环下一个顶点 -> 当前环下一个顶点
-            // 这样确保法线指向外部（从中心轴指向外侧）
             AddQuad(CurrentRing[CurrentIndex], NextRing[NextRingIndex], NextRing[NextRingNextIndex], CurrentRing[NextCurrentIndex]);
         }
     }
@@ -372,8 +314,8 @@ void FFrustumBuilder::GenerateBevelArcTriangles(float Angle, const FVector& Norm
         // 顶部倒角：从侧面边缘到顶面边缘
         const float Alpha_Start = (Z1 + HalfHeight) / Params.Height;
         const float Radius_Start = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha_Start);
-        // 使用通用方法计算弯曲半径
-        StartRadius = CalculateBentRadius(Radius_Start, Alpha_Start);
+        // 倒角不受BendAmount影响，保持原始半径
+        StartRadius = Radius_Start;
         
         EndRadius = FMath::Max(0.0f, Params.TopRadius - Params.BevelRadius);
     }
@@ -382,8 +324,8 @@ void FFrustumBuilder::GenerateBevelArcTriangles(float Angle, const FVector& Norm
         // 底部倒角：从侧面边缘到底面边缘
         const float Alpha_Start = (Z1 + HalfHeight) / Params.Height;
         const float Radius_Start = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha_Start);
-        // 使用通用方法计算弯曲半径
-        StartRadius = CalculateBentRadius(Radius_Start, Alpha_Start);
+        // 倒角不受BendAmount影响，保持原始半径
+        StartRadius = Radius_Start;
         
         EndRadius = FMath::Max(0.0f, Params.BottomRadius - Params.BevelRadius);
     }
@@ -428,8 +370,8 @@ void FFrustumBuilder::GenerateBevelArcTrianglesWithCaps(
         // 顶部倒角：从侧面边缘到顶面边缘
         const float Alpha_Start = (Z1 + HalfHeight) / Params.Height;
         const float Radius_Start = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha_Start);
-        // 使用通用方法计算弯曲半径
-        StartRadius = CalculateBentRadius(Radius_Start, Alpha_Start);
+        // 倒角不受BendAmount影响，保持原始半径
+        StartRadius = Radius_Start;
         
         EndRadius = FMath::Max(0.0f, Params.TopRadius - Params.BevelRadius);
     }
@@ -438,8 +380,8 @@ void FFrustumBuilder::GenerateBevelArcTrianglesWithCaps(
         // 底部倒角：从侧面边缘到底面边缘
         const float Alpha_Start = (Z1 + HalfHeight) / Params.Height;
         const float Radius_Start = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha_Start);
-        // 使用通用方法计算弯曲半径
-        StartRadius = CalculateBentRadius(Radius_Start, Alpha_Start);
+        // 倒角不受BendAmount影响，保持原始半径
+        StartRadius = Radius_Start;
         
         EndRadius = FMath::Max(0.0f, Params.BottomRadius - Params.BevelRadius);
     }
@@ -520,17 +462,10 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 S
         const FVector Pos(X, Y, Z);
         const FVector2D UV(static_cast<float>(i) / Sides, UVV);
         
-        // 使用合理的默认法线，让UE能够基于三角形面自动计算正确的法线
-        // 对于环形顶点，使用从中心轴指向顶点的方向作为初始法线
-        FVector Normal;
-        if (FMath::Abs(X) > KINDA_SMALL_NUMBER || FMath::Abs(Y) > KINDA_SMALL_NUMBER)
+        // 计算法线：从中心轴指向顶点
+        FVector Normal = FVector(X, Y, 0.0f).GetSafeNormal();
+        if (Normal.IsNearlyZero())
         {
-            // 如果顶点不在中心轴上，使用从中心轴指向顶点的方向
-            Normal = FVector(X, Y, 0.0f).GetSafeNormal();
-        }
-        else
-        {
-            // 如果顶点在中心轴上，使用默认方向
             Normal = FVector(1.0f, 0.0f, 0.0f);
         }
         
@@ -543,16 +478,13 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 S
 
 void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bool bIsTop)
 {
-    // 使用合理的默认法线，让UE能够基于三角形面自动计算正确的法线
-    // 对于顶底面，使用垂直于表面的方向作为初始法线
+    // 顶底面法线：垂直于表面
     FVector Normal(0.0f, 0.0f, bIsTop ? 1.0f : -1.0f);
 
     // 添加中心顶点
     const FVector CenterPos(0.0f, 0.0f, Z);
     const int32 CenterVertex = GetOrAddVertex(CenterPos, Normal, FVector2D(0.5f, 0.5f));
 
-    // 使用指定的边数
-    // 使用通用方法计算角度步长
     const float AngleStep = CalculateAngleStep(Sides);
 
     for (int32 SideIndex = 0; SideIndex < Sides; ++SideIndex)
@@ -575,15 +507,13 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bo
         const int32 V1 = GetOrAddVertex(CurrentPos, Normal, UV1);
         const int32 V2 = GetOrAddVertex(NextPos, Normal, UV2);
 
-        // 添加三角形 - 确保正确的顶点顺序
+        // 添加三角形，确保正确的顶点顺序
         if (bIsTop)
         {
-            // 顶面：逆时针顺序
             AddTriangle(CenterVertex, V2, V1);
         }
         else
         {
-            // 底面：顺时针顺序（因为底面法线朝下）
             AddTriangle(CenterVertex, V1, V2);
         }
     }
@@ -615,27 +545,22 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop)
     {
         const float alpha = static_cast<float>(i) / BevelSections;    // 沿倒角弧线的进度
 
-        // 倒角起点：使用侧边环的顶点位置，确保完全一致
+        // 倒角起点
         FVector StartPos;
         if (i == 0 && SideRing.Num() > 0)
         {
-            // 第一个环使用侧边环的顶点位置
             StartPos = GetPosByIndex(SideRing[0]);
         }
         else
         {
-            // 其他环使用原来的计算逻辑
             const float Alpha_Height = (StartZ + HalfHeight) / Params.Height;
             const float RadiusAtZ = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha_Height);
-            const float BendFactor = FMath::Sin(Alpha_Height * PI);
-            const float BentRadius = FMath::Max(RadiusAtZ + Params.BendAmount * BendFactor * RadiusAtZ, Params.MinBendRadius);
+            // 倒角不受BendAmount影响，保持原始半径
+            const float BentRadius = FMath::Max(RadiusAtZ, KINDA_SMALL_NUMBER);
             StartPos = FVector(BentRadius, 0.0f, StartZ);
         }
 
-        // 倒角终点：在顶/底面上，半径减去倒角半径
         const float CapRadius = FMath::Max(0.0f, Radius - Params.BevelRadius);
-
-        // 使用线性插值而不是贝塞尔曲线
         const float CurrentRadius = FMath::Lerp(StartPos.Size2D(), CapRadius, alpha);
         const float CurrentZ = FMath::Lerp(StartZ, EndZ, alpha);
 
@@ -648,31 +573,21 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop)
         for (int32 s = 0; s <= VertexCount; ++s)
         {
             FVector Position;
-            float angle = 0.0f; // 在循环开始处声明angle变量
             
             if (i == 0 && s < SideRing.Num())
             {
-                // 第一个环使用侧边环的顶点位置，确保完全一致
                 Position = GetPosByIndex(SideRing[s]);
             }
             else
             {
-                angle = s * AngleStep;    // 圆周旋转角度
-                // 其他环使用计算的位置
+                const float angle = s * AngleStep;
                 Position = FVector(CurrentRadius * FMath::Cos(angle), CurrentRadius * FMath::Sin(angle), CurrentZ);
             }
 
-            // 使用合理的默认法线，让UE能够基于三角形面自动计算正确的法线
-            // 对于倒角侧面，使用从中心轴指向顶点的方向作为初始法线
-            FVector Normal;
-            if (FMath::Abs(Position.X) > KINDA_SMALL_NUMBER || FMath::Abs(Position.Y) > KINDA_SMALL_NUMBER)
+            // 计算法线：从中心轴指向顶点
+            FVector Normal = FVector(Position.X, Position.Y, 0.0f).GetSafeNormal();
+            if (Normal.IsNearlyZero())
             {
-                // 如果顶点不在中心轴上，使用从中心轴指向顶点的方向
-                Normal = FVector(Position.X, Position.Y, 0.0f).GetSafeNormal();
-            }
-            else
-            {
-                // 如果顶点在中心轴上，使用默认方向
                 Normal = FVector(1.0f, 0.0f, 0.0f);
             }
             
@@ -692,17 +607,15 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop)
                 const int32 V01 = PrevRing[s + 1];
                 const int32 V11 = CurrentRing[s + 1];
 
-                // 根据是顶部还是底部选择不同的顶点顺序
-                if (bIsTop)
-                {
-                    // 顶部倒角：确保法线朝外，弧线方向正确
-                    AddQuad(V00, V10, V11, V01);
-                }
-                else
-                {
-                    // 底部倒角需要不同的顶点顺序，因为法线朝下
-                    AddQuad(V00, V01, V11, V10);
-                }
+                            // 根据顶部/底部选择顶点顺序
+            if (bIsTop)
+            {
+                AddQuad(V00, V10, V11, V01);
+            }
+            else
+            {
+                AddQuad(V00, V01, V11, V10);
+            }
             }
         }
         PrevRing = CurrentRing;
@@ -728,13 +641,16 @@ float FFrustumBuilder::CalculateBentRadius(float BaseRadius, float HeightRatio)
     // 计算弯曲后的半径
     const float BentRadius = BaseRadius + Params.BendAmount * BendFactor * BaseRadius;
     
-    // 只有当MinBendRadius > 0时才应用最小半径限制
+    // 应用MinBendRadius限制（如果设置了的话）
+    // 这是关键：在弯曲计算后立即应用MinBendRadius，防止过度收缩
     if (Params.MinBendRadius > KINDA_SMALL_NUMBER)
     {
+        // 如果MinBendRadius > 0，则半径不能小于MinBendRadius
         return FMath::Max(BentRadius, Params.MinBendRadius);
     }
     
-    return BentRadius;
+    // 如果没有设置MinBendRadius，只确保不为负值
+    return FMath::Max(BentRadius, KINDA_SMALL_NUMBER);
 }
 
 float FFrustumBuilder::CalculateBevelHeight(float Radius)
@@ -759,35 +675,45 @@ void FFrustumBuilder::GenerateEndCapVertices(float Angle, const FVector& Normal,
 {
     const float HalfHeight = Params.GetHalfHeight();
     
-    // 清空输出数组
     OutOrderedVertices.Empty();
     
-    // 1. 上底中心顶点
+    // 上底中心顶点
     const int32 TopCenterVertex = GetOrAddVertex(FVector(0, 0, HalfHeight), Normal, FVector2D(0.5f, 1.0f));
     OutOrderedVertices.Add(TopCenterVertex);
 
-    // 2. 上倒角弧线顶点（从顶面到侧边）
+    // 先计算侧边在倒角连接点的位置
+    float TopBevelHeight, BottomBevelHeight;
+    CalculateEndCapBevelHeights(TopBevelHeight, BottomBevelHeight);
+    
+    float StartZ, EndZ;
+    CalculateEndCapZRange(TopBevelHeight, BottomBevelHeight, StartZ, EndZ);
+    
+    // 保存侧边在倒角连接点的位置
+    const float TopSideRadius = CalculateEndCapRadiusAtHeight(EndZ);
+    const float BottomSideRadius = CalculateEndCapRadiusAtHeight(StartZ);
+    
+    // 上倒角弧线顶点
     if (Params.BevelRadius > 0.0f)
     {
-        GenerateEndCapBevelVertices(Angle, Normal, IsStart, true, OutOrderedVertices);
+        GenerateEndCapBevelVertices(Angle, Normal, IsStart, true, OutOrderedVertices, TopSideRadius);
     }
 
-    // 3. 侧边顶点（从上到下，确保与倒角弧线端点精确对齐）
-    GenerateEndCapSideVertices(Angle, Normal, IsStart, OutOrderedVertices);
+    // 侧边顶点
+    GenerateEndCapSideVertices(Angle, Normal, IsStart, OutOrderedVertices, TopSideRadius, BottomSideRadius);
 
-    // 4. 下倒角弧线顶点（从侧边到底面）
+    // 下倒角弧线顶点
     if (Params.BevelRadius > 0.0f)
     {
-        GenerateEndCapBevelVertices(Angle, Normal, IsStart, false, OutOrderedVertices);
+        GenerateEndCapBevelVertices(Angle, Normal, IsStart, false, OutOrderedVertices, BottomSideRadius);
     }
 
-    // 5. 下底中心顶点
+    // 下底中心顶点
     const int32 BottomCenterVertex = GetOrAddVertex(FVector(0, 0, -HalfHeight), Normal, FVector2D(0.5f, 0.0f));
     OutOrderedVertices.Add(BottomCenterVertex);
 }
 
 void FFrustumBuilder::GenerateEndCapBevelVertices(float Angle, const FVector& Normal, bool IsStart,
-                                                 bool bIsTopBevel, TArray<int32>& OutVertices)
+                                                 bool bIsTopBevel, TArray<int32>& OutVertices, float SideRadius)
 {
     const float HalfHeight = Params.GetHalfHeight();
     float TopBevelHeight, BottomBevelHeight;
@@ -803,10 +729,10 @@ void FFrustumBuilder::GenerateEndCapBevelVertices(float Angle, const FVector& No
     {
         // 顶部倒角：从顶面边缘到侧边边缘
         const float TopRadius = FMath::Max(0.0f, Params.TopRadius - Params.BevelRadius);
-        const float SideRadius = CalculateEndCapRadiusAtHeight(EndZ);
+        // 直接使用预计算的侧边半径，确保完美连接
+        // const float SideRadius = CalculateBevelRadiusAtHeight(EndZ); // 已移除
         
-        // 生成从顶面到侧边的完整倒角弧线
-        // 注意：第一个顶点应该与顶面边缘完全一致，最后一个顶点应该与侧边边缘完全一致
+        // 生成从顶面到侧边的倒角弧线
         for (int32 i = 0; i <= BevelSections; ++i)
         {
             const float Alpha = static_cast<float>(i) / BevelSections;
@@ -818,16 +744,20 @@ void FFrustumBuilder::GenerateEndCapBevelVertices(float Angle, const FVector& No
             const int32 BevelVertex = GetOrAddVertex(BevelPos, Normal, 
                 FVector2D(IsStart ? 0.0f : 1.0f, CalculateHeightRatio(CurrentZ)));
             OutVertices.Add(BevelVertex);
+            
         }
+        
+        // 记录倒角环的结束点（与侧边连接的点）
+        const FVector BevelEndPos = FVector(SideRadius * FMath::Cos(Angle), SideRadius * FMath::Sin(Angle), EndZ);
     }
     else
     {
         // 底部倒角：从侧边边缘到底面边缘
-        const float SideRadius = CalculateEndCapRadiusAtHeight(StartZ);
+        // 直接使用预计算的侧边半径，确保完美连接
+        // const float SideRadius = CalculateBevelRadiusAtHeight(StartZ); // 已移除
         const float BottomRadius = FMath::Max(0.0f, Params.BottomRadius - Params.BevelRadius);
         
-        // 生成从侧边到底面的完整倒角弧线
-        // 注意：第一个顶点应该与侧边边缘完全一致，最后一个顶点应该与底面边缘完全一致
+        // 生成从侧边到底面的倒角弧线
         for (int32 i = 0; i <= BevelSections; ++i)
         {
             const float Alpha = static_cast<float>(i) / BevelSections;
@@ -839,12 +769,13 @@ void FFrustumBuilder::GenerateEndCapBevelVertices(float Angle, const FVector& No
             const int32 BevelVertex = GetOrAddVertex(BevelPos, Normal, 
                 FVector2D(IsStart ? 0.0f : 1.0f, CalculateHeightRatio(CurrentZ)));
             OutVertices.Add(BevelVertex);
+            
         }
     }
 }
 
 void FFrustumBuilder::GenerateEndCapSideVertices(float Angle, const FVector& Normal, bool IsStart,
-                                                TArray<int32>& OutVertices)
+                                                TArray<int32>& OutVertices, float TopSideRadius, float BottomSideRadius)
 {
     const float HalfHeight = Params.GetHalfHeight();
     float TopBevelHeight, BottomBevelHeight;
@@ -853,73 +784,69 @@ void FFrustumBuilder::GenerateEndCapSideVertices(float Angle, const FVector& Nor
     float StartZ, EndZ;
     CalculateEndCapZRange(TopBevelHeight, BottomBevelHeight, StartZ, EndZ);
     
-    // 侧边顶点（从上到下，确保与倒角弧线端点精确对齐）
-    // 注意：第一个顶点应该与上倒角弧线的最后一个顶点完全一致
-    // 最后一个顶点应该与下倒角弧线的第一个顶点完全一致
+    // 侧边顶点
     for (int32 h = 0; h <= Params.HeightSegments; ++h)
     {
         const float Z = FMath::Lerp(EndZ, StartZ, static_cast<float>(h) / Params.HeightSegments);
         const float Alpha = (Z + HalfHeight) / Params.Height;
 
         // 计算当前高度对应的半径
-        const float Radius = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha);
-        // 使用通用方法计算弯曲半径
-        const float BentRadius = CalculateBentRadius(Radius, Alpha);
-
-        const FVector EdgePos = FVector(BentRadius * FMath::Cos(Angle), BentRadius * FMath::Sin(Angle), Z);
-        
-        // 计算正确的法线方向：从中心轴指向顶点（确保只有外面可见）
-        FVector SideNormal;
-        if (FMath::Abs(EdgePos.X) > KINDA_SMALL_NUMBER || FMath::Abs(EdgePos.Y) > KINDA_SMALL_NUMBER)
+        float BentRadius;
+        if (h == 0)
         {
-            // 如果顶点不在中心轴上，使用从中心轴指向顶点的方向
-            SideNormal = FVector(EdgePos.X, EdgePos.Y, 0.0f).GetSafeNormal();
+            // 第一个顶点（顶部）：使用预计算的顶部侧边半径
+            BentRadius = TopSideRadius;
+        }
+        else if (h == Params.HeightSegments)
+        {
+            // 最后一个顶点（底部）：使用预计算的底部侧边半径
+            BentRadius = BottomSideRadius;
         }
         else
         {
-            // 如果顶点在中心轴上，使用默认方向
+            // 中间顶点：正常计算弯曲半径
+            const float Radius = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha);
+            BentRadius = CalculateBentRadius(Radius, Alpha);
+        }
+
+        const FVector EdgePos = FVector(BentRadius * FMath::Cos(Angle), BentRadius * FMath::Sin(Angle), Z);
+        
+        // 计算法线：从中心轴指向顶点
+        FVector SideNormal = FVector(EdgePos.X, EdgePos.Y, 0.0f).GetSafeNormal();
+        if (SideNormal.IsNearlyZero())
+        {
             SideNormal = FVector(1.0f, 0.0f, 0.0f);
         }
         
         const int32 EdgeVertex = GetOrAddVertex(EdgePos, SideNormal, FVector2D(IsStart ? 0.0f : 1.0f, Alpha));
         OutVertices.Add(EdgeVertex);
+        
     }
 }
 
 void FFrustumBuilder::GenerateEndCapTrianglesFromVertices(const TArray<int32>& OrderedVertices, bool IsStart)
 {
-    // 中心点（0,0,0）
+    // 使用Frustum的中心点（0,0,0）
     const int32 CenterVertex = GetOrAddVertex(FVector(0, 0, 0), FVector(1.0f, 0.0f, 0.0f), FVector2D(0.5f, 0.5f));
 
-    // 计算端面多边形的质心（而不是使用frustum的中心点）
-    FVector EndCapCentroid = FVector::ZeroVector;
-    for (int32 i = 0; i < OrderedVertices.Num(); ++i)
+    // 如果有记录的连接点，使用它们来生成更精确的三角形
     {
-        const FVector& VertexPos = MeshData.Vertices[OrderedVertices[i]];
-        EndCapCentroid += VertexPos;
-    }
-    EndCapCentroid /= OrderedVertices.Num();
-
-    // 添加端面质心顶点
-    const int32 EndCapCenterVertex = GetOrAddVertex(EndCapCentroid, FVector(1.0f, 0.0f, 0.0f), FVector2D(0.5f, 0.5f));
-
-    // 生成三角形：每两个相邻顶点与端面质心形成三角形
-    // 注意：现在顶点顺序包含了完整的倒角弧线，所以三角形会正确覆盖所有区域
-    // 确保三角形法线方向正确，避免渲染问题
-    for (int32 i = 0; i < OrderedVertices.Num() - 1; ++i)
-    {
-        const int32 V1 = OrderedVertices[i];
-        const int32 V2 = OrderedVertices[i + 1];
-
-        if (IsStart)
+        // 如果没有记录连接点，使用原来的方法
+        for (int32 i = 0; i < OrderedVertices.Num() - 1; ++i)
         {
-            // 起始端面：确保法线方向正确（指向外部）
-            AddTriangle(V1, V2, EndCapCenterVertex);
-        }
-        else
-        {
-            // 结束端面：翻转顶点顺序以保持法线方向一致（指向外部）
-            AddTriangle(V2, V1, EndCapCenterVertex);
+            const int32 V1 = OrderedVertices[i];
+            const int32 V2 = OrderedVertices[i + 1];
+
+            if (IsStart)
+            {
+                // 起始端面：确保法线方向正确（指向外部）
+                AddTriangle(V1, V2, CenterVertex);
+            }
+            else
+            {
+                // 结束端面：翻转顶点顺序以保持法线方向一致（指向外部）
+                AddTriangle(V2, V1, CenterVertex);
+            }
         }
     }
 }
@@ -947,15 +874,32 @@ float FFrustumBuilder::CalculateEndCapRadiusAtHeight(float Z) const
     
     // 计算当前高度对应的半径
     const float Radius = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha);
-    // 直接计算弯曲半径，避免调用非const方法
-    const float BendFactor = FMath::Sin(Alpha * PI);
-    const float BentRadius = Radius + Params.BendAmount * BendFactor * Radius;
+    // 端面侧边不受BendAmount影响，保持原始半径
+    const float BentRadius = Radius;
     
-    // 只有当MinBendRadius > 0时才应用最小半径限制
+    // 应用MinBendRadius限制（如果设置了的话）
+    // 这是关键：在弯曲计算后立即应用MinBendRadius，防止过度收缩
     if (Params.MinBendRadius > KINDA_SMALL_NUMBER)
     {
+        // 如果MinBendRadius > 0，则半径不能小于MinBendRadius
         return FMath::Max(BentRadius, Params.MinBendRadius);
     }
     
-    return BentRadius;
+    // 如果没有设置MinBendRadius，只确保不为负值
+    return FMath::Max(BentRadius, KINDA_SMALL_NUMBER);
+}
+
+// 新增：专门用于倒角的半径计算方法，不受BendAmount和MinBendRadius影响
+float FFrustumBuilder::CalculateBevelRadiusAtHeight(float Z) const
+{
+    const float HalfHeight = Params.GetHalfHeight();
+    const float Alpha = (Z + HalfHeight) / Params.Height;
+    
+    // 计算当前高度对应的半径
+    const float Radius = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha);
+    // 倒角不受BendAmount影响，保持原始半径
+    const float BentRadius = Radius;
+    
+    // 倒角不受MinBendRadius影响，只确保不为负值
+    return FMath::Max(BentRadius, KINDA_SMALL_NUMBER);
 }

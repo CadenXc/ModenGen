@@ -5,14 +5,11 @@
 #include "ModelGenMeshData.h"
 #include "ProceduralMeshComponent.h"
 #include "Materials/Material.h"
-#include "UObject/ConstructorHelpers.h"
-#include "Engine/Engine.h"
-#include "UObject/UObjectGlobals.h"
 #include "HAL/PlatformTime.h"
 
 AFrustum::AFrustum()
 {
-    PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bCanEverTick = false;
 
     // 初始化组件
     InitializeComponents();
@@ -41,22 +38,17 @@ void AFrustum::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
     // 检查是否是Parameters结构中的属性
     if (PropertyNameStr.StartsWith("Parameters."))
     {
-        // 减少日志输出以提高性能
         RegenerateMesh();
         return;
     }
     
-    // 检查其他相关属性
-    static const TArray<FName> RelevantProperties = {
-        "TopRadius", "BottomRadius", "Height",
-        "TopSides", "BottomSides", "HeightSegments",
-        "BevelRadius", "BevelSections",
-        "BendAmount", "MinBendRadius", "ArcAngle"
-    };
-
-    if (RelevantProperties.Contains(PropertyName))
+    // 检查材质相关属性
+    if (PropertyName == "Material")
     {
-        // 减少日志输出以提高性能
+        ApplyMaterial();
+    }
+    else if (PropertyName == "bGenerateCollision" || PropertyName == "bUseAsyncCooking")
+    {
         RegenerateMesh();
     }
 }
@@ -71,31 +63,22 @@ void AFrustum::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyC
     // 检查是否是Parameters结构中的属性
     if (PropertyNameStr.StartsWith("Parameters."))
     {
-        // 减少日志输出以提高性能
         RegenerateMesh();
         return;
     }
     
-    // 检查其他相关属性
-    static const TArray<FName> RelevantProperties = {
-        "TopRadius", "BottomRadius", "Height",
-        "TopSides", "BottomSides", "HeightSegments",
-        "BevelRadius", "BevelSections",
-        "BendAmount", "MinBendRadius", "ArcAngle"
-    };
-
-    if (RelevantProperties.Contains(PropertyName))
+    // 检查材质相关属性
+    if (PropertyName == "Material")
     {
-        // 减少日志输出以提高性能
+        ApplyMaterial();
+    }
+    else if (PropertyName == "bGenerateCollision" || PropertyName == "bUseAsyncCooking")
+    {
         RegenerateMesh();
     }
 }
 #endif
 
-void AFrustum::Tick(float DeltaTime)
-{
-    Super::Tick(DeltaTime);
-}
 
 void AFrustum::InitializeComponents()
 {
@@ -109,33 +92,18 @@ void AFrustum::InitializeComponents()
         ProceduralMesh->bUseAsyncCooking = bUseAsyncCooking;
         ProceduralMesh->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
         ProceduralMesh->SetSimulatePhysics(false);
+        
+        // 应用材质和碰撞设置
+        ApplyMaterial();
+        SetupCollision();
     }
 }
 
 void AFrustum::ApplyMaterial()
 {
-    if (!ProceduralMesh)
-    {
-        return;
-    }
-
-    if (Material)
+    if (ProceduralMesh && Material)
     {
         ProceduralMesh->SetMaterial(0, Material);
-    }
-    else
-    {
-        // 使用默认材质 - 使用更安全的加载方式
-        static UMaterial* DefaultMaterial = nullptr;
-        if (!DefaultMaterial)
-        {
-            DefaultMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
-        }
-        
-        if (DefaultMaterial)
-        {
-            ProceduralMesh->SetMaterial(0, DefaultMaterial);
-        }
     }
 }
 
@@ -172,31 +140,33 @@ void AFrustum::RegenerateMesh()
         return;
     }
 
-    // 防抖：检查是否距离上次更新太近（减少延迟以提高响应性）
+    // 防抖检查
     static float LastUpdateTime = 0.0f;
     const float CurrentTime = FPlatformTime::Seconds();
-    const float MinUpdateInterval = 0.05f; // 减少到50毫秒，提高响应性
+    const float MinUpdateInterval = 0.05f;
     
-    // 如果启用了禁用防抖选项，则跳过防抖检查
     if (!Parameters.bDisableDebounce && CurrentTime - LastUpdateTime < MinUpdateInterval)
     {
-        // 不记录日志，减少性能开销
         return;
     }
     
     LastUpdateTime = CurrentTime;
 
-    // 参数缓存：检查参数是否真的改变了
+    // 参数缓存检查
     static FFrustumParameters LastParameters;
+    static UMaterialInterface* LastMaterial = nullptr;
     static bool bFirstGeneration = true;
     
-    if (!bFirstGeneration && LastParameters == Parameters)
+    bool bParametersChanged = bFirstGeneration || LastParameters != Parameters;
+    bool bMaterialChanged = bFirstGeneration || LastMaterial != Material;
+    
+    if (!bFirstGeneration && !bParametersChanged && !bMaterialChanged)
     {
-        // 参数没有改变，跳过生成
         return;
     }
     
     LastParameters = Parameters;
+    LastMaterial = Material;
     bFirstGeneration = false;
 
     // 清除现有网格
@@ -217,6 +187,12 @@ void AFrustum::RegenerateMesh()
         ApplyMaterial();
         SetupCollision();
         
+        if (bMaterialChanged && !bParametersChanged)
+        {
+            UE_LOG(LogTemp, Log, TEXT("Frustum::RegenerateMesh - Material changed, reapplying material"));
+            ApplyMaterial();
+        }
+        
         UE_LOG(LogTemp, Log, TEXT("Frustum generated successfully: %d vertices, %d triangles"), 
                MeshData.GetVertexCount(), MeshData.GetTriangleCount());
     }
@@ -228,33 +204,37 @@ void AFrustum::RegenerateMesh()
 
 void AFrustum::GenerateFrustum(float TopRadius, float BottomRadius, float Height, int32 Sides)
 {
-    // 更新参数
     Parameters.TopRadius = TopRadius;
     Parameters.BottomRadius = BottomRadius;
     Parameters.Height = Height;
-    Parameters.TopSides = Sides;      // 默认设置为相同的边数
-    Parameters.BottomSides = Sides;   // 默认设置为相同的边数
+    Parameters.TopSides = Sides;
+    Parameters.BottomSides = Sides;
     
-    // 重新生成网格
     RegenerateMesh();
 }
 
 void AFrustum::GenerateFrustumWithDifferentSides(float TopRadius, float BottomRadius, float Height, 
                                                  int32 TopSides, int32 BottomSides)
 {
-    // 更新参数
     Parameters.TopRadius = TopRadius;
     Parameters.BottomRadius = BottomRadius;
     Parameters.Height = Height;
     Parameters.TopSides = TopSides;
     Parameters.BottomSides = BottomSides;
     
-    // 重新生成网格
     RegenerateMesh();
 }
 
 void AFrustum::RegenerateMeshBlueprint()
 {
-    UE_LOG(LogTemp, Log, TEXT("Frustum::RegenerateMeshBlueprint - Called from Blueprint"));
     RegenerateMesh();
+}
+
+void AFrustum::SetMaterial(UMaterialInterface* NewMaterial)
+{
+    if (Material != NewMaterial)
+    {
+        Material = NewMaterial;
+        ApplyMaterial();
+    }
 }

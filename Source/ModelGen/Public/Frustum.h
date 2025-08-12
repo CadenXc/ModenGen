@@ -42,7 +42,6 @@ public:
     //~ Begin AActor Interface
     virtual void BeginPlay() override;
     virtual void OnConstruction(const FTransform& Transform) override;
-    virtual void Tick(float DeltaTime) override;
 
 #if WITH_EDITOR
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
@@ -98,4 +97,8 @@ private:
     /** 重新生成网格（蓝图可调用） */
     UFUNCTION(BlueprintCallable, Category = "Frustum|Generation")
     void RegenerateMeshBlueprint();
+    
+    /** 设置材质（蓝图可调用） */
+    UFUNCTION(BlueprintCallable, Category = "Frustum|Materials")
+    void SetMaterial(UMaterialInterface* NewMaterial);
 };

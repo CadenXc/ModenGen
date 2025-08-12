@@ -77,11 +77,11 @@ private:
     
     // 新增：生成端面倒角顶点
     void GenerateEndCapBevelVertices(float Angle, const FVector& Normal, bool IsStart,
-                                    bool bIsTopBevel, TArray<int32>& OutVertices);
+                                    bool bIsTopBevel, TArray<int32>& OutVertices, float SideRadius);
     
     // 新增：生成端面侧边顶点
     void GenerateEndCapSideVertices(float Angle, const FVector& Normal, bool IsStart,
-                                   TArray<int32>& OutVertices);
+                                   TArray<int32>& OutVertices, float TopSideRadius, float BottomSideRadius);
     
     // 新增：生成端面三角形
     void GenerateEndCapTrianglesFromVertices(const TArray<int32>& OrderedVertices, bool IsStart);
@@ -91,4 +91,7 @@ private:
     void CalculateEndCapZRange(float TopBevelHeight, float BottomBevelHeight, 
                               float& OutStartZ, float& OutEndZ) const;
     float CalculateEndCapRadiusAtHeight(float Z) const;
+    
+    // 新增：专门用于倒角的半径计算方法，不受MinBendRadius影响
+    float CalculateBevelRadiusAtHeight(float Z) const;
 };

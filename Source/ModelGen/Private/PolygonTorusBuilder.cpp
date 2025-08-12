@@ -55,6 +55,11 @@ bool FPolygonTorusBuilder::Generate(FModelGenMeshData& OutMeshData)
         UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Skipping end caps (TorusAngle = 360)"));
     }
 
+    // 4. 应用平滑光照
+    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Applying smooth lighting"));
+    ApplySmoothing();
+    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Smooth lighting applied"));
+
     // 验证生成的网格数据
     if (!ValidateGeneratedData())
     {
@@ -95,7 +100,7 @@ void FPolygonTorusBuilder::GenerateVertices()
     const int32 MinorSegs = Params.MinorSegments;
     const float AngleRad = FMath::DegreesToRadians(Params.TorusAngle);
     
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateOptimizedVertices - Parameters: MajorRad=%f, MinorRad=%f, MajorSegs=%d, MinorSegs=%d, AngleRad=%f"), 
+    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateVertices - Parameters: MajorRad=%f, MinorRad=%f, MajorSegs=%d, MinorSegs=%d, AngleRad=%f"), 
            MajorRad, MinorRad, MajorSegs, MinorSegs, AngleRad);
     
     // 计算角度步长
@@ -146,7 +151,7 @@ void FPolygonTorusBuilder::GenerateTriangles()
     const int32 MinorSegs = Params.MinorSegments;
     const bool bIsFullCircle = FMath::IsNearlyEqual(Params.TorusAngle, 360.0f);
     
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateOptimizedTriangles - Parameters: MajorSegs=%d, MinorSegs=%d, bIsFullCircle=%s"), 
+    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateTriangles - Parameters: MajorSegs=%d, MinorSegs=%d, bIsFullCircle=%s"), 
            MajorSegs, MinorSegs, bIsFullCircle ? TEXT("true") : TEXT("false"));
     
     // 生成三角形
@@ -313,4 +318,148 @@ void FPolygonTorusBuilder::LogMeshStatistics()
 {
     UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::LogMeshStatistics - Mesh statistics: %d vertices, %d triangles"), 
            MeshData.GetVertexCount(), MeshData.GetTriangleCount());
+}
+
+void FPolygonTorusBuilder::ApplySmoothing()
+{
+    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplySmoothing - Starting smooth lighting application"));
+    
+    // 根据参数决定应用哪种平滑光照
+    if (Params.bSmoothCrossSection)
+    {
+        UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplySmoothing - Applying horizontal smooth lighting"));
+        ApplyHorizontalSmoothing();
+    }
+    
+    if (Params.bSmoothVerticalSection)
+    {
+        UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplySmoothing - Applying vertical smooth lighting"));
+        ApplyVerticalSmoothing();
+    }
+    
+    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplySmoothing - Smooth lighting completed"));
+}
+
+void FPolygonTorusBuilder::ApplyHorizontalSmoothing()
+{
+    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplyHorizontalSmoothing - Starting horizontal smooth lighting"));
+    
+    const int32 MajorSegs = Params.MajorSegments;
+    const int32 MinorSegs = Params.MinorSegments;
+    const int32 TotalVertices = MeshData.GetVertexCount();
+    
+    // 横面平滑光照：在径向方向（大圆环方向）上进行平滑
+    // 这模拟了3ds Max中圆环在径向方向上的平滑光照效果
+    
+    // 对每个主分段（大圆环方向）的横面进行平滑
+    for (int32 MajorIndex = 0; MajorIndex <= MajorSegs; ++MajorIndex)
+    {
+        const int32 SectionStartIndex = MajorIndex * MinorSegs;
+        
+        // 对当前横面的所有顶点进行平滑
+        for (int32 MinorIndex = 0; MinorIndex < MinorSegs; ++MinorIndex)
+        {
+            const int32 CurrentVertexIndex = SectionStartIndex + MinorIndex;
+            
+            if (CurrentVertexIndex >= TotalVertices)
+                continue;
+            
+            // 获取当前顶点位置和法线
+            FVector CurrentPos = MeshData.Vertices[CurrentVertexIndex];
+            FVector CurrentNormal = MeshData.Normals[CurrentVertexIndex];
+            
+            // 计算相邻顶点（在同一个横面上）
+            FVector LeftPos, RightPos;
+            int32 LeftIndex = SectionStartIndex + ((MinorIndex - 1 + MinorSegs) % MinorSegs);
+            int32 RightIndex = SectionStartIndex + ((MinorIndex + 1) % MinorSegs);
+            
+            if (LeftIndex < TotalVertices && RightIndex < TotalVertices)
+            {
+                LeftPos = MeshData.Vertices[LeftIndex];
+                RightPos = MeshData.Vertices[RightIndex];
+                
+                // 基于几何位置计算平滑法线
+                // 在径向方向上计算切向量
+                FVector RadialVector = (RightPos - LeftPos).GetSafeNormal();
+                
+                // 计算平滑后的法线（保持垂直于切向量的特性）
+                FVector SmoothNormal = FVector::CrossProduct(RadialVector, FVector::UpVector).GetSafeNormal();
+                
+                // 确保方向与原始法线一致
+                if (FVector::DotProduct(SmoothNormal, CurrentNormal) < 0.0f)
+                {
+                    SmoothNormal = -SmoothNormal;
+                }
+                
+                // 应用平滑（混合原始法线和平滑法线）
+                const float SmoothingStrength = 0.3f;  // 平滑强度
+                FVector FinalNormal = FMath::Lerp(CurrentNormal, SmoothNormal, SmoothingStrength).GetSafeNormal();
+                
+                MeshData.Normals[CurrentVertexIndex] = FinalNormal;
+            }
+        }
+    }
+    
+    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplyHorizontalSmoothing - Horizontal smooth lighting completed"));
+}
+
+void FPolygonTorusBuilder::ApplyVerticalSmoothing()
+{
+    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplyVerticalSmoothing - Starting vertical smooth lighting"));
+    
+    const int32 MajorSegs = Params.MajorSegments;
+    const int32 MinorSegs = Params.MinorSegments;
+    const int32 TotalVertices = MeshData.GetVertexCount();
+    
+    // 竖面平滑光照：在轴向方向（小圆环方向）上进行平滑
+    // 这模拟了3ds Max中圆环在轴向方向上的平滑光照效果
+    
+    // 对每个次分段（小圆环方向）的竖面进行平滑
+    for (int32 MinorIndex = 0; MinorIndex < MinorSegs; ++MinorIndex)
+    {
+        // 对当前竖面的所有顶点进行平滑
+        for (int32 MajorIndex = 0; MajorIndex <= MajorSegs; ++MajorIndex)
+        {
+            const int32 CurrentVertexIndex = MajorIndex * MinorSegs + MinorIndex;
+            
+            if (CurrentVertexIndex >= TotalVertices)
+                continue;
+            
+            // 获取当前顶点位置和法线
+            FVector CurrentPos = MeshData.Vertices[CurrentVertexIndex];
+            FVector CurrentNormal = MeshData.Normals[CurrentVertexIndex];
+            
+            // 计算相邻顶点（在同一个竖面上）
+            FVector PrevPos, NextPos;
+            int32 PrevIndex = ((MajorIndex - 1 + (MajorSegs + 1)) % (MajorSegs + 1)) * MinorSegs + MinorIndex;
+            int32 NextIndex = ((MajorIndex + 1) % (MajorSegs + 1)) * MinorSegs + MinorIndex;
+            
+            if (PrevIndex < TotalVertices && NextIndex < TotalVertices)
+            {
+                PrevPos = MeshData.Vertices[PrevIndex];
+                NextPos = MeshData.Vertices[NextIndex];
+                
+                // 基于几何位置计算平滑法线
+                // 在轴向方向上计算切向量
+                FVector AxialVector = (NextPos - PrevPos).GetSafeNormal();
+                
+                // 计算平滑后的法线（保持垂直于切向量的特性）
+                FVector SmoothNormal = FVector::CrossProduct(AxialVector, FVector::RightVector).GetSafeNormal();
+                
+                // 确保方向与原始法线一致
+                if (FVector::DotProduct(SmoothNormal, CurrentNormal) < 0.0f)
+                {
+                    SmoothNormal = -SmoothNormal;
+                }
+                
+                // 应用平滑（混合原始法线和平滑法线）
+                const float SmoothingStrength = 0.3f;  // 平滑强度
+                FVector FinalNormal = FMath::Lerp(CurrentNormal, SmoothNormal, SmoothingStrength).GetSafeNormal();
+                
+                MeshData.Normals[CurrentVertexIndex] = FinalNormal;
+            }
+        }
+    }
+    
+    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplyVerticalSmoothing - Vertical smooth lighting completed"));
 }
