@@ -37,12 +37,12 @@ int32 FPolygonTorusParameters::CalculateVertexCountEstimate() const
     // 基础圆环顶点数
     int32 BaseVertexCount = MajorSegments * MinorSegments;
     
-    // 端盖顶点数（如果有端盖）
+    // 端盖顶点数（当TorusAngle < 360时自动生成）
     int32 CapVertexCount = 0;
-    if (bGenerateStartCap || bGenerateEndCap)
+    if (TorusAngle < 360.0f - KINDA_SMALL_NUMBER)
     {
         // 端盖使用与次分段数相同的分段数
-        CapVertexCount = (bGenerateStartCap ? MinorSegments : 0) + (bGenerateEndCap ? MinorSegments : 0);
+        CapVertexCount = MinorSegments * 2; // 起始和结束端盖
     }
     
     return BaseVertexCount + CapVertexCount;
@@ -53,12 +53,12 @@ int32 FPolygonTorusParameters::CalculateTriangleCountEstimate() const
     // 基础圆环三角形数（每个四边形两个三角形）
     int32 BaseTriangleCount = MajorSegments * MinorSegments * 2;
     
-    // 端盖三角形数（如果有端盖）
+    // 端盖三角形数（当TorusAngle < 360时自动生成）
     int32 CapTriangleCount = 0;
-    if (bGenerateStartCap || bGenerateEndCap)
+    if (TorusAngle < 360.0f - KINDA_SMALL_NUMBER)
     {
         // 端盖使用与次分段数相同的分段数
-        CapTriangleCount = (bGenerateStartCap ? MinorSegments : 0) + (bGenerateEndCap ? MinorSegments : 0);
+        CapTriangleCount = MinorSegments * 2; // 起始和结束端盖
     }
     
     return BaseTriangleCount + CapTriangleCount;

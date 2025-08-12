@@ -11,13 +11,7 @@ bool FFrustumParameters::IsValid() const
     }
 
     // 检查细分参数
-    if (Sides < 3 || HeightSegments < 1)
-    {
-        return false;
-    }
-
-    // 检查顶部和底部边数参数
-    if (TopSides < 3 || BottomSides < 3)
+    if (TopSides < 3 || BottomSides < 3 || HeightSegments < 1)
     {
         return false;
     }
@@ -36,12 +30,6 @@ bool FFrustumParameters::IsValid() const
 
     // 检查角度参数
     if (ArcAngle <= 0.0f || ArcAngle > 360.0f)
-    {
-        return false;
-    }
-
-    // 检查端面参数
-    if (CapThickness < 0.0f)
     {
         return false;
     }
@@ -72,15 +60,8 @@ int32 FFrustumParameters::CalculateVertexCountEstimate() const
         // 侧面的倒角顶点
         BevelVertices += HeightSegments * MaxSides * BevelSections;
     }
-    
-    // 端面顶点：如果有端面厚度
-    int32 CapVertices = 0;
-    if (CapThickness > 0.0f)
-    {
-        CapVertices = TopSides + BottomSides; // 顶部和底面的端面中心点
-    }
 
-    return BaseVertices + SideVertices + BevelVertices + CapVertices;
+    return BaseVertices + SideVertices + BevelVertices;
 }
 
 int32 FFrustumParameters::CalculateTriangleCountEstimate() const
@@ -106,15 +87,8 @@ int32 FFrustumParameters::CalculateTriangleCountEstimate() const
         // 侧面的倒角三角形
         BevelTriangles += HeightSegments * MaxSides * BevelSections * 2;
     }
-    
-    // 端面三角形：如果有端面厚度
-    int32 CapTriangles = 0;
-    if (CapThickness > 0.0f)
-    {
-        CapTriangles = TopSides + BottomSides; // 顶部和底面的端面三角形
-    }
 
-    return BaseTriangles + SideTriangles + BevelTriangles + CapTriangles;
+    return BaseTriangles + SideTriangles + BevelTriangles;
 }
 
 void FFrustumParameters::PostEditChangeProperty(const FName& PropertyName)
@@ -127,7 +101,6 @@ bool FFrustumParameters::operator==(const FFrustumParameters& Other) const
     return TopRadius == Other.TopRadius &&
            BottomRadius == Other.BottomRadius &&
            Height == Other.Height &&
-           Sides == Other.Sides &&
            TopSides == Other.TopSides &&
            BottomSides == Other.BottomSides &&
            HeightSegments == Other.HeightSegments &&
@@ -136,7 +109,6 @@ bool FFrustumParameters::operator==(const FFrustumParameters& Other) const
            BendAmount == Other.BendAmount &&
            MinBendRadius == Other.MinBendRadius &&
            ArcAngle == Other.ArcAngle &&
-           CapThickness == Other.CapThickness &&
            bFlipNormals == Other.bFlipNormals &&
            bDisableDebounce == Other.bDisableDebounce;
 }

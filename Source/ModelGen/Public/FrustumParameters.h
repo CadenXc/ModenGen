@@ -40,11 +40,6 @@ public:
 
     //~ Begin Tessellation Parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Tessellation", 
-        meta = (ClampMin = "3", UIMin = "3", DisplayName = "Sides", 
-        ToolTip = "截锥体侧面的数量（当TopSides和BottomSides相同时使用）"))
-    int32 Sides = 16;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Tessellation", 
         meta = (ClampMin = "3", UIMin = "3", DisplayName = "Top Sides", 
         ToolTip = "截锥体顶部的边数"))
     int32 TopSides = 16;
@@ -70,8 +65,6 @@ public:
         ToolTip = "倒角的分段数，影响倒角的平滑度"))
     int32 BevelSections = 4;
 
-
-
     //~ Begin Bending Parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Bending", 
         meta = (UIMin = "-1.0", UIMax = "1.0", DisplayName = "Bend Amount", 
@@ -88,12 +81,6 @@ public:
         meta = (UIMin = "0.0", UIMax = "360.0", DisplayName = "Arc Angle", 
         ToolTip = "截锥体的弧角，360度为完整圆形"))
     float ArcAngle = 360.0f;
-
-    //~ Begin Caps Parameters
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Caps", 
-        meta = (ClampMin = "0.0", UIMin = "0.0", DisplayName = "Cap Thickness", 
-        ToolTip = "端面的厚度"))
-    float CapThickness = 10.0f;
     
     /** 反转法线 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Debug", 

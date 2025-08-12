@@ -65,7 +65,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Bevel", 
         meta = (ClampMin = "1", UIMin = "1", ClampMax = "20", UIMax = "10", 
         DisplayName = "Bevel Sections", ToolTip = "倒角的分段数"))
-    int32 BevelSections = 4;
+    int32 BevelSegments = 4;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Options", 
         meta = (DisplayName = "Use Triangle Method", ToolTip = "使用三角形方法生成顶底面"))

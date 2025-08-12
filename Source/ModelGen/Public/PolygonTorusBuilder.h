@@ -33,41 +33,20 @@ private:
     /** 生成参数 */
     FPolygonTorusParameters Params;
 
-    /** 生成优化的顶点 */
-    void GenerateOptimizedVertices();
+    /** 生成顶点 */
+    void GenerateVertices();
     
-    /** 生成优化的三角形 */
-    void GenerateOptimizedTriangles();
+    /** 生成三角形 */
+    void GenerateTriangles();
     
     /** 生成端盖 */
     void GenerateEndCaps();
     
-    /** 生成高级端盖 */
+    /** 生成端盖 */
     void GenerateAdvancedEndCaps();
-    
-    /** 生成圆形端盖 */
-    void GenerateCircularEndCaps();
-    
-    /** 计算优化的法线 */
-    void CalculateOptimizedNormals();
-    
-    /** 计算高级光滑 */
-    void CalculateAdvancedSmoothing();
-    
-    /** 生成光滑组 */
-    void GenerateSmoothGroups();
-    
-    /** 生成硬边标记 */
-    void GenerateHardEdges();
-    
-    /** 生成优化的UV坐标 */
-    void GenerateUVsOptimized();
     
     /** 验证和修正参数 */
     void ValidateAndClampParameters();
-    
-    /** 验证网格拓扑 */
-    void ValidateMeshTopology();
     
     /** 记录网格统计信息 */
     void LogMeshStatistics();

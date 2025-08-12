@@ -29,7 +29,7 @@ bool FHollowPrismParameters::IsValid() const
     }
 
     // 检查倒角参数
-    if (BevelRadius < 0.0f || BevelSections < 1)
+    if (BevelRadius < 0.0f || BevelSegments < 1)
     {
         return false;
     }
@@ -62,7 +62,7 @@ int32 FHollowPrismParameters::CalculateVertexCountEstimate() const
     if (BevelRadius > 0.0f)
     {
         // 顶部和底面的倒角顶点
-        BevelVertices = (InnerSides + OuterSides) * BevelSections * 2; // 内外环各2个
+        BevelVertices = (InnerSides + OuterSides) * BevelSegments * 2; // 内外环各2个
     }
     
     // 端面顶点：如果不是完整圆环
@@ -90,7 +90,7 @@ int32 FHollowPrismParameters::CalculateTriangleCountEstimate() const
     if (BevelRadius > 0.0f)
     {
         // 顶部和底面的倒角三角形
-        BevelTriangles = (InnerSides + OuterSides) * BevelSections * 2; // 内外环各2个
+        BevelTriangles = (InnerSides + OuterSides) * BevelSegments * 2; // 内外环各2个
     }
     
     // 端面三角形：如果不是完整圆环
@@ -118,7 +118,7 @@ bool FHollowPrismParameters::operator==(const FHollowPrismParameters& Other) con
            OuterSides == Other.OuterSides &&
            ArcAngle == Other.ArcAngle &&
            BevelRadius == Other.BevelRadius &&
-           BevelSections == Other.BevelSections &&
+           BevelSegments == Other.BevelSegments &&
            bUseTriangleMethod == Other.bUseTriangleMethod &&
            bFlipNormals == Other.bFlipNormals &&
            bDisableDebounce == Other.bDisableDebounce;

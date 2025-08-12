@@ -3,7 +3,7 @@
 /**
  * @file FrustumBuilder.h
  * @brief 截锥体网格构建器
- * 
+ *
  * 该类负责生成截锥体的几何数据，继承自FModelGenMeshBuilder。
  * 提供了完整的截锥体生成功能，包括侧面、顶底面和倒角处理。
  */
@@ -11,9 +11,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "ModelGenMeshBuilder.h"
 #include "FrustumParameters.h"
-
+#include "ModelGenMeshBuilder.h"
 
 /**
  * 截锥体网格构建器
@@ -31,50 +30,65 @@ public:
 
 private:
     FFrustumParameters Params;
-    
+
     // 侧边环的顶点索引，用于倒角弧线生成
     TArray<int32> SideBottomRing;
     TArray<int32> SideTopRing;
 
+    // 通用方法：生成顶点环
+    TArray<int32> GenerateVertexRing(float Radius, float Z, int32 Sides, float UVV);
+
+    // 通用方法：生成顶底面几何体
+    void GenerateCapGeometry(float Z, int32 Sides, float Radius, bool bIsTop);
+
+    // 通用方法：生成倒角几何体
+    void GenerateBevelGeometry(bool bIsTop);
+
+    // 通用方法：计算UV坐标
+    FVector2D CalculateUV(float SideIndex, float Sides, float HeightRatio);
+
+    // 通用方法：计算弯曲后的半径
+    float CalculateBentRadius(float BaseRadius, float HeightRatio);
+
+    // 通用方法：计算倒角高度
+    float CalculateBevelHeight(float Radius);
+
+    // 通用方法：计算高度比例（用于UV坐标）
+    float CalculateHeightRatio(float Z);
+
+    // 通用方法：计算角度步长
+    float CalculateAngleStep(int32 Sides);
+
     void GenerateBaseGeometry();
-    
     void CreateSideGeometry();
-
-    void GenerateTopGeometry(float Z);
-    
-    void GenerateBottomGeometry(float Z);
-    
-    void GenerateTopBevelGeometry(float StartZ);
-    
-    void GenerateBottomBevelGeometry(float StartZ);
-    
+    void GenerateTopGeometry();
+    void GenerateBottomGeometry();
+    void GenerateTopBevelGeometry();
+    void GenerateBottomBevelGeometry();
     void GenerateEndCaps();
-    
-    void GenerateThickEndCaps();
-    
     void GenerateEndCapTriangles(float Angle, const FVector& Normal, bool IsStart);
+    void GenerateBevelArcTriangles(float Angle, const FVector& Normal, bool IsStart, float Z1, float Z2, bool IsTop);
+    void GenerateBevelArcTrianglesWithCaps(float Angle, const FVector& Normal, bool IsStart, float Z1, float Z2, bool IsTop,
+        int32 CenterVertex, int32 CapCenterVertex);
     
-    void GenerateBevelArcTriangles(float Angle, const FVector& Normal, bool IsStart, 
-                                    float Z1, float Z2, bool IsTop);
+    // 新增：端面重构相关方法
+    void GenerateEndCapVertices(float Angle, const FVector& Normal, bool IsStart,
+                               TArray<int32>& OutOrderedVertices);
     
-    void GenerateBevelArcTrianglesWithCaps(float Angle, const FVector& Normal, bool IsStart, 
-                                            float Z1, float Z2, bool IsTop, int32 CenterVertex, 
-                                            int32 CapCenterVertex);
-
-private:
-    void GenerateThickEndCap(float Z, float Thickness, bool IsTop);
-
-    struct FBevelArcControlPoints
-    {
-        FVector StartPoint;      // 起点：侧边顶点
-        FVector EndPoint;        // 终点：顶/底面顶点
-        FVector ControlPoint;    // 控制点：原始顶点位置
-    };
-
-    FBevelArcControlPoints CalculateBevelControlPoints(const FVector& SideVertex, 
-                                                          const FVector& TopBottomVertex);
+    // 新增：生成端面倒角顶点
+    void GenerateEndCapBevelVertices(float Angle, const FVector& Normal, bool IsStart,
+                                    bool bIsTopBevel, TArray<int32>& OutVertices);
     
-    FVector CalculateBevelArcPoint(const FBevelArcControlPoints& ControlPoints, float t);
+    // 新增：生成端面侧边顶点
+    void GenerateEndCapSideVertices(float Angle, const FVector& Normal, bool IsStart,
+                                   TArray<int32>& OutVertices);
     
-    FVector CalculateBevelArcTangent(const FBevelArcControlPoints& ControlPoints, float t);
+    // 新增：生成端面三角形
+    void GenerateEndCapTrianglesFromVertices(const TArray<int32>& OrderedVertices, bool IsStart);
+    
+    // 新增：端面计算辅助方法
+    void CalculateEndCapBevelHeights(float& OutTopBevelHeight, float& OutBottomBevelHeight) const;
+    void CalculateEndCapZRange(float TopBevelHeight, float BottomBevelHeight, 
+                              float& OutStartZ, float& OutEndZ) const;
+    float CalculateEndCapRadiusAtHeight(float Z) const;
 };
