@@ -35,6 +35,9 @@ private:
     TArray<int32> SideBottomRing;
     TArray<int32> SideTopRing;
 
+    // 新增：存储倒角和侧面的起点位置信息，避免重复计算
+    TArray<int32> EndCapConnectionPoints;      // 存储所有端面连接点的位置信息
+
     // 通用方法：生成顶点环
     TArray<int32> GenerateVertexRing(float Radius, float Z, int32 Sides, float UVV);
 
@@ -66,32 +69,21 @@ private:
     void GenerateTopBevelGeometry();
     void GenerateBottomBevelGeometry();
     void GenerateEndCaps();
-    void GenerateEndCapTriangles(float Angle, const FVector& Normal, bool IsStart);
-    void GenerateBevelArcTriangles(float Angle, const FVector& Normal, bool IsStart, float Z1, float Z2, bool IsTop);
-    void GenerateBevelArcTrianglesWithCaps(float Angle, const FVector& Normal, bool IsStart, float Z1, float Z2, bool IsTop,
-        int32 CenterVertex, int32 CapCenterVertex);
     
-    // 新增：端面重构相关方法
-    void GenerateEndCapVertices(float Angle, const FVector& Normal, bool IsStart,
-                               TArray<int32>& OutOrderedVertices);
+    // 统一的端面生成函数，整合所有EndCap相关逻辑
+    void GenerateEndCap(float Angle, bool IsStart);
     
-    // 新增：生成端面倒角顶点
-    void GenerateEndCapBevelVertices(float Angle, const FVector& Normal, bool IsStart,
-                                    bool bIsTopBevel, TArray<int32>& OutVertices, float SideRadius);
-    
-    // 新增：生成端面侧边顶点
-    void GenerateEndCapSideVertices(float Angle, const FVector& Normal, bool IsStart,
-                                   TArray<int32>& OutVertices, float TopSideRadius, float BottomSideRadius);
-    
-    // 新增：生成端面三角形
+    // 端面三角形生成
     void GenerateEndCapTrianglesFromVertices(const TArray<int32>& OrderedVertices, bool IsStart);
     
-    // 新增：端面计算辅助方法
-    void CalculateEndCapBevelHeights(float& OutTopBevelHeight, float& OutBottomBevelHeight) const;
-    void CalculateEndCapZRange(float TopBevelHeight, float BottomBevelHeight, 
-                              float& OutStartZ, float& OutEndZ) const;
+    // 端面计算辅助方法
     float CalculateEndCapRadiusAtHeight(float Z) const;
     
-    // 新增：专门用于倒角的半径计算方法，不受MinBendRadius影响
-    float CalculateBevelRadiusAtHeight(float Z) const;
+    // 端面连接点管理
+    void RecordEndCapConnectionPoint(int32 VertexIndex);
+    void ClearEndCapConnectionPoints();
+    const TArray<int32>& GetEndCapConnectionPoints() const;
+    
+    // 重写基类的Clear方法
+    void Clear();
 };
