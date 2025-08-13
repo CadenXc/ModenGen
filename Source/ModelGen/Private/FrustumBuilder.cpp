@@ -12,8 +12,8 @@ void FFrustumBuilder::Clear()
     // 调用基类的Clear方法
     FModelGenMeshBuilder::Clear();
     
-    // 清除端面连接点
-    ClearEndCapConnectionPoints();
+    // 清除所有连接点
+    ClearAllConnectionPoints();
 }
 
 bool FFrustumBuilder::Generate(FModelGenMeshData& OutMeshData)
@@ -89,16 +89,20 @@ void FFrustumBuilder::CreateSideGeometry()
     const float HalfHeight = Params.GetHalfHeight();
 
     // 生成上下两个环的顶点 - 使用通用方法
+    // 确保顶部环的位置与倒角底部完全一致
+    const float TopBevelStartZ = HalfHeight - CalculateBevelHeight(Params.TopRadius);
+    const float BottomBevelStartZ = -HalfHeight + CalculateBevelHeight(Params.BottomRadius);
+    
     TArray<int32> TopRing = GenerateVertexRing(
         Params.TopRadius, 
-        HalfHeight - Params.BevelRadius, 
+        TopBevelStartZ, 
         Params.TopSides, 
         0.0f
     );
     
     TArray<int32> BottomRing = GenerateVertexRing(
         Params.BottomRadius, 
-        -HalfHeight + Params.BevelRadius, 
+        BottomBevelStartZ, 
         Params.BottomSides, 
         1.0f
     );
@@ -195,10 +199,10 @@ void FFrustumBuilder::CreateSideGeometry()
     }
     VertexRings.Add(TopRing);
 
-    for (int32 i = VertexRings.Num() - 2; i > 0; i--)
+    for (int32 i = VertexRings.Num() - 1; i >= 0; i--)
     {
-        // 记录顶部环起始点的顶点索引
-        RecordEndCapConnectionPoint(VertexRings[i][0]);
+        // 记录中间环起始点的顶点索引到侧面连接点
+        RecordSideConnectionPoint(VertexRings[i][0]);
     }
 
     // 连接三角形 - 确保只有外面可见
@@ -278,50 +282,169 @@ void FFrustumBuilder::GenerateEndCaps()
 
 void FFrustumBuilder::GenerateEndCap(float Angle, bool IsStart)
 {
-    // 检查是否有足够的连接点来生成端面
-    if (EndCapConnectionPoints.Num() < 3)
+    if (IsStart)
     {
-        UE_LOG(LogTemp, Warning, TEXT("GenerateEndCap - %s端面连接点不足，无法生成端面"), 
-               IsStart ? TEXT("起始") : TEXT("结束"));
-        return;
+        GenerateStartEndCap();
     }
+    else
+    {
+        GenerateEndEndCap(Angle);
+    }
+}
+
+void FFrustumBuilder::GenerateStartEndCap()
+{
+    // 起始端盖的实现
+    const FVector TopCenterPos(0.0f, 0.0f, Params.GetHalfHeight());
+    const FVector BottomCenterPos(0.0f, 0.0f, -Params.GetHalfHeight());
+    const int32 TopCenterVertex = GetOrAddVertex(TopCenterPos, {0.0f, 0.0f, 1.0f}, FVector2D(0.5f, 0.5f));
+    const int32 BottomCenterVertex = GetOrAddVertex(BottomCenterPos, {0.0f, 0.0f, -1.0f}, FVector2D(0.5f, 0.5f));
     
+    const int32 CenterVertex = GetOrAddVertex(FVector(0, 0, 0), FVector(1.0f, 0.0f, 0.0f), FVector2D(0.5f, 0.5f));
+
+    // 上倒角的弧
+    for (int32 i = 0; i < TopArcConnectionPoints.Num() - 1; ++i)
+    {
+        const int32 V1 = TopArcConnectionPoints[i];
+        const int32 V2 = TopArcConnectionPoints[i + 1];
+
+        AddTriangle(V1, V2, TopCenterVertex);
+    }
+    AddTriangle(SideConnectionPoints[0], CenterVertex, TopCenterVertex);
+
+    // 侧边
+    for (int32 i = 0; i < SideConnectionPoints.Num() - 1; ++i)
+    {
+        const int32 V1 = SideConnectionPoints[i];
+        const int32 V2 = SideConnectionPoints[i + 1];
+
+        AddTriangle(V1, V2, CenterVertex);
+    }
+
+    AddTriangle(SideConnectionPoints[SideConnectionPoints.Num() - 1], BottomCenterVertex, CenterVertex);
+
+    // 下倒角的弧
+    for (int32 i = 0; i < BottomArcConnectionPoints.Num() - 1; ++i)
+    {
+        const int32 V1 = BottomArcConnectionPoints[i];
+        const int32 V2 = BottomArcConnectionPoints[i + 1];
+
+        AddTriangle(V1, V2, BottomCenterVertex);
+    }
+}
+
+void FFrustumBuilder::GenerateEndEndCap(float Angle)
+{
+    // 结束端盖的实现
     // 根据角度生成对应的端面连接点
-    TArray<int32> RotatedConnectionPoints;
-    RotatedConnectionPoints.Reserve(EndCapConnectionPoints.Num());
+    TArray<int32> RotatedTopArcPoints;
+    TArray<int32> RotatedSidePoints;
+    TArray<int32> RotatedBottomArcPoints;
     
     // 计算旋转矩阵
     const FQuat Rotation = FQuat(FVector::UpVector, Angle);
     
-    for (int32 VertexIndex : EndCapConnectionPoints)
+    // 旋转上弧连接点
+    for (int32 i = 0; i < TopArcConnectionPoints.Num(); ++i)
     {
-        // 获取原始顶点位置
+        int32 VertexIndex = TopArcConnectionPoints[i];
         FVector OriginalPos = GetPosByIndex(VertexIndex);
-        
-        // 应用旋转变换
         FVector RotatedPos = Rotation.RotateVector(OriginalPos);
-        
-        // 创建新的旋转后顶点
         FVector Normal = FVector(RotatedPos.X, RotatedPos.Y, 0.0f).GetSafeNormal();
         if (Normal.IsNearlyZero())
         {
             Normal = FVector(1.0f, 0.0f, 0.0f);
         }
         
-        // 计算UV坐标（保持与原始顶点一致，使用默认UV）
-        FVector2D UV(0.5f, 0.5f);
+        // 计算正确的UV坐标：基于原始位置在弧线上的位置，与起始端盖保持一致
+        float U = static_cast<float>(i) / FMath::Max(1, TopArcConnectionPoints.Num() - 1);
+        float V = 0.0f; // 上弧的V坐标
+        FVector2D UV(U, V);
         
-        // 添加旋转后的顶点
         int32 NewVertexIndex = GetOrAddVertex(RotatedPos, Normal, UV);
-        RotatedConnectionPoints.Add(NewVertexIndex);
+        RotatedTopArcPoints.Add(NewVertexIndex);
     }
     
-    // 使用旋转后的连接点生成端面三角形
-    GenerateEndCapTrianglesFromVertices(RotatedConnectionPoints, IsStart);
+    // 旋转侧面连接点
+    for (int32 i = 0; i < SideConnectionPoints.Num(); ++i)
+    {
+        int32 VertexIndex = SideConnectionPoints[i];
+        FVector OriginalPos = GetPosByIndex(VertexIndex);
+        FVector RotatedPos = Rotation.RotateVector(OriginalPos);
+        FVector Normal = FVector(RotatedPos.X, RotatedPos.Y, 0.0f).GetSafeNormal();
+        if (Normal.IsNearlyZero())
+        {
+            Normal = FVector(1.0f, 0.0f, 0.0f);
+        }
+        
+        // 计算正确的UV坐标：基于高度比例，与起始端盖保持一致
+        float HeightRatio = (OriginalPos.Z + Params.GetHalfHeight()) / Params.Height;
+        float U = 0.0f; // 侧面的U坐标
+        float V = HeightRatio; // 侧面的V坐标基于高度
+        FVector2D UV(U, V);
+        
+        int32 NewVertexIndex = GetOrAddVertex(RotatedPos, Normal, UV);
+        RotatedSidePoints.Add(NewVertexIndex);
+    }
     
-    // 调试输出：验证端面生成
-    UE_LOG(LogTemp, Log, TEXT("GenerateEndCap - %s端面生成完成，使用 %d 个旋转后的连接点"), 
-           IsStart ? TEXT("起始") : TEXT("结束"), RotatedConnectionPoints.Num());
+    // 旋转下弧连接点
+    for (int32 i = 0; i < BottomArcConnectionPoints.Num(); ++i)
+    {
+        int32 VertexIndex = BottomArcConnectionPoints[i];
+        FVector OriginalPos = GetPosByIndex(VertexIndex);
+        FVector RotatedPos = Rotation.RotateVector(OriginalPos);
+        FVector Normal = FVector(RotatedPos.X, RotatedPos.Y, 0.0f).GetSafeNormal();
+        if (Normal.IsNearlyZero())
+        {
+            Normal = FVector(1.0f, 0.0f, 0.0f);
+        }
+        
+        // 计算正确的UV坐标：基于原始位置在弧线上的位置，与起始端盖保持一致
+        float U = static_cast<float>(i) / FMath::Min(1, BottomArcConnectionPoints.Num() - 1);
+        float V = 1.0f; // 下弧的V坐标
+        FVector2D UV(U, V);
+        
+        int32 NewVertexIndex = GetOrAddVertex(RotatedPos, Normal, UV);
+        RotatedBottomArcPoints.Add(NewVertexIndex);
+    }
+    
+    // 生成结束端盖的三角形（反转渲染方向）
+    const FVector TopCenterPos(0.0f, 0.0f, Params.GetHalfHeight());
+    const FVector BottomCenterPos(0.0f, 0.0f, -Params.GetHalfHeight());
+    const int32 TopCenterVertex = GetOrAddVertex(TopCenterPos, {0.0f, 0.0f, 1.0f}, FVector2D(0.5f, 0.5f));
+    const int32 BottomCenterVertex = GetOrAddVertex(BottomCenterPos, {0.0f, 0.0f, -1.0f}, FVector2D(0.5f, 0.5f));
+    
+    const int32 CenterVertex = GetOrAddVertex(FVector(0, 0, 0), FVector(1.0f, 0.0f, 0.0f), FVector2D(0.5f, 0.5f));
+
+    // 上倒角的弧（反转方向）
+    for (int32 i = 0; i < RotatedTopArcPoints.Num() - 1; ++i)
+    {
+        const int32 V1 = RotatedTopArcPoints[i];
+        const int32 V2 = RotatedTopArcPoints[i + 1];
+
+        AddTriangle(V2, V1, TopCenterVertex); // 反转顶点顺序
+    }
+    AddTriangle(TopCenterVertex, CenterVertex, RotatedSidePoints[0]); // 反转顶点顺序
+
+    // 侧边（反转方向）
+    for (int32 i = 0; i < RotatedSidePoints.Num() - 1; ++i)
+    {
+        const int32 V1 = RotatedSidePoints[i];
+        const int32 V2 = RotatedSidePoints[i + 1];
+
+        AddTriangle(V2, V1, CenterVertex); // 反转顶点顺序
+    }
+
+    AddTriangle(CenterVertex, BottomCenterVertex, RotatedSidePoints[RotatedSidePoints.Num() - 1]); // 反转顶点顺序
+
+    // 下倒角的弧（反转方向）
+    for (int32 i = 0; i < RotatedBottomArcPoints.Num() - 1; ++i)
+    {
+        const int32 V1 = RotatedBottomArcPoints[i];
+        const int32 V2 = RotatedBottomArcPoints[i + 1];
+
+        AddTriangle(V2, V1, BottomCenterVertex); // 反转顶点顺序
+    }
 }
 
 TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 Sides, float UVV)
@@ -364,11 +487,6 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bo
     const FVector CenterPos(0.0f, 0.0f, Z);
     const int32 CenterVertex = GetOrAddVertex(CenterPos, Normal, FVector2D(0.5f, 0.5f));
 
-    if (bIsTop)
-    {
-		RecordEndCapConnectionPoint(CenterVertex);
-    }
-
     const float AngleStep = CalculateAngleStep(Sides);
 
     for (int32 SideIndex = 0; SideIndex < Sides; ++SideIndex)
@@ -394,7 +512,14 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bo
 
         if (SideIndex == 0)
         {
-            RecordEndCapConnectionPoint(V1);
+            if (bIsTop)
+            {
+                RecordTopArcConnectionPoint(V1);
+            }
+            else
+            {
+                RecordBottomArcConnectionPoint(V1);
+            }
         }
 
         // 添加三角形，确保正确的顶点顺序
@@ -408,27 +533,23 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bo
         }
     }
 
-    if (!bIsTop)
-    {
-		RecordEndCapConnectionPoint(CenterVertex);
-    }
 }
 
 void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop)
 {
     const float HalfHeight = Params.GetHalfHeight();
     const float BevelRadius = Params.BevelRadius;
-    const int32 BevelSections = Params.BevelSections;
+    const int32 BevelSegments = Params.BevelSegments;
     
     // 根据是顶部还是底部选择参数
     const float Radius = bIsTop ? Params.TopRadius : Params.BottomRadius;
     const int32 Sides = bIsTop ? Params.TopSides : Params.BottomSides;
     const TArray<int32>& SideRing = bIsTop ? SideTopRing : SideBottomRing;
-    // 使用通用方法计算倒角高度
+    // 使用通用方法计算倒角高度，确保与侧边环位置完全一致
     const float StartZ = bIsTop ? (HalfHeight - CalculateBevelHeight(Radius)) : (-HalfHeight + CalculateBevelHeight(Radius));
     const float EndZ = bIsTop ? HalfHeight : -HalfHeight;
     
-    if (BevelRadius <= 0.0f || BevelSections <= 0)
+    if (BevelRadius <= 0.0f || BevelSegments <= 0)
         return;
 
     // 使用侧边环的顶点位置作为倒角起点，确保完全一致
@@ -437,18 +558,20 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop)
     const float AngleStep = CalculateAngleStep(Sides);
 	TArray<int32> StartRingForEndCap;
 
-    for (int32 i = 0; i <= BevelSections; ++i)
+    for (int32 i = 0; i <= BevelSegments; ++i)
     {
-        const float alpha = static_cast<float>(i) / BevelSections;    // 沿倒角弧线的进度
+        const float alpha = static_cast<float>(i) / BevelSegments;    // 沿倒角弧线的进度
 
         // 倒角起点
         FVector StartPos;
         if (i == 0 && SideRing.Num() > 0)
         {
+            // 使用侧边环的确切位置作为倒角起点，确保完全一致
             StartPos = GetPosByIndex(SideRing[0]);
         }
         else
         {
+            // 对于后续的倒角环，使用计算出的位置
             const float Alpha_Height = (StartZ + HalfHeight) / Params.Height;
             const float RadiusAtZ = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha_Height);
             // 倒角不受BendAmount影响，保持原始半径
@@ -472,10 +595,12 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop)
             
             if (i == 0 && s < SideRing.Num())
             {
+                // 第一个环：直接使用侧边环的顶点，确保完全一致
                 Position = GetPosByIndex(SideRing[s]);
             }
             else
             {
+                // 后续环：计算新的位置
                 const float angle = s * AngleStep;
                 Position = FVector(CurrentRadius * FMath::Cos(angle), CurrentRadius * FMath::Sin(angle), CurrentZ);
             }
@@ -525,14 +650,14 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop)
 	{
         for (int i = StartRingForEndCap.Num() - 1; i >= 0; i--)
         {
-			RecordEndCapConnectionPoint(StartRingForEndCap[i]);
+			RecordTopArcConnectionPoint(StartRingForEndCap[i]);
         }
 	}
 	else
 	{
         for (int i = 0; i < StartRingForEndCap.Num(); i++)
         {
-			RecordEndCapConnectionPoint(StartRingForEndCap[i]);
+			RecordBottomArcConnectionPoint(StartRingForEndCap[i]);
         }
 	}
 }
@@ -584,105 +709,6 @@ float FFrustumBuilder::CalculateAngleStep(int32 Sides)
     return FMath::DegreesToRadians(Params.ArcAngle) / Sides;
 }
 
-// 端面生成重构完成 - 所有逻辑已整合到GenerateEndCap函数中
-
-void FFrustumBuilder::GenerateEndCapTrianglesFromVertices(const TArray<int32>& OrderedVertices, bool IsStart)
-{
-    // 使用Frustum的中心点（0,0,0）
-    const int32 CenterVertex = GetOrAddVertex(FVector(0, 0, 0), FVector(1.0f, 0.0f, 0.0f), FVector2D(0.5f, 0.5f));
-
-    // 检查顶点数量
-    if (OrderedVertices.Num() < 3)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("GenerateEndCapTrianglesFromVertices - 顶点数量不足，无法生成多边形"));
-        return;
-    }
-
-    // 使用多边形三角剖分算法，而不是扇形分解
-    // 这样可以防止扇面重叠，生成更合理的三角形网格
-    
-    // 方法1：使用耳切法（Ear Clipping）进行三角剖分
-    TArray<int32> RemainingVertices = OrderedVertices;
-    
-    // 添加中心点到剩余顶点列表
-    RemainingVertices.Add(CenterVertex);
-    
-    // 使用改进的多边形三角剖分算法
-    // 方法：使用扇形分解的改进版本，但避免重叠
-    const int32 VertexCount = OrderedVertices.Num();
-    
-    if (VertexCount == 3)
-    {
-        // 三角形：直接连接三个顶点
-        const int32 V1 = OrderedVertices[0];
-        const int32 V2 = OrderedVertices[1];
-        const int32 V3 = OrderedVertices[2];
-        
-        if (IsStart)
-        {
-            AddTriangle(V1, V2, V3);
-        }
-        else
-        {
-            AddTriangle(V3, V2, V1);
-        }
-    }
-    else if (VertexCount == 4)
-    {
-        // 四边形：使用对角线分割，避免重叠
-        const int32 V1 = OrderedVertices[0];
-        const int32 V2 = OrderedVertices[1];
-        const int32 V3 = OrderedVertices[2];
-        const int32 V4 = OrderedVertices[3];
-        
-        if (IsStart)
-        {
-            AddTriangle(V1, V2, V3);
-            AddTriangle(V1, V3, V4);
-        }
-        else
-        {
-            AddTriangle(V3, V2, V1);
-            AddTriangle(V4, V3, V1);
-        }
-    }
-    else
-    {
-        // 多边形：使用智能三角剖分算法避免重叠
-        // 方法：使用耳切法（Ear Clipping）的简化版本
-        
-        // 计算多边形的重心作为更好的中心点
-        FVector Centroid(0.0f, 0.0f, 0.0f);
-        for (int32 i = 0; i < VertexCount; ++i)
-        {
-            Centroid += GetPosByIndex(OrderedVertices[i]);
-        }
-        Centroid /= static_cast<float>(VertexCount);
-        
-        // 使用重心作为中心点，而不是原点
-        const int32 CentroidVertex = GetOrAddVertex(Centroid, FVector(0.0f, 0.0f, 1.0f), FVector2D(0.5f, 0.5f));
-        
-        // 使用改进的扇形分解，但选择最佳的中心点
-        for (int32 i = 0; i < VertexCount; ++i)
-        {
-            const int32 V1 = OrderedVertices[i];
-            const int32 V2 = OrderedVertices[(i + 1) % VertexCount];
-            
-            if (IsStart)
-            {
-                // 起始端面：确保法线方向正确（指向外部）
-                AddTriangle(V1, V2, CentroidVertex);
-            }
-            else
-            {
-                // 结束端面：反转渲染方向，翻转顶点顺序以保持法线方向一致（指向外部）
-                AddTriangle(V2, V1, CentroidVertex);
-            }
-        }
-    }
-}
-
-// 这些函数已被整合到GenerateEndCap中，不再需要
 
 float FFrustumBuilder::CalculateEndCapRadiusAtHeight(float Z) const
 {
@@ -709,27 +735,47 @@ float FFrustumBuilder::CalculateEndCapRadiusAtHeight(float Z) const
 // 此函数已被整合到GenerateEndCap中，不再需要
 
 // 新增：端面连接点管理方法实现
-void FFrustumBuilder::RecordEndCapConnectionPoint(int32 VertexIndex)
+void FFrustumBuilder::RecordTopArcConnectionPoint(int32 VertexIndex)
 {
-    EndCapConnectionPoints.Add(VertexIndex);
+    TopArcConnectionPoints.Add(VertexIndex);
     
-    UE_LOG(LogTemp, Log, TEXT("RecordEndCapConnectionPoint - 记录连接点: 顶点索引=%d"), VertexIndex);
+    UE_LOG(LogTemp, Log, TEXT("RecordTopArcConnectionPoint - 记录上弧连接点: 顶点索引=%d"), VertexIndex);
 }
 
-const TArray<int32>& FFrustumBuilder::GetEndCapConnectionPoints() const
+void FFrustumBuilder::RecordSideConnectionPoint(int32 VertexIndex)
 {
-    return EndCapConnectionPoints;
-}
-
-// 此方法已被简化，使用GetEndCapConnectionPoints()获取所有连接点
-
-void FFrustumBuilder::ClearEndCapConnectionPoints()
-{
-    EndCapConnectionPoints.Empty();
+    SideConnectionPoints.Add(VertexIndex);
     
-    UE_LOG(LogTemp, Log, TEXT("ClearEndCapConnectionPoints - 已清除所有端面连接点"));
+    UE_LOG(LogTemp, Log, TEXT("RecordSideConnectionPoint - 记录侧面连接点: 顶点索引=%d"), VertexIndex);
 }
 
-// 此方法已被简化，使用RecordEndCapConnectionPoint()记录连接点
+void FFrustumBuilder::RecordBottomArcConnectionPoint(int32 VertexIndex)
+{
+    BottomArcConnectionPoints.Add(VertexIndex);
+    
+    UE_LOG(LogTemp, Log, TEXT("RecordBottomArcConnectionPoint - 记录下弧连接点: 顶点索引=%d"), VertexIndex);
+}
 
-// 此方法已被简化，使用GetEndCapConnectionPoints()获取所有连接点
+const TArray<int32>& FFrustumBuilder::GetTopArcConnectionPoints() const
+{
+    return TopArcConnectionPoints;
+}
+
+const TArray<int32>& FFrustumBuilder::GetSideConnectionPoints() const
+{
+    return SideConnectionPoints;
+}
+
+const TArray<int32>& FFrustumBuilder::GetBottomArcConnectionPoints() const
+{
+    return BottomArcConnectionPoints;
+}
+
+void FFrustumBuilder::ClearAllConnectionPoints()
+{
+    TopArcConnectionPoints.Empty();
+    SideConnectionPoints.Empty();
+    BottomArcConnectionPoints.Empty();
+    
+    UE_LOG(LogTemp, Log, TEXT("ClearAllConnectionPoints - 已清除所有连接点"));
+}

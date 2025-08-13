@@ -17,7 +17,7 @@ bool FFrustumParameters::IsValid() const
     }
 
     // 检查倒角参数
-    if (BevelRadius < 0.0f || BevelSections < 1)
+    if (BevelRadius < 0.0f || BevelSegments < 1)
     {
         return false;
     }
@@ -56,9 +56,9 @@ int32 FFrustumParameters::CalculateVertexCountEstimate() const
     if (BevelRadius > 0.0f)
     {
         // 顶部和底面的倒角顶点
-        BevelVertices = TopSides * BevelSections + BottomSides * BevelSections;
+        BevelVertices = TopSides * BevelSegments + BottomSides * BevelSegments;
         // 侧面的倒角顶点
-        BevelVertices += HeightSegments * MaxSides * BevelSections;
+        BevelVertices += HeightSegments * MaxSides * BevelSegments;
     }
 
     return BaseVertices + SideVertices + BevelVertices;
@@ -83,9 +83,9 @@ int32 FFrustumParameters::CalculateTriangleCountEstimate() const
     if (BevelRadius > 0.0f)
     {
         // 顶部和底面的倒角三角形
-        BevelTriangles = TopSides * BevelSections * 2 + BottomSides * BevelSections * 2;
+        BevelTriangles = TopSides * BevelSegments * 2 + BottomSides * BevelSegments * 2;
         // 侧面的倒角三角形
-        BevelTriangles += HeightSegments * MaxSides * BevelSections * 2;
+        BevelTriangles += HeightSegments * MaxSides * BevelSegments * 2;
     }
 
     return BaseTriangles + SideTriangles + BevelTriangles;
@@ -105,7 +105,7 @@ bool FFrustumParameters::operator==(const FFrustumParameters& Other) const
            BottomSides == Other.BottomSides &&
            HeightSegments == Other.HeightSegments &&
            BevelRadius == Other.BevelRadius &&
-           BevelSections == Other.BevelSections &&
+           BevelSegments == Other.BevelSegments &&
            BendAmount == Other.BendAmount &&
            MinBendRadius == Other.MinBendRadius &&
            ArcAngle == Other.ArcAngle &&

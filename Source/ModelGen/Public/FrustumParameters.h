@@ -63,7 +63,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Bevel", 
         meta = (ClampMin = "1", UIMin = "1", DisplayName = "Bevel Sections", 
         ToolTip = "倒角的分段数，影响倒角的平滑度"))
-    int32 BevelSections = 4;
+    int32 BevelSegments = 4;
 
     //~ Begin Bending Parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Bending", 

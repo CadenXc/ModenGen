@@ -35,8 +35,10 @@ private:
     TArray<int32> SideBottomRing;
     TArray<int32> SideTopRing;
 
-    // 新增：存储倒角和侧面的起点位置信息，避免重复计算
-    TArray<int32> EndCapConnectionPoints;      // 存储所有端面连接点的位置信息
+    // 新增：分别存储上弧、侧面和下弧的连接点位置信息，避免重复计算
+    TArray<int32> TopArcConnectionPoints;      // 存储上弧连接点的位置信息
+    TArray<int32> SideConnectionPoints;        // 存储侧面连接点的位置信息
+    TArray<int32> BottomArcConnectionPoints;   // 存储下弧连接点的位置信息
 
     // 通用方法：生成顶点环
     TArray<int32> GenerateVertexRing(float Radius, float Z, int32 Sides, float UVV);
@@ -73,16 +75,21 @@ private:
     // 统一的端面生成函数，整合所有EndCap相关逻辑
     void GenerateEndCap(float Angle, bool IsStart);
     
-    // 端面三角形生成
-    void GenerateEndCapTrianglesFromVertices(const TArray<int32>& OrderedVertices, bool IsStart);
+    // 分别生成起始端盖和结束端盖
+    void GenerateStartEndCap();
+    void GenerateEndEndCap(float Angle);
     
     // 端面计算辅助方法
     float CalculateEndCapRadiusAtHeight(float Z) const;
     
     // 端面连接点管理
-    void RecordEndCapConnectionPoint(int32 VertexIndex);
-    void ClearEndCapConnectionPoints();
-    const TArray<int32>& GetEndCapConnectionPoints() const;
+    void RecordTopArcConnectionPoint(int32 VertexIndex);
+    void RecordSideConnectionPoint(int32 VertexIndex);
+    void RecordBottomArcConnectionPoint(int32 VertexIndex);
+    void ClearAllConnectionPoints();
+    const TArray<int32>& GetTopArcConnectionPoints() const;
+    const TArray<int32>& GetSideConnectionPoints() const;
+    const TArray<int32>& GetBottomArcConnectionPoints() const;
     
     // 重写基类的Clear方法
     void Clear();
