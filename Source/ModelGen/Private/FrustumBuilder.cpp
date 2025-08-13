@@ -74,10 +74,9 @@ int32 FFrustumBuilder::CalculateTriangleCountEstimate() const
 
 void FFrustumBuilder::GenerateBaseGeometry()
 {
-
+	CreateSideGeometry();
     GenerateTopGeometry();
 	GenerateTopBevelGeometry();
-	CreateSideGeometry();
 	GenerateBottomBevelGeometry();
     GenerateBottomGeometry();
 
@@ -541,52 +540,41 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop)
     const float BevelRadius = Params.BevelRadius;
     const int32 BevelSegments = Params.BevelSegments;
     
+    if (BevelRadius <= 0.0f || BevelSegments <= 0)
+    {
+        return;
+    }
+
     // 根据是顶部还是底部选择参数
     const float Radius = bIsTop ? Params.TopRadius : Params.BottomRadius;
     const int32 Sides = bIsTop ? Params.TopSides : Params.BottomSides;
     const TArray<int32>& SideRing = bIsTop ? SideTopRing : SideBottomRing;
-    // 使用通用方法计算倒角高度，确保与侧边环位置完全一致
-    const float StartZ = bIsTop ? (HalfHeight - CalculateBevelHeight(Radius)) : (-HalfHeight + CalculateBevelHeight(Radius));
-    const float EndZ = bIsTop ? HalfHeight : -HalfHeight;
     
-    if (BevelRadius <= 0.0f || BevelSegments <= 0)
-        return;
+    // 修复上倒角位置计算：直接使用侧边环的实际位置，确保与侧边环完全一致
+    const float StartZ = GetPosByIndex(SideRing[0]).Z;
+    const float EndZ = bIsTop ? HalfHeight : -HalfHeight;
 
-    // 使用侧边环的顶点位置作为倒角起点，确保完全一致
     TArray<int32> PrevRing;
-    // 使用通用方法计算角度步长
     const float AngleStep = CalculateAngleStep(Sides);
-	TArray<int32> StartRingForEndCap;
+    TArray<int32> StartRingForEndCap;
 
     for (int32 i = 0; i <= BevelSegments; ++i)
     {
-        const float alpha = static_cast<float>(i) / BevelSegments;    // 沿倒角弧线的进度
+        const float alpha = static_cast<float>(i) / BevelSegments;
 
-        // 倒角起点
-        FVector StartPos;
-        if (i == 0 && SideRing.Num() > 0)
-        {
-            // 使用侧边环的确切位置作为倒角起点，确保完全一致
-            StartPos = GetPosByIndex(SideRing[0]);
-        }
-        else
-        {
-            // 对于后续的倒角环，使用计算出的位置
-            const float Alpha_Height = (StartZ + HalfHeight) / Params.Height;
-            const float RadiusAtZ = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha_Height);
-            // 倒角不受BendAmount影响，保持原始半径
-            const float BentRadius = FMath::Max(RadiusAtZ, KINDA_SMALL_NUMBER);
-            StartPos = FVector(BentRadius, 0.0f, StartZ);
-        }
-
+        // 计算当前半径和高度
+        const float Alpha_Height = (StartZ + HalfHeight) / Params.Height;
+        const float RadiusAtZ = FMath::Lerp(Params.BottomRadius, Params.TopRadius, Alpha_Height);
+        const float BentRadius = FMath::Max(RadiusAtZ, KINDA_SMALL_NUMBER);
+        const float StartRadius = BentRadius;
+        
         const float CapRadius = FMath::Max(0.0f, Radius - Params.BevelRadius);
-        const float CurrentRadius = FMath::Lerp(StartPos.Size2D(), CapRadius, alpha);
+        const float CurrentRadius = FMath::Lerp(StartRadius, CapRadius, alpha);
         const float CurrentZ = FMath::Lerp(StartZ, EndZ, alpha);
 
         TArray<int32> CurrentRing;
         CurrentRing.Reserve(Sides + 1);
 
-        // 当ArcAngle < 360时，多生成一个起点以正确连接
         const int32 VertexCount = (Params.ArcAngle < 360.0f - KINDA_SMALL_NUMBER) ? Sides + 1 : Sides;
 
         for (int32 s = 0; s <= VertexCount; ++s)
@@ -596,6 +584,7 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop)
             if (i == 0 && s < SideRing.Num())
             {
                 // 第一个环：直接使用侧边环的顶点，确保完全一致
+                // 这样修复了上倒角与侧边环的缝隙问题
                 Position = GetPosByIndex(SideRing[s]);
             }
             else
@@ -617,7 +606,6 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop)
 
             CurrentRing.Add(GetOrAddVertex(Position, Normal, UV));
         }
-
 
         // 只在有前一个环时才生成四边形，避免重复
         if (i > 0 && PrevRing.Num() > 0)
@@ -641,25 +629,26 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop)
             }
         }
         PrevRing = CurrentRing;
+        
         // 记录当前环的第一个点
         StartRingForEndCap.Add(CurrentRing[0]);
     }
 
-	// 根据顶部/底部选择记录顺序
-	if (bIsTop)
-	{
+    // 根据顶部/底部选择记录顺序
+    if (bIsTop)
+    {
         for (int i = StartRingForEndCap.Num() - 1; i >= 0; i--)
         {
-			RecordTopArcConnectionPoint(StartRingForEndCap[i]);
+            RecordTopArcConnectionPoint(StartRingForEndCap[i]);
         }
-	}
-	else
-	{
+    }
+    else
+    {
         for (int i = 0; i < StartRingForEndCap.Num(); i++)
         {
-			RecordBottomArcConnectionPoint(StartRingForEndCap[i]);
+            RecordBottomArcConnectionPoint(StartRingForEndCap[i]);
         }
-	}
+    }
 }
 
 FVector2D FFrustumBuilder::CalculateUV(float SideIndex, float Sides, float HeightRatio)
