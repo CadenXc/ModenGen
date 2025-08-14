@@ -67,9 +67,7 @@ public:
         meta = (DisplayName = "Flip Normals"))
     bool bFlipNormals = false;
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Debug", 
-        meta = (DisplayName = "Disable Debounce"))
-    bool bDisableDebounce = false;
+
     
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|EndCaps", 
         meta = (DisplayName = "Force End Caps", ToolTip = "即使ArcAngle = 360°也强制生成端盖"))

@@ -31,6 +31,11 @@ public:
 private:
     FFrustumParameters Params;
 
+    // 角度相关的成员变量，避免重复计算
+    float StartAngle;  // 起始角度（0°）
+    float EndAngle;    // 结束角度（ArcAngle）
+    float ArcAngleRadians;  // ArcAngle的弧度值
+
     // 侧边环的顶点索引，用于倒角弧线生成
     TArray<int32> SideBottomRing;
     TArray<int32> SideTopRing;
@@ -47,8 +52,7 @@ private:
     // 通用方法：生成倒角几何体
     void GenerateBevelGeometry(bool bIsTop);
 
-    // 通用方法：计算UV坐标
-    FVector2D CalculateUV(float SideIndex, float Sides, float HeightRatio);
+
 
     // 通用方法：计算弯曲后的半径
     float CalculateBentRadius(float BaseRadius, float HeightRatio);
@@ -62,6 +66,9 @@ private:
     // 通用方法：计算角度步长
     float CalculateAngleStep(int32 Sides);
 
+    // 计算并设置角度相关的成员变量
+    void CalculateAngles();
+
     void GenerateBaseGeometry();
     void CreateSideGeometry();
     void GenerateTopGeometry();
@@ -71,13 +78,12 @@ private:
     void GenerateEndCaps();
 
     // 统一的端面生成函数，整合所有EndCap相关逻辑
-    void GenerateEndCap(float Angle, bool IsStart);
+    void GenerateEndCap(float Angle, const FVector& Normal, bool IsStart);
 
     // 端面三角形生成
-    void GenerateEndCapTrianglesFromVertices(const TArray<int32>& OrderedVertices, bool IsStart);
+    void GenerateEndCapTrianglesFromVertices(const TArray<int32>& OrderedVertices, bool IsStart, float Angle);
 
-    // 端面计算辅助方法
-    float CalculateEndCapRadiusAtHeight(float Z) const;
+
 
     // 端面连接点管理
     void RecordEndCapConnectionPoint(int32 VertexIndex);
@@ -86,4 +92,7 @@ private:
 
     // 重写基类的Clear方法
     void Clear();
+    
+    /** 基于顶点位置的稳定UV映射 - 重写父类实现 */
+    virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const override;
 };

@@ -92,8 +92,7 @@ bool FFrustumParameters::operator==(const FFrustumParameters& Other) const
            BendAmount == Other.BendAmount &&
            MinBendRadius == Other.MinBendRadius &&
            ArcAngle == Other.ArcAngle &&
-           bFlipNormals == Other.bFlipNormals &&
-           bDisableDebounce == Other.bDisableDebounce;
+           bFlipNormals == Other.bFlipNormals;
 }
 
 bool FFrustumParameters::operator!=(const FFrustumParameters& Other) const
