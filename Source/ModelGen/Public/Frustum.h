@@ -7,23 +7,16 @@
 
 #pragma once
 
-// Engine includes
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ProceduralMeshComponent.h"
 #include "FrustumParameters.h"
-
-// Generated header must be the last include
 #include "Frustum.generated.h"
 
-// Forward declarations
 class UProceduralMeshComponent;
 class FFrustumBuilder;
 struct FModelGenMeshData;
 
-/**
- * 截锥体Actor
- */
 UCLASS(BlueprintType, meta=(DisplayName = "Frustum"))
 class MODELGEN_API AFrustum : public AActor
 {
@@ -32,7 +25,6 @@ class MODELGEN_API AFrustum : public AActor
 public:
     AFrustum();
 
-    //~ Begin AActor Interface
     virtual void BeginPlay() override;
     virtual void OnConstruction(const FTransform& Transform) override;
 

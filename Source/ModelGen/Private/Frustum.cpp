@@ -37,7 +37,6 @@ void AFrustum::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
     const FName PropertyName = PropertyChangedEvent.GetPropertyName();
     const FString PropertyNameStr = PropertyName.ToString();
     
-    // 参考BevelCube的实现方式，简化变化处理逻辑
     if (PropertyNameStr.StartsWith("Parameters.") || 
         PropertyName == "bGenerateCollision" || 
         PropertyName == "bUseAsyncCooking")
@@ -57,7 +56,6 @@ void AFrustum::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyC
     const FName PropertyName = PropertyChangedEvent.GetPropertyName();
     const FString PropertyNameStr = PropertyName.ToString();
     
-    // 参考BevelCube的实现方式，简化变化处理逻辑
     if (PropertyNameStr.StartsWith("Parameters.") || 
         PropertyName == "bGenerateCollision" || 
         PropertyName == "bUseAsyncCooking")
@@ -80,8 +78,6 @@ void AFrustum::InitializeComponents()
         ProceduralMesh->SetSimulatePhysics(false);
         
         SetupCollision();
-        
-        // 在组件初始化完成后应用材质
         ApplyMaterial();
     }
 }
@@ -127,8 +123,6 @@ void AFrustum::RegenerateMesh()
         return;
     }
 
-    // 参考BevelCube的实现方式，移除防抖逻辑，提高响应速度
-
     ProceduralMesh->ClearAllMeshSections();
 
     FFrustumBuilder Builder(Parameters);
@@ -143,8 +137,6 @@ void AFrustum::RegenerateMesh()
         }
 
         MeshData.ToProceduralMesh(ProceduralMesh, 0);
-        
-        // 每次重新生成网格后都应用材质，确保材质不会丢失
         ApplyMaterial();
         SetupCollision();
     }
@@ -187,8 +179,6 @@ void AFrustum::SetMaterial(UMaterialInterface* NewMaterial)
     if (Material != NewMaterial)
     {
         Material = NewMaterial;
-        
-        // 立即应用新材质
         ApplyMaterial();
     }
 }

@@ -10,9 +10,6 @@
 #include "CoreMinimal.h"
 #include "FrustumParameters.generated.h"
 
-/**
- * 截锥体生成参数
- */
 USTRUCT(BlueprintType)
 struct MODELGEN_API FFrustumParameters
 {
@@ -63,15 +60,11 @@ public:
         meta = (UIMin = "0.0", UIMax = "360.0", DisplayName = "Arc Angle"))
     float ArcAngle = 360.0f;
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Debug", 
-        meta = (DisplayName = "Flip Normals"))
-    bool bFlipNormals = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Collision", 
+        meta = (DisplayName = "Generate Collision", ToolTip = "是否生成碰撞体"))
+    bool bGenerateCollision = true;
     
 
-    
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|EndCaps", 
-        meta = (DisplayName = "Force End Caps", ToolTip = "即使ArcAngle = 360°也强制生成端盖"))
-    bool bForceEndCaps = false;
 
 public:
     bool IsValid() const;

@@ -76,23 +76,14 @@ int32 FFrustumParameters::CalculateTriangleCountEstimate() const
 
 void FFrustumParameters::PostEditChangeProperty(const FName& PropertyName)
 {
-    // 可以在这里添加属性变更处理逻辑
 }
 
 bool FFrustumParameters::operator==(const FFrustumParameters& Other) const
 {
-    return TopRadius == Other.TopRadius &&
-           BottomRadius == Other.BottomRadius &&
-           Height == Other.Height &&
-           TopSides == Other.TopSides &&
-           BottomSides == Other.BottomSides &&
-           HeightSegments == Other.HeightSegments &&
-           BevelRadius == Other.BevelRadius &&
-           BevelSegments == Other.BevelSegments &&
-           BendAmount == Other.BendAmount &&
-           MinBendRadius == Other.MinBendRadius &&
-           ArcAngle == Other.ArcAngle &&
-           bFlipNormals == Other.bFlipNormals;
+    return TopRadius == Other.TopRadius && BottomRadius == Other.BottomRadius && Height == Other.Height &&
+           TopSides == Other.TopSides && BottomSides == Other.BottomSides && HeightSegments == Other.HeightSegments &&
+           BevelRadius == Other.BevelRadius && BevelSegments == Other.BevelSegments && BendAmount == Other.BendAmount &&
+           MinBendRadius == Other.MinBendRadius && ArcAngle == Other.ArcAngle;
 }
 
 bool FFrustumParameters::operator!=(const FFrustumParameters& Other) const

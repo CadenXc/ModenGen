@@ -37,6 +37,9 @@ protected:
 
     int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
     
+    int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal, 
+                                   const FVector2D& UV, const FVector2D& UV1);
+    
     FVector GetPosByIndex(int32 index) const;
 
     int32 AddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
@@ -56,4 +59,7 @@ protected:
     
     /** 基于顶点位置的稳定UV映射 - 子类可重写的虚函数 */
     virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const;
+    
+    /** 生成第二UV通道 - 子类可重写的虚函数 */
+    virtual FVector2D GenerateSecondaryUVCustom(const FVector& Position, const FVector& Normal) const;
 };

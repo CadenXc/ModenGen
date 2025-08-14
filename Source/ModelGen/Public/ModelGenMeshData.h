@@ -37,6 +37,9 @@ public:
     TArray<FVector2D> UVs;
     
     UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Vertices")
+    TArray<FVector2D> UV1s;
+    
+    UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Vertices")
     TArray<FLinearColor> VertexColors;
     
     UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Vertices")
@@ -44,6 +47,9 @@ public:
     
     UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Materials")
     TArray<int32> MaterialIndices;
+    
+    UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Collision")
+    bool bHasCollision = false;
 
     //~ Begin Statistics Section
     UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Statistics")
@@ -73,6 +79,12 @@ public:
                    const FVector& Normal = FVector::ZeroVector, 
                    const FVector2D& UV = FVector2D::ZeroVector, 
                    const FLinearColor& Color = FLinearColor::White);
+    
+    int32 AddVertexWithDualUV(const FVector& Position, 
+                              const FVector& Normal = FVector::ZeroVector, 
+                              const FVector2D& UV = FVector2D::ZeroVector,
+                              const FVector2D& UV1 = FVector2D::ZeroVector,
+                              const FLinearColor& Color = FLinearColor::White);
     
     void AddTriangle(int32 V0, int32 V1, int32 V2, int32 MaterialIndex = 0);
     

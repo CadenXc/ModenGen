@@ -189,15 +189,7 @@ void FBevelCubeBuilder::GenerateMainFaces()
         // 使用稳定UV映射系统，基于顶点位置生成UV
         TArray<FVector> FaceVerts = GenerateRectangleVertices(Face.Center, Face.SizeX, Face.SizeY);
         
-        // 为每个顶点生成稳定的UV坐标
-        TArray<FVector2D> UVs;
-        UVs.Reserve(4);
-        for (const FVector& Vertex : FaceVerts)
-        {
-            UVs.Add(GenerateStableUV(Vertex, Face.Normal));
-        }
-        
-        GenerateQuadSides(FaceVerts, Face.Normal, UVs);
+        GenerateQuadSides(FaceVerts, Face.Normal, TArray<FVector2D>());
     }
 }
 
@@ -270,12 +262,8 @@ void FBevelCubeBuilder::GenerateEdgeStrip(int32 Core1Idx, int32 Core2Idx,
         FVector PosStart = CorePoints[Core1Idx] + CurrentNormal * BevelRadius;
         FVector PosEnd = CorePoints[Core2Idx] + CurrentNormal * BevelRadius;
 
-        // 使用稳定UV映射系统，基于顶点位置生成UV
-        FVector2D UV1 = GenerateStableUV(PosStart, CurrentNormal);
-        FVector2D UV2 = GenerateStableUV(PosEnd, CurrentNormal);
-
-        int32 VtxStart = GetOrAddVertex(PosStart, CurrentNormal, UV1);
-        int32 VtxEnd = GetOrAddVertex(PosEnd, CurrentNormal, UV2);
+        int32 VtxStart = GetOrAddVertexWithDualUV(PosStart, CurrentNormal);
+        int32 VtxEnd = GetOrAddVertexWithDualUV(PosEnd, CurrentNormal);
 
         if (s > 0 && PrevStripStartIndices.Num() > 0 && PrevStripEndIndices.Num() > 0)
         {
@@ -334,15 +322,15 @@ TArray<FVector> FBevelCubeBuilder::GenerateRectangleVertices(const FVector& Cent
 
 void FBevelCubeBuilder::GenerateQuadSides(const TArray<FVector>& Verts, const FVector& Normal, const TArray<FVector2D>& UVs)
 {
-    if (Verts.Num() != 4 || UVs.Num() != 4)
+    if (Verts.Num() != 4)
     {
         return;
     }
     
-    int32 V0 = GetOrAddVertex(Verts[0], Normal, UVs[0]);
-    int32 V1 = GetOrAddVertex(Verts[1], Normal, UVs[1]);
-    int32 V2 = GetOrAddVertex(Verts[2], Normal, UVs[2]);
-    int32 V3 = GetOrAddVertex(Verts[3], Normal, UVs[3]);
+    int32 V0 = GetOrAddVertexWithDualUV(Verts[0], Normal);
+    int32 V1 = GetOrAddVertexWithDualUV(Verts[1], Normal);
+    int32 V2 = GetOrAddVertexWithDualUV(Verts[2], Normal);
+    int32 V3 = GetOrAddVertexWithDualUV(Verts[3], Normal);
     
     AddQuad(V0, V1, V2, V3);
 }
@@ -422,10 +410,7 @@ void FBevelCubeBuilder::GenerateCornerVerticesGrid(int32 CornerIndex, const FVec
                     AxisZ * LonAlpha);
                 CurrentNormal.Normalize();
 
-                // 使用稳定UV映射系统，基于顶点位置生成UV
-                FVector2D UV = GenerateStableUV(Vertices[0], CurrentNormal);
-                
-                CornerVerticesGrid[Lat][Lon] = GetOrAddVertex(Vertices[0], CurrentNormal, UV);
+                CornerVerticesGrid[Lat][Lon] = GetOrAddVertexWithDualUV(Vertices[0], CurrentNormal);
             }
         }
     }
@@ -540,22 +525,22 @@ FVector2D FBevelCubeBuilder::GenerateStableUVCustom(const FVector& Position, con
     float Y = Position.Y;
     float Z = Position.Z;
     
-    // 根据法线方向选择UV映射策略（2U系统：0-2范围）
+    // 根据法线方向选择UV映射策略（真正的2U系统：0-1范围）
     if (FMath::Abs(Normal.X) > 0.9f)
     {
         // X面（左右面）
         if (Normal.X > 0)
         {
-            // 右面：U从1.0到1.17，V从0.0到1.0
-            float U = 1.0f + (Y / HalfSize + 1.0f) * 0.085f;  // 1.0 到 1.17
-            float V = (Z / HalfSize + 1.0f) * 0.5f;            // 0.0 到 1.0
+            // 右面：U从0.0到1.0，V从0.0到1.0
+            float U = (Y / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            float V = (Z / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
             return FVector2D(U, V);
         }
         else
         {
-            // 左面：U从1.17到1.33，V从0.0到1.0
-            float U = 1.17f + (Y / HalfSize + 1.0f) * 0.085f;  // 1.17 到 1.33
-            float V = (Z / HalfSize + 1.0f) * 0.5f;            // 0.0 到 1.0
+            // 左面：U从0.0到1.0，V从0.0到1.0
+            float U = (Y / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            float V = (Z / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
             return FVector2D(U, V);
         }
     }
@@ -564,16 +549,16 @@ FVector2D FBevelCubeBuilder::GenerateStableUVCustom(const FVector& Position, con
         // Y面（前后面）
         if (Normal.Y > 0)
         {
-            // 前面：U从1.33到1.5，V从0.0到1.0
-            float U = 1.33f + (X / HalfSize + 1.0f) * 0.085f;  // 1.33 到 1.5
-            float V = (Z / HalfSize + 1.0f) * 0.5f;            // 0.0 到 1.0
+            // 前面：U从0.0到1.0，V从0.0到1.0
+            float U = (X / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            float V = (Z / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
             return FVector2D(U, V);
         }
         else
         {
-            // 后面：U从1.5到1.67，V从0.0到1.0
-            float U = 1.5f + (X / HalfSize + 1.0f) * 0.085f;   // 1.5 到 1.67
-            float V = (Z / HalfSize + 1.0f) * 0.5f;            // 0.0 到 1.0
+            // 后面：U从0.0到1.0，V从0.0到1.0
+            float U = (X / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            float V = (Z / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
             return FVector2D(U, V);
         }
     }
@@ -582,24 +567,24 @@ FVector2D FBevelCubeBuilder::GenerateStableUVCustom(const FVector& Position, con
         // Z面（上下面）
         if (Normal.Z > 0)
         {
-            // 上面：U从1.67到1.83，V从0.0到1.0
-            float U = 1.67f + (X / HalfSize + 1.0f) * 0.085f;  // 1.67 到 1.83
-            float V = (Y / HalfSize + 1.0f) * 0.5f;            // 0.0 到 1.0
+            // 上面：U从0.0到1.0，V从0.0到1.0
+            float U = (X / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            float V = (Y / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
             return FVector2D(U, V);
         }
         else
         {
-            // 下面：U从1.83到2.0，V从0.0到1.0
-            float U = 1.83f + (X / HalfSize + 1.0f) * 0.085f;  // 1.83 到 2.0
-            float V = (Y / HalfSize + 1.0f) * 0.5f;            // 0.0 到 1.0
+            // 下面：U从0.0到1.0，V从0.0到1.0
+            float U = (X / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            float V = (Y / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
             return FVector2D(U, V);
         }
     }
     else
     {
         // 倒角面：使用位置投影到UV空间
-        // 边缘倒角：U从0.0到1.0，V从1.0到2.0
-        // 角落倒角：U从0.0到1.0，V从2.0到3.0
+        // 边缘倒角：U从0.0到1.0，V从0.0到1.0
+        // 角落倒角：U从0.0到1.0，V从0.0到1.0
         
         // 根据位置判断是边缘还是角落倒角
         float MaxComponent = FMath::Max3(FMath::Abs(X), FMath::Abs(Y), FMath::Abs(Z));
@@ -607,17 +592,114 @@ FVector2D FBevelCubeBuilder::GenerateStableUVCustom(const FVector& Position, con
         
         if (MaxComponent - MinComponent < BevelRadius * 0.5f)
         {
-            // 角落倒角：V从2.0到3.0
+            // 角落倒角：U从0.0到1.0，V从0.0到1.0
             float U = (X / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
-            float V = 2.0f + (Y / HalfSize + 1.0f) * 0.5f;  // 2.0 到 3.0
+            float V = (Y / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
             return FVector2D(U, V);
         }
         else
         {
-            // 边缘倒角：V从1.0到2.0
+            // 边缘倒角：U从0.0到1.0，V从0.0到1.0
             float U = (X / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
-            float V = 1.0f + (Y / HalfSize + 1.0f) * 0.5f;  // 1.0 到 2.0
+            float V = (Y / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
             return FVector2D(U, V);
         }
     }
+}
+
+FVector2D FBevelCubeBuilder::GenerateSecondaryUV(const FVector& Position, const FVector& Normal) const
+{
+    // 第二UV通道：使用传统UV系统（0-1范围）
+    float X = Position.X;
+    float Y = Position.Y;
+    float Z = Position.Z;
+    
+    // 根据法线方向选择UV映射策略
+    if (FMath::Abs(Normal.X) > 0.9f)
+    {
+        // X面（左右面）
+        if (Normal.X > 0)
+        {
+            // 右面：U从0.0到1.0，V从0.0到1.0
+            float U = (Y / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            float V = (Z / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            return FVector2D(U, V);
+        }
+        else
+        {
+            // 左面：U从0.0到1.0，V从0.0到1.0
+            float U = (Y / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            float V = (Z / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            return FVector2D(U, V);
+        }
+    }
+    else if (FMath::Abs(Normal.Y) > 0.9f)
+    {
+        // Y面（前后面）
+        if (Normal.Y > 0)
+        {
+            // 前面：U从0.0到1.0，V从0.0到1.0
+            float U = (X / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            float V = (Z / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            return FVector2D(U, V);
+        }
+        else
+        {
+            // 后面：U从0.0到1.0，V从0.0到1.0
+            float U = (X / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            float V = (Z / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            return FVector2D(U, V);
+        }
+    }
+    else if (FMath::Abs(Normal.Z) > 0.9f)
+    {
+        // Z面（上下面）
+        if (Normal.Z > 0)
+        {
+            // 上面：U从0.0到1.0，V从0.0到1.0
+            float U = (X / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            float V = (Y / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            return FVector2D(U, V);
+        }
+        else
+        {
+            // 下面：U从0.0到1.0，V从0.0到1.0
+            float U = (X / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            float V = (Y / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            return FVector2D(U, V);
+        }
+    }
+    else
+    {
+        // 倒角面：使用位置投影到UV空间
+        // 边缘倒角：U从0.0到1.0，V从0.0到1.0
+        // 角落倒角：U从0.0到1.0，V从0.0到1.0
+        
+        // 根据位置判断是边缘还是角落倒角
+        float MaxComponent = FMath::Max3(FMath::Abs(X), FMath::Abs(Y), FMath::Abs(Z));
+        float MinComponent = FMath::Min3(FMath::Abs(X), FMath::Abs(Y), FMath::Abs(Z));
+        
+        if (MaxComponent - MinComponent < BevelRadius * 0.5f)
+        {
+            // 角落倒角：U从0.0到1.0，V从0.0到1.0
+            float U = (X / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            float V = (Y / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            return FVector2D(U, V);
+        }
+        else
+        {
+            // 边缘倒角：U从0.0到1.0，V从0.0到1.0
+            float U = (X / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            float V = (Y / HalfSize + 1.0f) * 0.5f;  // 0.0 到 1.0
+            return FVector2D(U, V);
+        }
+    }
+}
+
+int32 FBevelCubeBuilder::GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal)
+{
+    FVector2D MainUV = GenerateStableUVCustom(Pos, Normal);
+    FVector2D SecondaryUV = GenerateSecondaryUV(Pos, Normal);
+    
+    return FModelGenMeshBuilder::GetOrAddVertexWithDualUV(Pos, Normal, MainUV, SecondaryUV);
 }
