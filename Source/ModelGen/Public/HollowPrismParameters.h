@@ -92,8 +92,6 @@ public:
     
     int32 CalculateTriangleCountEstimate() const;
     
-    void PostEditChangeProperty(const FName& PropertyName);
-    
     bool operator==(const FHollowPrismParameters& Other) const;
     bool operator!=(const FHollowPrismParameters& Other) const;
 };

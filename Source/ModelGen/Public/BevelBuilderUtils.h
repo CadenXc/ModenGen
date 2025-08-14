@@ -19,8 +19,7 @@ namespace ModelGen
 namespace Bevel
 {
 
-// 1) 边倒角：在两端核心点 core1/core2 之间，根据两侧法线 normal1/normal2 与分段数生成条带
-//    适配：BevelCube 的边倒角
+// 边倒角：在两端核心点 core1/core2 之间，根据两侧法线 normal1/normal2 与分段数生成条带
 inline void GenerateEdgeBevelStrip(FModelGenMeshBuilder& builder,
                                    const FVector& core1,
                                    const FVector& core2,
@@ -56,8 +55,7 @@ inline void GenerateEdgeBevelStrip(FModelGenMeshBuilder& builder,
     }
 }
 
-// 2) 角倒角（四分之一球）：基于核心点与三轴方向生成顶点网格并三角化
-//    适配：BevelCube 的角倒角
+// 角倒角（四分之一球）：基于核心点与三轴方向生成顶点网格并三角化
 inline void GenerateCornerBevelQuarterSphere(FModelGenMeshBuilder& builder,
                                              const FVector& corePoint,
                                              const FVector& axisX,
@@ -67,7 +65,6 @@ inline void GenerateCornerBevelQuarterSphere(FModelGenMeshBuilder& builder,
                                              int32 sections,
                                              bool bSpecialOrder = false)
 {
-    // 顶点索引网格：行数 = sections + 1；第 r 行列数 = sections + 1 - r
     TArray<TArray<int32>> grid;
     grid.SetNum(sections + 1);
     for (int32 lat = 0; lat <= sections; ++lat)
@@ -96,8 +93,7 @@ inline void GenerateCornerBevelQuarterSphere(FModelGenMeshBuilder& builder,
     BuilderUtils::BuildGridTriangles(builder, grid, bSpecialOrder);
 }
 
-// 3) 环形倒角：在两圈半径/高度之间生成一圈倒角侧壁
-//    适配：Frustum/HollowPrism 顶/底倒角的圆环过渡
+// 环形倒角：在两圈半径/高度之间生成一圈倒角侧壁
 inline void GenerateRingBevel(FModelGenMeshBuilder& builder,
                               float radiusFrom,
                               float radiusTo,

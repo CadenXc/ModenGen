@@ -59,4 +59,8 @@ private:
     
     /** 记录网格统计信息 */
     void LogMeshStatistics();
+    
+    /** 基于顶点位置的稳定UV映射 - 重写父类实现 */
+    virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const override;
+    
 };

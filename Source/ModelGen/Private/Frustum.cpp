@@ -4,14 +4,16 @@
 #include "FrustumBuilder.h"
 #include "ModelGenMeshData.h"
 #include "ProceduralMeshComponent.h"
-#include "Materials/Material.h"
+#include "Materials/MaterialInterface.h"
 #include "HAL/PlatformTime.h"
 
 AFrustum::AFrustum()
 {
     PrimaryActorTick.bCanEverTick = false;
 
-    // 初始化组件
+    ProceduralMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("FrustumMesh"));
+    RootComponent = ProceduralMesh;
+
     InitializeComponents();
 }
 
@@ -35,14 +37,12 @@ void AFrustum::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
     const FName PropertyName = PropertyChangedEvent.GetPropertyName();
     const FString PropertyNameStr = PropertyName.ToString();
     
-    // 检查是否是Parameters结构中的属性
     if (PropertyNameStr.StartsWith("Parameters."))
     {
         RegenerateMesh();
         return;
     }
     
-    // 检查材质相关属性
     if (PropertyName == "Material")
     {
         ApplyMaterial();
@@ -60,14 +60,12 @@ void AFrustum::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyC
     const FName PropertyName = PropertyChangedEvent.GetPropertyName();
     const FString PropertyNameStr = PropertyName.ToString();
     
-    // 检查是否是Parameters结构中的属性
     if (PropertyNameStr.StartsWith("Parameters."))
     {
         RegenerateMesh();
         return;
     }
     
-    // 检查材质相关属性
     if (PropertyName == "Material")
     {
         ApplyMaterial();
@@ -79,23 +77,18 @@ void AFrustum::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyC
 }
 #endif
 
-
 void AFrustum::InitializeComponents()
 {
-    // 创建程序化网格组件
-    ProceduralMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("FrustumMesh"));
     if (ProceduralMesh)
     {
-        RootComponent = ProceduralMesh;
-
-        // 配置网格属性
         ProceduralMesh->bUseAsyncCooking = bUseAsyncCooking;
         ProceduralMesh->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
         ProceduralMesh->SetSimulatePhysics(false);
         
-        // 应用材质和碰撞设置
-        ApplyMaterial();
         SetupCollision();
+        
+        // 在组件初始化完成后应用材质
+        ApplyMaterial();
     }
 }
 
@@ -118,9 +111,9 @@ void AFrustum::SetupCollision()
     {
         ProceduralMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
         ProceduralMesh->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
-        }
-        else
-        {
+    }
+    else
+    {
         ProceduralMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     }
 }
@@ -129,18 +122,17 @@ void AFrustum::RegenerateMesh()
 {
     if (!ProceduralMesh)
     {
-        UE_LOG(LogTemp, Warning, TEXT("Frustum::RegenerateMesh - ProceduralMesh is null"));
+        UE_LOG(LogTemp, Error, TEXT("ProceduralMesh component is null"));
         return;
     }
 
-    // 验证参数
     if (!Parameters.IsValid())
     {
-        UE_LOG(LogTemp, Warning, TEXT("Frustum parameters are invalid"));
+        UE_LOG(LogTemp, Warning, TEXT("Invalid Frustum parameters: TopRadius=%f, BottomRadius=%f, Height=%f, TopSides=%d, BottomSides=%d"), 
+               Parameters.TopRadius, Parameters.BottomRadius, Parameters.Height, Parameters.TopSides, Parameters.BottomSides);
         return;
     }
 
-    // 防抖检查
     static float LastUpdateTime = 0.0f;
     const float CurrentTime = FPlatformTime::Seconds();
     const float MinUpdateInterval = 0.05f;
@@ -152,53 +144,51 @@ void AFrustum::RegenerateMesh()
     
     LastUpdateTime = CurrentTime;
 
-    // 参数缓存检查
     static FFrustumParameters LastParameters;
-    static UMaterialInterface* LastMaterial = nullptr;
     static bool bFirstGeneration = true;
     
     bool bParametersChanged = bFirstGeneration || LastParameters != Parameters;
-    bool bMaterialChanged = bFirstGeneration || LastMaterial != Material;
     
-    if (!bFirstGeneration && !bParametersChanged && !bMaterialChanged)
+    if (!bFirstGeneration && !bParametersChanged)
     {
         return;
     }
     
     LastParameters = Parameters;
-    LastMaterial = Material;
     bFirstGeneration = false;
 
-    // 清除现有网格
-    ProceduralMesh->ClearAllMeshSections();
+    UE_LOG(LogTemp, Log, TEXT("Starting Frustum generation with parameters: TopRadius=%f, BottomRadius=%f, Height=%f, TopSides=%d, BottomSides=%d"), 
+           Parameters.TopRadius, Parameters.BottomRadius, Parameters.Height, Parameters.TopSides, Parameters.BottomSides);
 
-    // 创建构建器并生成网格
+    ProceduralMesh->ClearAllMeshSections();
+    UE_LOG(LogTemp, Log, TEXT("Cleared all mesh sections"));
+
     FFrustumBuilder Builder(Parameters);
     FModelGenMeshData MeshData;
 
     if (Builder.Generate(MeshData))
     {
-        UE_LOG(LogTemp, Log, TEXT("Frustum::RegenerateMesh - Builder generated mesh successfully"));
-        
-        // 将网格数据应用到组件
+        if (!MeshData.IsValid())
+        {
+            UE_LOG(LogTemp, Error, TEXT("Generated mesh data is invalid"));
+            return;
+        }
+
+        UE_LOG(LogTemp, Log, TEXT("Mesh data generated successfully: %d vertices, %d triangles"), 
+               MeshData.GetVertexCount(), MeshData.GetTriangleCount());
+
         MeshData.ToProceduralMesh(ProceduralMesh, 0);
         
-        // 应用材质和碰撞设置
+        // 每次重新生成网格后都应用材质，确保材质不会丢失
         ApplyMaterial();
         SetupCollision();
-        
-        if (bMaterialChanged && !bParametersChanged)
-        {
-            UE_LOG(LogTemp, Log, TEXT("Frustum::RegenerateMesh - Material changed, reapplying material"));
-            ApplyMaterial();
-        }
         
         UE_LOG(LogTemp, Log, TEXT("Frustum generated successfully: %d vertices, %d triangles"), 
                MeshData.GetVertexCount(), MeshData.GetTriangleCount());
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("Failed to generate frustum mesh"));
+        UE_LOG(LogTemp, Error, TEXT("Failed to generate Frustum mesh"));
     }
 }
 
@@ -235,6 +225,8 @@ void AFrustum::SetMaterial(UMaterialInterface* NewMaterial)
     if (Material != NewMaterial)
     {
         Material = NewMaterial;
+        
+        // 立即应用新材质
         ApplyMaterial();
     }
 }

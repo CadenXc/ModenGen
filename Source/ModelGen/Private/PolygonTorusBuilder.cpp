@@ -12,65 +12,31 @@ FPolygonTorusBuilder::FPolygonTorusBuilder(const FPolygonTorusParameters& InPara
 
 bool FPolygonTorusBuilder::Generate(FModelGenMeshData& OutMeshData)
 {
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Starting generation"));
-    
-    // 验证生成参数
     if (!ValidateParameters())
     {
-        UE_LOG(LogTemp, Error, TEXT("无效的圆环生成参数"));
         return false;
     }
 
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Parameters validated successfully"));
-
-    // 清除之前的几何数据
     Clear();
     ReserveMemory();
 
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Memory reserved"));
-
-    // 验证和修正参数
     ValidateAndClampParameters();
 
-    // 按照以下顺序生成几何体：
-    // 1. 生成顶点
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Generating vertices"));
     GenerateVertices();
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Vertices generated, current vertices: %d"), MeshData.GetVertexCount());
-    
-    // 2. 生成三角形
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Generating triangles"));
     GenerateTriangles();
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Triangles generated, current triangles: %d"), MeshData.GetTriangleCount());
     
-    // 3. 生成端盖（当TorusAngle < 360时自动生成）
     if (Params.TorusAngle < 360.0f - KINDA_SMALL_NUMBER)
     {
-        UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Generating end caps (TorusAngle < 360)"));
         GenerateEndCaps();
-        UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - End caps generated, current vertices: %d"), MeshData.GetVertexCount());
-    }
-    else
-    {
-        UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Skipping end caps (TorusAngle = 360)"));
     }
 
-    // 4. 应用平滑光照
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Applying smooth lighting"));
     ApplySmoothing();
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Smooth lighting applied"));
 
-    // 验证生成的网格数据
     if (!ValidateGeneratedData())
     {
-        UE_LOG(LogTemp, Error, TEXT("生成的圆环网格数据无效"));
         return false;
     }
 
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::Generate - Final mesh data: %d vertices, %d triangles"), 
-           MeshData.GetVertexCount(), MeshData.GetTriangleCount());
-
-    // 输出网格数据
     OutMeshData = MeshData;
     return true;
 }
@@ -92,16 +58,11 @@ int32 FPolygonTorusBuilder::CalculateTriangleCountEstimate() const
 
 void FPolygonTorusBuilder::GenerateVertices()
 {
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateVertices - Starting vertex generation"));
-    
     const float MajorRad = Params.MajorRadius;
     const float MinorRad = Params.MinorRadius;
     const int32 MajorSegs = Params.MajorSegments;
     const int32 MinorSegs = Params.MinorSegments;
     const float AngleRad = FMath::DegreesToRadians(Params.TorusAngle);
-    
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateVertices - Parameters: MajorRad=%f, MinorRad=%f, MajorSegs=%d, MinorSegs=%d, AngleRad=%f"), 
-           MajorRad, MinorRad, MajorSegs, MinorSegs, AngleRad);
     
     // 计算角度步长
     const float MajorAngleStep = AngleRad / MajorSegs;
@@ -130,29 +91,20 @@ void FPolygonTorusBuilder::GenerateVertices()
             // 计算法线
             const FVector Normal = FVector(MinorCos * MajorCos, MinorCos * MajorSin, MinorSin).GetSafeNormal();
             
-            // 计算UV坐标
-            const float U = static_cast<float>(MajorIndex) / MajorSegs;
-            const float V = static_cast<float>(MinorIndex) / MinorSegs;
-            const FVector2D UV(U, V);
+            // 计算UV坐标 - 基于顶点位置的稳定2U系统
+            const FVector2D UV = GenerateStableUV(Position, Normal);
             
             // 添加顶点
             GetOrAddVertex(Position, Normal, UV);
         }
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateVertices - Completed, generated %d vertices"), MeshData.GetVertexCount());
 }
 
 void FPolygonTorusBuilder::GenerateTriangles()
 {
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateTriangles - Starting triangle generation"));
-    
     const int32 MajorSegs = Params.MajorSegments;
     const int32 MinorSegs = Params.MinorSegments;
     const bool bIsFullCircle = FMath::IsNearlyEqual(Params.TorusAngle, 360.0f);
-    
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateTriangles - Parameters: MajorSegs=%d, MinorSegs=%d, bIsFullCircle=%s"), 
-           MajorSegs, MinorSegs, bIsFullCircle ? TEXT("true") : TEXT("false"));
     
     // 生成三角形
     for (int32 MajorIndex = 0; MajorIndex < MajorSegs; ++MajorIndex)
@@ -175,28 +127,19 @@ void FPolygonTorusBuilder::GenerateTriangles()
             AddTriangle(V0, V2, V3);
         }
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateTriangles - Completed, generated %d triangles"), MeshData.GetTriangleCount());
 }
 
 void FPolygonTorusBuilder::GenerateEndCaps()
 {
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateEndCaps - Starting end caps generation"));
-    
     // 直接使用高级端盖生成方式
     GenerateAdvancedEndCaps();
-    
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateEndCaps - Completed"));
 }
 
 void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
 {
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateAdvancedEndCaps - Starting advanced end caps generation"));
-    
     // 如果是完整圆环，不需要端盖
     if (FMath::IsNearlyEqual(Params.TorusAngle, 360.0f))
     {
-        UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateAdvancedEndCaps - Full circle torus, skipping end caps"));
         return;
     }
     
@@ -204,9 +147,6 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     const float MinorRad = Params.MinorRadius;
     const int32 MinorSegs = Params.MinorSegments;
     const float AngleRad = FMath::DegreesToRadians(Params.TorusAngle);
-    
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateAdvancedEndCaps - Parameters: MajorRad=%f, MinorRad=%f, MinorSegs=%d, AngleRad=%f"), 
-           MajorRad, MinorRad, MinorSegs, AngleRad);
     
     // 计算起始和结束角度
     const float StartAngle = 0.0f;
@@ -229,12 +169,9 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     const FVector StartNormal = FVector(-FMath::Sin(StartAngle), FMath::Cos(StartAngle), 0.0f);
     const FVector EndNormal = FVector(-FMath::Sin(EndAngle), FMath::Cos(EndAngle), 0.0f);
     
-    // 添加端面中心顶点
-    const int32 StartCenterIndex = GetOrAddVertex(StartCenter, StartNormal, FVector2D(0.5f, 0.5f));
-    const int32 EndCenterIndex = GetOrAddVertex(EndCenter, EndNormal, FVector2D(0.5f, 0.5f));
-    
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateAdvancedEndCaps - Added center vertices: start=%d, end=%d"), 
-           StartCenterIndex, EndCenterIndex);
+    // 添加端面中心顶点 - 2U系统，避免重叠
+    const int32 StartCenterIndex = GetOrAddVertex(StartCenter, StartNormal, FVector2D(0.5f, 1.0f));
+    const int32 EndCenterIndex = GetOrAddVertex(EndCenter, EndNormal, FVector2D(0.5f, 2.0f));
     
     // 生成端盖三角形 - 直接使用现有的边缘顶点
     // 起始端盖：使用第一个截面的所有顶点
@@ -259,15 +196,10 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
         const int32 V2 = LastSectionStart + NextI;
         AddTriangle(V0, V1, V2);
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::GenerateAdvancedEndCaps - Completed, total vertices: %d, triangles: %d"), 
-           MeshData.GetVertexCount(), MeshData.GetTriangleCount());
 }
 
 void FPolygonTorusBuilder::ValidateAndClampParameters()
 {
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ValidateAndClampParameters - Starting parameter validation"));
-    
     // 约束分段数
     const int32 OldMajorSegments = Params.MajorSegments;
     const int32 OldMinorSegments = Params.MinorSegments;
@@ -308,10 +240,6 @@ void FPolygonTorusBuilder::ValidateAndClampParameters()
     {
         UE_LOG(LogTemp, Warning, TEXT("圆环角度已从 %f 调整为 %f"), OldTorusAngle, Params.TorusAngle);
     }
-    
-
-    
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ValidateAndClampParameters - Completed"));
 }
 
 void FPolygonTorusBuilder::LogMeshStatistics()
@@ -322,28 +250,20 @@ void FPolygonTorusBuilder::LogMeshStatistics()
 
 void FPolygonTorusBuilder::ApplySmoothing()
 {
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplySmoothing - Starting smooth lighting application"));
-    
     // 根据参数决定应用哪种平滑光照
     if (Params.bSmoothCrossSection)
     {
-        UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplySmoothing - Applying horizontal smooth lighting"));
         ApplyHorizontalSmoothing();
     }
     
     if (Params.bSmoothVerticalSection)
     {
-        UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplySmoothing - Applying vertical smooth lighting"));
         ApplyVerticalSmoothing();
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplySmoothing - Smooth lighting completed"));
 }
 
 void FPolygonTorusBuilder::ApplyHorizontalSmoothing()
 {
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplyHorizontalSmoothing - Starting horizontal smooth lighting"));
-    
     const int32 MajorSegs = Params.MajorSegments;
     const int32 MinorSegs = Params.MinorSegments;
     const int32 TotalVertices = MeshData.GetVertexCount();
@@ -399,14 +319,10 @@ void FPolygonTorusBuilder::ApplyHorizontalSmoothing()
             }
         }
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplyHorizontalSmoothing - Horizontal smooth lighting completed"));
 }
 
 void FPolygonTorusBuilder::ApplyVerticalSmoothing()
 {
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplyVerticalSmoothing - Starting vertical smooth lighting"));
-    
     const int32 MajorSegs = Params.MajorSegments;
     const int32 MinorSegs = Params.MinorSegments;
     const int32 TotalVertices = MeshData.GetVertexCount();
@@ -460,6 +376,31 @@ void FPolygonTorusBuilder::ApplyVerticalSmoothing()
             }
         }
     }
+}
+
+// 基于顶点位置的稳定UV映射 - 重写父类实现
+FVector2D FPolygonTorusBuilder::GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const
+{
+    // 基于顶点位置生成稳定的UV坐标，确保模型变化时UV不变
+    float X = Position.X;
+    float Y = Position.Y;
+    float Z = Position.Z;
     
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::ApplyVerticalSmoothing - Vertical smooth lighting completed"));
+    // 计算角度（基于位置）
+    float MajorAngle = FMath::Atan2(Y, X);
+    if (MajorAngle < 0) MajorAngle += 2.0f * PI;
+    
+    // 计算到中心的距离
+    float DistanceFromCenter = FMath::Sqrt(X * X + Y * Y);
+    float MinorRadius = DistanceFromCenter - Params.MajorRadius;
+    
+    // 计算次角度（基于Z坐标和次半径）
+    float MinorAngle = FMath::Asin(Z / Params.MinorRadius);
+    if (MinorRadius < 0) MinorAngle = PI - MinorAngle;
+    
+    // 2U系统：主圆环占据右侧区域 (1.0,0) 到 (2.0,1)
+    float U = 1.0f + (MajorAngle / (2.0f * PI));  // 1.0 到 2.0
+    float V = (MinorAngle + PI) / (2.0f * PI);     // 0.0 到 1.0
+    
+    return FVector2D(U, V);
 }

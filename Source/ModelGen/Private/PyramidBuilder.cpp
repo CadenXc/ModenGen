@@ -9,68 +9,35 @@ FPyramidBuilder::FPyramidBuilder(const FPyramidParameters& InParams)
 {
     Clear();
     
-    // 新增：预计算所有常量和数据
     PrecomputeConstants();
     PrecomputeVertices();
     PrecomputeUVs();
-    
-    // 添加调试信息
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::Constructor - Initialized with: BaseRadius=%f, Height=%f, Sides=%d, BevelRadius=%f"), 
-           BaseRadius, Height, Sides, BevelRadius);
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::Constructor - Precomputed %d vertices and UVs"), BaseVertices.Num());
-    
-    // 验证预计算数据
-    if (!ValidatePrecomputedData())
-    {
-        UE_LOG(LogTemp, Error, TEXT("FPyramidBuilder::Constructor - Precomputed data validation failed!"));
-    }
 }
 
 bool FPyramidBuilder::Generate(FModelGenMeshData& OutMeshData)
 {
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::Generate - Starting generation"));
-    
-    // 验证生成参数
     if (!ValidateParameters())
     {
-        UE_LOG(LogTemp, Error, TEXT("无效的金字塔生成参数"));
         return false;
     }
 
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::Generate - Parameters validated successfully"));
-
-    // 清除之前的几何数据
     Clear();
     ReserveMemory();
 
-
-    // 按照以下顺序生成几何体：
-    // 1. 生成底面
     GenerateBaseFace();
     
-    // 2. 生成倒角部分（如果有）
     if (Params.BevelRadius > 0.0f)
     {
         GenerateBevelSection();
     }
-    else
-    {
-        UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::Generate - Skipping bevel section (BevelRadius=%f)"), Params.BevelRadius);
-    }
     
-    // 3. 生成金字塔侧面
     GeneratePyramidSides();
-    // 验证生成的网格数据
+    
     if (!ValidateGeneratedData())
     {
-        UE_LOG(LogTemp, Error, TEXT("生成的金字塔网格数据无效"));
         return false;
     }
 
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::Generate - Final mesh data: %d vertices, %d triangles"), 
-           MeshData.GetVertexCount(), MeshData.GetTriangleCount());
-
-    // 输出网格数据
     OutMeshData = MeshData;
     return true;
 }
@@ -92,13 +59,7 @@ int32 FPyramidBuilder::CalculateTriangleCountEstimate() const
 
 void FPyramidBuilder::GenerateBaseFace()
 {
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::GenerateBaseFace - Generating base face with %d vertices"), BaseVertices.Num());
-    
-    // 使用预计算的顶点和UV数据
     GenerateBasePolygon();
-    
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::GenerateBaseFace - Completed, total vertices: %d, triangles: %d"), 
-           MeshData.GetVertexCount(), MeshData.GetTriangleCount());
 }
 
 // 新增：生成底面多边形
@@ -112,16 +73,10 @@ void FPyramidBuilder::GenerateBevelSection()
 {
     if (BevelRadius <= 0.0f)
     {
-        UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::GenerateBevelSection - Skipping bevel section (BevelRadius=%f)"), BevelRadius);
         return;
     }
     
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::GenerateBevelSection - Generating bevel section with %d vertices"), BevelBottomVertices.Num());
-    
-    // 使用预计算的顶点和UV数据
     GenerateBevelSideStrip();
-    
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::GenerateBevelSection - Completed"));
 }
 
 // 新增：生成倒角侧面条带
@@ -133,12 +88,7 @@ void FPyramidBuilder::GenerateBevelSideStrip()
 
 void FPyramidBuilder::GeneratePyramidSides()
 {
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::GeneratePyramidSides - Generating pyramid sides with %d base vertices"), PyramidBaseVertices.Num());
-    
-    // 使用预计算的数据生成金字塔侧面
     GeneratePyramidSideTriangles();
-    
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::GeneratePyramidSides - Completed"));
 }
 
 // 新增：生成金字塔侧面三角形
@@ -154,10 +104,10 @@ void FPyramidBuilder::GeneratePyramidSideTriangles()
         FVector Edge2 = PyramidTopPoint - PyramidBaseVertices[i];
         FVector SideNormal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
         
-        // 使用预计算的UV数据
-        FVector2D TopUV = FVector2D(1.0f, 2.0f);  // 2U系统：顶点UV
-        FVector2D BaseUV1 = SideUVs[i];
-        FVector2D BaseUV2 = SideUVs[NextI];
+        // 使用稳定UV映射系统：基于顶点位置生成UV
+        FVector2D TopUV = GenerateStableUV(PyramidTopPoint, SideNormal);
+        FVector2D BaseUV1 = GenerateStableUV(PyramidBaseVertices[i], SideNormal);
+        FVector2D BaseUV2 = GenerateStableUV(PyramidBaseVertices[NextI], SideNormal);
         
         // 添加顶点
         int32 TopVertex = GetOrAddVertex(PyramidTopPoint, SideNormal, TopUV);
@@ -173,7 +123,6 @@ void FPyramidBuilder::GeneratePolygonFace(const TArray<FVector>& PolygonVerts, c
 {
     if (PolygonVerts.Num() < 3)
     {
-        UE_LOG(LogTemp, Warning, TEXT("GeneratePolygonFace: 需要至少3个顶点"));
         return;
     }
     
@@ -200,26 +149,18 @@ void FPyramidBuilder::GeneratePolygonFace(const TArray<FVector>& PolygonVerts, c
         if (bReverseOrder)
         {
             AddTriangle(V0, V2, V1);
-            //AddTriangle(V0, V1, V2);
         }
         else
         {
             AddTriangle(V0, V1, V2);
-            //AddTriangle(V0, V2, V1);
         }
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::GeneratePolygonFace - Polygon face completed"));
 }
 
 void FPyramidBuilder::GenerateSideStrip(const TArray<FVector>& BottomVerts, const TArray<FVector>& TopVerts, bool bReverseNormal, float UVOffsetY, float UVScaleY)
 {
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::GenerateSideStrip - Generating side strip with %d bottom and %d top vertices"), 
-           BottomVerts.Num(), TopVerts.Num());
-    
     if (BottomVerts.Num() != TopVerts.Num())
     {
-        UE_LOG(LogTemp, Warning, TEXT("GenerateSideStrip: 底部和顶部顶点数量不匹配"));
         return;
     }
     
@@ -252,8 +193,6 @@ void FPyramidBuilder::GenerateSideStrip(const TArray<FVector>& BottomVerts, cons
             AddTriangle(V1, V3, V4);
         }
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::GenerateSideStrip - Side strip completed"));
 }
 
 TArray<FVector> FPyramidBuilder::GenerateCircleVertices(float Radius, float Z, int32 NumSides) const
@@ -287,9 +226,6 @@ void FPyramidBuilder::PrecomputeConstants()
     Sides = Params.Sides;
     BevelRadius = Params.BevelRadius;
     BevelTopRadius = Params.GetBevelTopRadius();
-    
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::PrecomputeConstants - Constants: BaseRadius=%f, Height=%f, Sides=%d, BevelRadius=%f, BevelTopRadius=%f"), 
-           BaseRadius, Height, Sides, BevelRadius, BevelTopRadius);
 }
 
 // 新增：预计算三角函数值
@@ -306,8 +242,6 @@ void FPyramidBuilder::PrecomputeTrigonometricValues()
         CosValues[i] = FMath::Cos(Angle);
         SinValues[i] = FMath::Sin(Angle);
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::PrecomputeTrigonometricValues - Created %d trigonometric values"), Sides);
 }
 
 // 新增：预计算UV缩放值
@@ -318,8 +252,6 @@ void FPyramidBuilder::PrecomputeUVScaleValues()
     {
         UVScaleValues[i] = static_cast<float>(i) / Sides;
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::PrecomputeUVScaleValues - Created %d UV scale values"), Sides);
 }
 
 // 新增：预计算顶点
@@ -332,8 +264,6 @@ void FPyramidBuilder::PrecomputeVertices()
     InitializeBaseVertices();
     InitializeBevelVertices();
     InitializePyramidVertices();
-    
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::PrecomputeVertices - All vertices precomputed"));
 }
 
 // 新增：初始化底面顶点
@@ -346,8 +276,6 @@ void FPyramidBuilder::InitializeBaseVertices()
         const float Y = BevelTopRadius * SinValues[i];
         BaseVertices[i] = FVector(X, Y, 0.0f);
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::InitializeBaseVertices - Created %d base vertices"), BaseVertices.Num());
 }
 
 // 新增：初始化倒角顶点
@@ -371,8 +299,6 @@ void FPyramidBuilder::InitializeBevelVertices()
         const float Y = BevelTopRadius * SinValues[i];
         BevelTopVertices[i] = FVector(X, Y, BevelRadius);
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::InitializeBevelVertices - Created %d bevel vertices"), BevelTopVertices.Num());
 }
 
 // 新增：初始化金字塔顶点
@@ -390,9 +316,49 @@ void FPyramidBuilder::InitializePyramidVertices()
     
     // 金字塔顶点
     PyramidTopPoint = FVector(0, 0, Height);
+}
+
+// 基于顶点位置的稳定UV映射 - 重写父类实现
+FVector2D FPyramidBuilder::GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const
+{
+    // 基于顶点位置生成稳定的UV坐标，确保模型变化时UV不变
+    float X = Position.X;
+    float Y = Position.Y;
+    float Z = Position.Z;
     
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::InitializePyramidVertices - Created pyramid base with %d vertices, top at %f"), 
-           PyramidBaseVertices.Num(), Height);
+    // 根据法线方向选择UV映射策略（2U系统：0-2范围）
+    if (FMath::Abs(Normal.Z) > 0.9f)
+    {
+        // 水平面（底面或顶面）
+        if (Z < 0.1f)
+        {
+            // 底面：使用圆形映射，范围 (0,0) 到 (1,1)
+            float Radius = FMath::Sqrt(X * X + Y * Y);
+            float Angle = FMath::Atan2(Y, X);
+            if (Angle < 0) Angle += 2.0f * PI;
+            
+            float U = 0.5f + 0.5f * FMath::Cos(Angle);
+            float V = 0.5f + 0.5f * FMath::Sin(Angle);
+            return FVector2D(U, V);
+        }
+        else
+        {
+            // 顶面：使用投影映射，范围 (1,0) 到 (2,1)
+            float U = 1.0f + (X / BaseRadius + 1.0f) * 0.5f;
+            float V = (Y / BaseRadius + 1.0f) * 0.5f;
+            return FVector2D(U, V);
+        }
+    }
+    else
+    {
+        // 侧面：使用柱面映射，范围 (0,1) 到 (2,2) - 避免与底面重叠
+        float Angle = FMath::Atan2(Y, X);
+        if (Angle < 0) Angle += 2.0f * PI;
+        
+        float U = Angle / (2.0f * PI) * 2.0f;  // 0 到 2
+        float V = 1.0f + (Z / Height);          // 1 到 2
+        return FVector2D(U, V);
+    }
 }
 
 // 新增：预计算UV
@@ -401,12 +367,21 @@ void FPyramidBuilder::PrecomputeUVs()
     // 先预计算UV缩放值
     PrecomputeUVScaleValues();
     
-    // 生成各种UV坐标
+    // 生成各种UV坐标，确保不重叠
     BaseUVs = GenerateCircularUVs(Sides, 0.0f);
     SideUVs = GenerateSideStripUVs(Sides, 0.0f, 1.0f);
-    BevelUVs = GenerateSideStripUVs(Sides, 0.0f, 1.0f);
     
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::PrecomputeUVs - All UVs precomputed"));
+    // 倒角UV：占据UV空间的右上角区域，避免与侧面重叠
+    if (BevelRadius > 0.0f)
+    {
+        BevelUVs.SetNum(Sides);
+        for (int32 i = 0; i < Sides; ++i)
+        {
+            float U = 1.0f + (static_cast<float>(i) / Sides);  // 1.0 到 2.0
+            float V = 0.0f + (static_cast<float>(i) / Sides);  // 0.0 到 1.0
+            BevelUVs[i] = FVector2D(U, V);
+        }
+    }
 }
 
 // 新增：生成圆形UV坐标（2U系统）
@@ -417,9 +392,9 @@ TArray<FVector2D> FPyramidBuilder::GenerateCircularUVs(int32 NumSides, float UVO
     
     for (int32 i = 0; i < NumSides; ++i)
     {
-        // 使用2U系统：UV范围从0到2
-        float U = 1.0f + FMath::Cos(AngleValues[i]);  // 0 到 2
-        float V = 1.0f + FMath::Sin(AngleValues[i]) + UVOffsetZ;  // 0 到 2
+        // 使用2U系统：底面占据UV空间的左下角区域 (0,0) 到 (1,1)
+        float U = 0.5f + 0.5f * FMath::Cos(AngleValues[i]);  // 0 到 1
+        float V = 0.5f + 0.5f * FMath::Sin(AngleValues[i]);  // 0 到 1
         UVs[i] = FVector2D(U, V);
     }
     
@@ -434,9 +409,9 @@ TArray<FVector2D> FPyramidBuilder::GenerateSideStripUVs(int32 NumSides, float UV
     
     for (int32 i = 0; i < NumSides; ++i)
     {
-        // 使用2U系统：UV范围从0到2
-        float U = UVScaleValues[i] * 2.0f;  // 0 到 2
-        float V = UVOffsetY + UVScaleY;     // 0 到 2
+        // 使用2U系统：侧面占据UV空间的右侧区域 (1,0) 到 (2,1)
+        float U = 1.0f + (static_cast<float>(i) / NumSides);  // 1.0 到 2.0
+        float V = UVOffsetY + UVScaleY;                       // 0.0 到 1.0
         UVs[i] = FVector2D(U, V);
     }
     
@@ -451,17 +426,18 @@ void FPyramidBuilder::GeneratePolygonFaceOptimized(const TArray<FVector>& Vertic
 {
     if (Vertices.Num() < 3 || UVs.Num() != Vertices.Num())
     {
-        UE_LOG(LogTemp, Warning, TEXT("GeneratePolygonFaceOptimized: 需要至少3个顶点，且顶点和UV数量必须匹配"));
         return;
     }
     
-    // 添加所有顶点
+    // 添加所有顶点，使用稳定UV映射
     TArray<int32> VertexIndices;
     VertexIndices.Reserve(Vertices.Num());
     
     for (int32 i = 0; i < Vertices.Num(); ++i)
     {
-        int32 VertexIndex = GetOrAddVertex(Vertices[i], Normal, UVs[i]);
+        // 使用稳定UV映射而不是预计算的UV
+        FVector2D StableUV = GenerateStableUV(Vertices[i], Normal);
+        int32 VertexIndex = GetOrAddVertex(Vertices[i], Normal, StableUV);
         VertexIndices.Add(VertexIndex);
     }
     
@@ -481,8 +457,6 @@ void FPyramidBuilder::GeneratePolygonFaceOptimized(const TArray<FVector>& Vertic
             AddTriangle(V0, V1, V2);
         }
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::GeneratePolygonFaceOptimized - Polygon face completed with %d triangles"), Vertices.Num() - 2);
 }
 
 // 新增：优化后的侧面条带生成函数
@@ -493,11 +467,8 @@ void FPyramidBuilder::GenerateSideStripOptimized(const TArray<FVector>& BottomVe
 {
     if (BottomVerts.Num() != TopVerts.Num() || UVs.Num() != BottomVerts.Num())
     {
-        UE_LOG(LogTemp, Warning, TEXT("GenerateSideStripOptimized: 底部、顶部顶点和UV数量必须匹配"));
         return;
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::GenerateSideStripOptimized - Generating side strip with %d vertices"), BottomVerts.Num());
     
     for (int32 i = 0; i < BottomVerts.Num(); ++i)
     {
@@ -510,11 +481,11 @@ void FPyramidBuilder::GenerateSideStripOptimized(const TArray<FVector>& BottomVe
         
         if (bReverseNormal) SideNormal = -SideNormal;
         
-        // 使用预计算的UV数据
-        FVector2D BottomUV1 = UVs[i];
-        FVector2D BottomUV2 = UVs[NextI];
-        FVector2D TopUV1 = UVs[i];
-        FVector2D TopUV2 = UVs[NextI];
+        // 使用稳定UV映射系统
+        FVector2D BottomUV1 = GenerateStableUV(BottomVerts[i], SideNormal);
+        FVector2D BottomUV2 = GenerateStableUV(BottomVerts[NextI], SideNormal);
+        FVector2D TopUV1 = GenerateStableUV(TopVerts[i], SideNormal);
+        FVector2D TopUV2 = GenerateStableUV(TopVerts[NextI], SideNormal);
         
         // 添加四个顶点
         int32 V1 = GetOrAddVertex(BottomVerts[i], SideNormal, BottomUV1);
@@ -534,8 +505,6 @@ void FPyramidBuilder::GenerateSideStripOptimized(const TArray<FVector>& BottomVe
             AddTriangle(V1, V3, V4);
         }
     }
-    
-    UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::GenerateSideStripOptimized - Side strip completed"));
 }
 
 // 新增：验证预计算数据
@@ -546,59 +515,38 @@ bool FPyramidBuilder::ValidatePrecomputedData() const
     // 验证常量
     if (BaseRadius <= 0.0f || Height <= 0.0f || Sides < 3)
     {
-        UE_LOG(LogTemp, Error, TEXT("FPyramidBuilder::ValidatePrecomputedData - Invalid constants: BaseRadius=%f, Height=%f, Sides=%d"), 
-               BaseRadius, Height, Sides);
-        bIsValid = false;
+        return false;
     }
     
     // 验证顶点数据
     if (BaseVertices.Num() != Sides)
     {
-        UE_LOG(LogTemp, Error, TEXT("FPyramidBuilder::ValidatePrecomputedData - BaseVertices count mismatch: %d != %d"), 
-               BaseVertices.Num(), Sides);
-        bIsValid = false;
+        return false;
     }
     
     if (BevelRadius > 0.0f)
     {
         if (BevelBottomVertices.Num() != Sides || BevelTopVertices.Num() != Sides)
         {
-            UE_LOG(LogTemp, Error, TEXT("FPyramidBuilder::ValidatePrecomputedData - Bevel vertices count mismatch: Bottom=%d, Top=%d, Expected=%d"), 
-                   BevelBottomVertices.Num(), BevelTopVertices.Num(), Sides);
-            bIsValid = false;
+            return false;
         }
     }
     
     if (PyramidBaseVertices.Num() != Sides)
     {
-        UE_LOG(LogTemp, Error, TEXT("FPyramidBuilder::ValidatePrecomputedData - PyramidBaseVertices count mismatch: %d != %d"), 
-               PyramidBaseVertices.Num(), Sides);
-        bIsValid = false;
+        return false;
     }
     
     // 验证UV数据
     if (BaseUVs.Num() != Sides || SideUVs.Num() != Sides)
     {
-        UE_LOG(LogTemp, Error, TEXT("FPyramidBuilder::ValidatePrecomputedData - UV count mismatch: BaseUVs=%d, SideUVs=%d, Expected=%d"), 
-               BaseUVs.Num(), SideUVs.Num(), Sides);
-        bIsValid = false;
+        return false;
     }
     
     // 验证三角函数值
     if (AngleValues.Num() != Sides || CosValues.Num() != Sides || SinValues.Num() != Sides)
     {
-        UE_LOG(LogTemp, Error, TEXT("FPyramidBuilder::ValidatePrecomputedData - Trigonometric values count mismatch: %d != %d"), 
-               AngleValues.Num(), Sides);
-        bIsValid = false;
-    }
-    
-    if (bIsValid)
-    {
-        UE_LOG(LogTemp, Log, TEXT("FPyramidBuilder::ValidatePrecomputedData - All data validated successfully"));
-    }
-    else
-    {
-        UE_LOG(LogTemp, Error, TEXT("FPyramidBuilder::ValidatePrecomputedData - Data validation failed!"));
+        return false;
     }
     
     return bIsValid;

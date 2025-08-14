@@ -50,4 +50,10 @@ protected:
     bool ValidateGeneratedData() const;
     
     void ReserveMemory();
+    
+    /** 基于顶点位置的稳定UV映射 - 通用实现 */
+    FVector2D GenerateStableUV(const FVector& Position, const FVector& Normal) const;
+    
+    /** 基于顶点位置的稳定UV映射 - 子类可重写的虚函数 */
+    virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const;
 };

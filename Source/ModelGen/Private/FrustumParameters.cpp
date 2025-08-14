@@ -4,31 +4,26 @@
 
 bool FFrustumParameters::IsValid() const
 {
-    // 检查基础几何参数
     if (TopRadius <= 0.0f || BottomRadius <= 0.0f || Height <= 0.0f)
     {
         return false;
     }
 
-    // 检查细分参数
     if (TopSides < 3 || BottomSides < 3 || HeightSegments < 1)
     {
         return false;
     }
 
-    // 检查倒角参数
     if (BevelRadius < 0.0f || BevelSegments < 1)
     {
         return false;
     }
 
-    // 检查弯曲参数
     if (MinBendRadius < 0.0f)
     {
         return false;
     }
 
-    // 检查角度参数
     if (ArcAngle <= 0.0f || ArcAngle > 360.0f)
     {
         return false;
@@ -44,20 +39,14 @@ int32 FFrustumParameters::CalculateVertexCountEstimate() const
         return 0;
     }
 
-    // 基础顶点：顶部和底面的顶点
     int32 BaseVertices = TopSides + BottomSides;
-    
-    // 侧面顶点：高度分段数 * 最大边数（用于插值）
     int32 MaxSides = FMath::Max(TopSides, BottomSides);
     int32 SideVertices = HeightSegments * MaxSides;
     
-    // 倒角顶点：如果有倒角，每个边缘需要额外的顶点
     int32 BevelVertices = 0;
     if (BevelRadius > 0.0f)
     {
-        // 顶部和底面的倒角顶点
         BevelVertices = TopSides * BevelSegments + BottomSides * BevelSegments;
-        // 侧面的倒角顶点
         BevelVertices += HeightSegments * MaxSides * BevelSegments;
     }
 
@@ -71,20 +60,14 @@ int32 FFrustumParameters::CalculateTriangleCountEstimate() const
         return 0;
     }
 
-    // 基础三角形：顶部和底面的三角形
     int32 BaseTriangles = TopSides + BottomSides;
-    
-    // 侧面三角形：高度分段数 * 最大边数 * 2（每个四边形分解为两个三角形）
     int32 MaxSides = FMath::Max(TopSides, BottomSides);
     int32 SideTriangles = HeightSegments * MaxSides * 2;
     
-    // 倒角三角形：如果有倒角，每个边缘需要额外的三角形
     int32 BevelTriangles = 0;
     if (BevelRadius > 0.0f)
     {
-        // 顶部和底面的倒角三角形
         BevelTriangles = TopSides * BevelSegments * 2 + BottomSides * BevelSegments * 2;
-        // 侧面的倒角三角形
         BevelTriangles += HeightSegments * MaxSides * BevelSegments * 2;
     }
 
@@ -93,7 +76,7 @@ int32 FFrustumParameters::CalculateTriangleCountEstimate() const
 
 void FFrustumParameters::PostEditChangeProperty(const FName& PropertyName)
 {
-    UE_LOG(LogTemp, Log, TEXT("FFrustumParameters::PostEditChangeProperty - Property changed: %s"), *PropertyName.ToString());
+    // 可以在这里添加属性变更处理逻辑
 }
 
 bool FFrustumParameters::operator==(const FFrustumParameters& Other) const

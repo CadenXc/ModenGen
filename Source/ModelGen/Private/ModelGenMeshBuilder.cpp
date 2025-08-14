@@ -78,3 +78,51 @@ void FModelGenMeshBuilder::ReserveMemory()
     
     MeshData.Reserve(EstimatedVertexCount, EstimatedTriangleCount);
 }
+
+// 通用稳定UV映射实现
+FVector2D FModelGenMeshBuilder::GenerateStableUV(const FVector& Position, const FVector& Normal) const
+{
+    // 首先尝试调用子类的自定义实现
+    FVector2D CustomUV = GenerateStableUVCustom(Position, Normal);
+    
+    // 如果子类没有重写，返回默认实现
+    if (CustomUV.X == 0.0f && CustomUV.Y == 0.0f)
+    {
+        // 默认实现：基于位置和法线的简单映射
+        float X = Position.X;
+        float Y = Position.Y;
+        float Z = Position.Z;
+        
+        // 根据法线方向选择UV映射策略
+        if (FMath::Abs(Normal.Z) > 0.9f)
+        {
+            // 水平面：使用X和Y坐标
+            float U = (X + 1.0f) * 0.5f;  // 0 到 1
+            float V = (Y + 1.0f) * 0.5f;  // 0 到 1
+            return FVector2D(U, V);
+        }
+        else if (FMath::Abs(Normal.X) > 0.9f)
+        {
+            // 垂直X面：使用Y和Z坐标
+            float U = (Y + 1.0f) * 0.5f;  // 0 到 1
+            float V = (Z + 1.0f) * 0.5f;  // 0 到 1
+            return FVector2D(U, V);
+        }
+        else
+        {
+            // 垂直Y面：使用X和Z坐标
+            float U = (X + 1.0f) * 0.5f;  // 0 到 1
+            float V = (Z + 1.0f) * 0.5f;  // 0 到 1
+            return FVector2D(U, V);
+        }
+    }
+    
+    return CustomUV;
+}
+
+// 默认自定义实现
+FVector2D FModelGenMeshBuilder::GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const
+{
+    // 默认返回零向量，表示使用通用实现
+    return FVector2D(0.0f, 0.0f);
+}

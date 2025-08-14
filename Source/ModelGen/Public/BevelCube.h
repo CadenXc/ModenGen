@@ -40,7 +40,6 @@ public:
     ABevelCube();
     virtual void BeginPlay() override;
     virtual void OnConstruction(const FTransform& Transform) override;
-    virtual void Tick(float DeltaTime) override;
 
 protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters")

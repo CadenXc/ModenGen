@@ -105,4 +105,7 @@ private:
     float CalculateInnerRadius(bool bIncludeBevel) const;
     float CalculateOuterRadius(bool bIncludeBevel) const;
     FVector CalculateVertexPosition(float Radius, float Angle, float Z) const;
+    
+    /** 基于顶点位置的稳定UV映射 - 重写父类实现 */
+    virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const override;
 };

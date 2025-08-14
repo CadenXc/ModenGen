@@ -36,12 +36,8 @@ public:
 
 public:
     bool IsValid() const;
-    
     float GetHalfSize() const { return Size * 0.5f; }
-    
     float GetInnerOffset() const { return GetHalfSize() - BevelRadius; }
-    
     int32 GetVertexCount() const;
-    
     int32 GetTriangleCount() const;
 };

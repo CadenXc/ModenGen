@@ -35,11 +35,6 @@ void ABevelCube::OnConstruction(const FTransform& Transform)
     RegenerateMesh();
 }
 
-void ABevelCube::Tick(float DeltaTime)
-{
-    Super::Tick(DeltaTime);
-}
-
 void ABevelCube::InitializeComponents()
 {
     if (ProceduralMesh)
@@ -74,22 +69,15 @@ void ABevelCube::RegenerateMesh()
 {
     if (!ProceduralMesh)
     {
-        UE_LOG(LogTemp, Error, TEXT("ProceduralMesh component is null"));
         return;
     }
 
     ProceduralMesh->ClearAllMeshSections();
-    UE_LOG(LogTemp, Log, TEXT("Cleared all mesh sections"));
 
     if (!Parameters.IsValid())
     {
-        UE_LOG(LogTemp, Warning, TEXT("Invalid BevelCube parameters: Size=%f, BevelSize=%f, BevelSections=%d"), 
-               Parameters.Size, Parameters.BevelRadius, Parameters.BevelSegments);
         return;
     }
-
-    UE_LOG(LogTemp, Log, TEXT("Starting BevelCube generation with parameters: Size=%f, BevelSize=%f, BevelSections=%d"), 
-           Parameters.Size, Parameters.BevelRadius, Parameters.BevelSegments);
 
     // 创建构建器并生成网格数据
     FBevelCubeBuilder Builder(Parameters);
@@ -99,25 +87,14 @@ void ABevelCube::RegenerateMesh()
     {
         if (!MeshData.IsValid())
         {
-            UE_LOG(LogTemp, Error, TEXT("Generated mesh data is invalid"));
             return;
         }
-
-        UE_LOG(LogTemp, Log, TEXT("Mesh data generated successfully: %d vertices, %d triangles"), 
-               MeshData.GetVertexCount(), MeshData.GetTriangleCount());
 
         MeshData.ToProceduralMesh(ProceduralMesh, 0);
         
         ApplyMaterial();
         
         SetupCollision();
-        
-        UE_LOG(LogTemp, Log, TEXT("BevelCube generated successfully: %d vertices, %d triangles"), 
-               MeshData.GetVertexCount(), MeshData.GetTriangleCount());
-    }
-    else
-    {
-        UE_LOG(LogTemp, Error, TEXT("Failed to generate BevelCube mesh"));
     }
 }
 
