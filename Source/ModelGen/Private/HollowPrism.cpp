@@ -38,18 +38,12 @@ void AHollowPrism::PostEditChangeProperty(FPropertyChangedEvent& PropertyChanged
     const FName PropertyName = PropertyChangedEvent.GetPropertyName();
     const FString PropertyNameStr = PropertyName.ToString();
     
-    if (PropertyNameStr.StartsWith("InnerRadius") || 
-        PropertyNameStr.StartsWith("OuterRadius") || 
-        PropertyNameStr.StartsWith("Height") || 
-        PropertyNameStr.StartsWith("Sides") || 
-        PropertyNameStr.StartsWith("OuterSides") || 
-        PropertyNameStr.StartsWith("InnerSides") || 
-        PropertyNameStr.StartsWith("ArcAngle") || 
-        PropertyNameStr.StartsWith("BevelRadius") || 
-        PropertyNameStr.StartsWith("BevelSegments") || 
-        PropertyNameStr.StartsWith("bUseTriangleMethod") || 
-        PropertyNameStr.StartsWith("bFlipNormals") || 
-        PropertyNameStr.StartsWith("bDisableDebounce"))
+    if (PropertyNameStr.StartsWith("InnerRadius") || PropertyNameStr.StartsWith("OuterRadius") || 
+        PropertyNameStr.StartsWith("Height") || PropertyNameStr.StartsWith("Sides") || 
+        PropertyNameStr.StartsWith("OuterSides") || PropertyNameStr.StartsWith("InnerSides") || 
+        PropertyNameStr.StartsWith("ArcAngle") || PropertyNameStr.StartsWith("BevelRadius") || 
+        PropertyNameStr.StartsWith("BevelSegments") || PropertyNameStr.StartsWith("bUseTriangleMethod") || 
+        PropertyNameStr.StartsWith("bFlipNormals") || PropertyNameStr.StartsWith("bDisableDebounce"))
     {
         RegenerateMesh();
         return;

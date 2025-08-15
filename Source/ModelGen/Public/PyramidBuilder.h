@@ -3,9 +3,6 @@
 /**
  * @file PyramidBuilder.h
  * @brief 金字塔网格构建器
- * 
- * 该类负责生成金字塔的几何数据，继承自FModelGenMeshBuilder。
- * 提供了完整的金字塔生成功能，包括底面、倒角部分和侧面。
  */
 
 #pragma once
@@ -13,7 +10,6 @@
 #include "CoreMinimal.h"
 #include "ModelGenMeshBuilder.h"
 
-// Forward declarations
 class APyramid;
 
 class MODELGEN_API FPyramidBuilder : public FModelGenMeshBuilder
@@ -87,13 +83,8 @@ private:
     TArray<FVector2D> GenerateCircularUVs(int32 NumSides, float UVOffsetZ = 0.0f) const;
     TArray<FVector2D> GenerateSideStripUVs(int32 NumSides, float UVOffsetY = 0.0f, float UVScaleY = 1.0f) const;
     
-    /** 基于顶点位置的稳定UV映射 - 重写父类实现 */
     virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const override;
-    
-    /** 生成第二UV通道 - 传统UV系统 */
     FVector2D GenerateSecondaryUV(const FVector& Position, const FVector& Normal) const;
-    
-    /** 使用双UV通道添加顶点 */
     int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal);
     
     bool ValidatePrecomputedData() const;

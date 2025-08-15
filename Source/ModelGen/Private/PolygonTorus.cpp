@@ -35,14 +35,10 @@ void APolygonTorus::PostEditChangeProperty(FPropertyChangedEvent& PropertyChange
     const FName PropertyName = PropertyChangedEvent.GetPropertyName();
     const FString PropertyNameStr = PropertyName.ToString();
     
-    if (PropertyNameStr.StartsWith("MajorRadius") || 
-        PropertyNameStr.StartsWith("MinorRadius") || 
-        PropertyNameStr.StartsWith("MajorSegments") || 
-        PropertyNameStr.StartsWith("MinorSegments") || 
-        PropertyNameStr.StartsWith("TorusAngle") || 
-        PropertyNameStr.StartsWith("bSmoothCrossSection") || 
-        PropertyNameStr.StartsWith("bSmoothVerticalSection") || 
-        PropertyName == "bGenerateCollision" || 
+    if (PropertyNameStr.StartsWith("MajorRadius") || PropertyNameStr.StartsWith("MinorRadius") || 
+        PropertyNameStr.StartsWith("MajorSegments") || PropertyNameStr.StartsWith("MinorSegments") || 
+        PropertyNameStr.StartsWith("TorusAngle") || PropertyNameStr.StartsWith("bSmoothCrossSection") || 
+        PropertyNameStr.StartsWith("bSmoothVerticalSection") || PropertyName == "bGenerateCollision" || 
         PropertyName == "bUseAsyncCooking")
     {
         RegenerateMesh();
@@ -58,23 +54,19 @@ void APolygonTorus::PostEditChangeChainProperty(FPropertyChangedChainEvent& Prop
     Super::PostEditChangeChainProperty(PropertyChangedEvent);
 
     const FName PropertyName = PropertyChangedEvent.GetPropertyName();
-    const FString PropertyNameStr = PropertyChangedEvent.GetPropertyName().ToString();
+    const FString PropertyNameStr = PropertyName.ToString();
     
-    if (PropertyNameStr.StartsWith("MajorRadius") || 
-        PropertyNameStr.StartsWith("MinorRadius") || 
-        PropertyNameStr.StartsWith("MajorSegments") || 
-        PropertyNameStr.StartsWith("MinorSegments") || 
-        PropertyNameStr.StartsWith("TorusAngle") || 
-        PropertyNameStr.StartsWith("bSmoothCrossSection") || 
-        PropertyNameStr.StartsWith("bSmoothVerticalSection") || 
-        PropertyName == "bGenerateCollision" || 
+    if (PropertyNameStr.StartsWith("MajorRadius") || PropertyNameStr.StartsWith("MinorRadius") || 
+        PropertyNameStr.StartsWith("MajorSegments") || PropertyNameStr.StartsWith("MinorSegments") || 
+        PropertyNameStr.StartsWith("TorusAngle") || PropertyNameStr.StartsWith("bSmoothCrossSection") || 
+        PropertyNameStr.StartsWith("bSmoothVerticalSection") || PropertyName == "bGenerateCollision" || 
         PropertyName == "bUseAsyncCooking")
     {
         RegenerateMesh();
     }
     else if (PropertyName == "Material")
     {
-        ApplyMaterial();
+        return;
     }
 }
 #endif

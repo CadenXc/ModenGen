@@ -18,25 +18,18 @@ APyramid::APyramid()
     ProceduralMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProceduralMesh"));
     RootComponent = ProceduralMesh;
     
-    BaseRadius = 100.0f;
-    Height = 200.0f;
-    Sides = 4;
-    BevelRadius = 0.0f;
-    
     InitializeComponents();
 }
 
 void APyramid::BeginPlay()
 {
     Super::BeginPlay();
-    
     RegenerateMesh();
 }
 
 void APyramid::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
-    
     RegenerateMesh();
 }
 
@@ -46,59 +39,37 @@ void APyramid::InitializeComponents()
     {
         ProceduralMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
         ProceduralMesh->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
-        
-        ApplyMaterial();
-        
-        SetupCollision();
-    }
-}
-
-void APyramid::ApplyMaterial()
-{
-    if (ProceduralMesh && Material)
-    {
-        ProceduralMesh->SetMaterial(0, Material);
-    }
-}
-
-void APyramid::SetupCollision()
-{
-    if (ProceduralMesh)
-    {
-        ProceduralMesh->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
         ProceduralMesh->bUseAsyncCooking = bUseAsyncCooking;
+        
+        if (Material)
+        {
+            ProceduralMesh->SetMaterial(0, Material);
+        }
     }
 }
 
 void APyramid::RegenerateMesh()
 {
-    if (!ProceduralMesh)
+    if (!ProceduralMesh || !IsValid())
     {
         return;
     }
     
     ProceduralMesh->ClearAllMeshSections();
     
-    if (!IsValid())
-    {
-        return;
-    }
-    
     FPyramidBuilder Builder(*this);
     FModelGenMeshData MeshData;
     
-    if (Builder.Generate(MeshData))
+    if (Builder.Generate(MeshData) && MeshData.IsValid())
     {
-        if (!MeshData.IsValid())
-        {
-            return;
-        }
-        
         MeshData.ToProceduralMesh(ProceduralMesh, 0);
         
-        ApplyMaterial();
+        if (Material)
+        {
+            ProceduralMesh->SetMaterial(0, Material);
+        }
         
-        SetupCollision();
+        ProceduralMesh->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
     }
 }
 
@@ -107,18 +78,14 @@ void APyramid::GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides
     BaseRadius = InBaseRadius;
     Height = InHeight;
     Sides = InSides;
-    
     RegenerateMesh();
 }
 
 bool APyramid::IsValid() const
 {
-    const bool bValidBaseRadius = BaseRadius > 0.0f;
-    const bool bValidHeight = Height > 0.0f;
-    const bool bValidSides = Sides >= 3 && Sides <= 100;
-    const bool bValidBevelRadius = BevelRadius >= 0.0f && BevelRadius < Height;
-    
-    return bValidBaseRadius && bValidHeight && bValidSides && bValidBevelRadius;
+    return BaseRadius > 0.0f && Height > 0.0f && 
+           Sides >= 3 && Sides <= 100 && 
+           BevelRadius >= 0.0f && BevelRadius < Height;
 }
 
 float APyramid::GetBevelTopRadius() const

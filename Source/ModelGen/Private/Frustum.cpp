@@ -37,18 +37,12 @@ void AFrustum::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
     const FName PropertyName = PropertyChangedEvent.GetPropertyName();
     const FString PropertyNameStr = PropertyName.ToString();
     
-    if (PropertyNameStr.StartsWith("TopRadius") || 
-        PropertyNameStr.StartsWith("BottomRadius") || 
-        PropertyNameStr.StartsWith("Height") || 
-        PropertyNameStr.StartsWith("TopSides") || 
-        PropertyNameStr.StartsWith("BottomSides") || 
-        PropertyNameStr.StartsWith("HeightSegments") || 
-        PropertyNameStr.StartsWith("BevelRadius") || 
-        PropertyNameStr.StartsWith("BevelSegments") || 
-        PropertyNameStr.StartsWith("BendAmount") || 
-        PropertyNameStr.StartsWith("MinBendRadius") || 
-        PropertyNameStr.StartsWith("ArcAngle") || 
-        PropertyName == "bGenerateCollision" || 
+    if (PropertyNameStr.StartsWith("TopRadius") || PropertyNameStr.StartsWith("BottomRadius") || 
+        PropertyNameStr.StartsWith("Height") || PropertyNameStr.StartsWith("TopSides") || 
+        PropertyNameStr.StartsWith("BottomSides") || PropertyNameStr.StartsWith("HeightSegments") || 
+        PropertyNameStr.StartsWith("BevelRadius") || PropertyNameStr.StartsWith("BevelSegments") || 
+        PropertyNameStr.StartsWith("BendAmount") || PropertyNameStr.StartsWith("MinBendRadius") || 
+        PropertyNameStr.StartsWith("ArcAngle") || PropertyName == "bGenerateCollision" || 
         PropertyName == "bUseAsyncCooking")
     {
         RegenerateMesh();
@@ -66,18 +60,12 @@ void AFrustum::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyC
     const FName PropertyName = PropertyChangedEvent.GetPropertyName();
     const FString PropertyNameStr = PropertyName.ToString();
     
-    if (PropertyNameStr.StartsWith("TopRadius") || 
-        PropertyNameStr.StartsWith("BottomRadius") || 
-        PropertyNameStr.StartsWith("Height") || 
-        PropertyNameStr.StartsWith("TopSides") || 
-        PropertyNameStr.StartsWith("BottomSides") || 
-        PropertyNameStr.StartsWith("HeightSegments") || 
-        PropertyNameStr.StartsWith("BevelRadius") || 
-        PropertyNameStr.StartsWith("BevelSegments") || 
-        PropertyNameStr.StartsWith("BendAmount") || 
-        PropertyNameStr.StartsWith("MinBendRadius") || 
-        PropertyNameStr.StartsWith("ArcAngle") || 
-        PropertyName == "bGenerateCollision" || 
+    if (PropertyNameStr.StartsWith("TopRadius") || PropertyNameStr.StartsWith("BottomRadius") || 
+        PropertyNameStr.StartsWith("Height") || PropertyNameStr.StartsWith("TopSides") || 
+        PropertyNameStr.StartsWith("BottomSides") || PropertyNameStr.StartsWith("HeightSegments") || 
+        PropertyNameStr.StartsWith("BevelRadius") || PropertyNameStr.StartsWith("BevelSegments") || 
+        PropertyNameStr.StartsWith("BendAmount") || PropertyNameStr.StartsWith("MinBendRadius") || 
+        PropertyNameStr.StartsWith("ArcAngle") || PropertyName == "bGenerateCollision" || 
         PropertyName == "bUseAsyncCooking")
     {
         RegenerateMesh();

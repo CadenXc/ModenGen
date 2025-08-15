@@ -120,11 +120,9 @@ void FPyramidBuilder::GeneratePolygonFace(const TArray<FVector>& PolygonVerts, c
         return;
     }
     
-    // 添加所有顶点
     TArray<int32> VertexIndices;
     for (int32 i = 0; i < PolygonVerts.Num(); ++i)
     {
-        // 计算圆形UV坐标
         float Angle = 2.0f * PI * static_cast<float>(i) / PolygonVerts.Num();
         float U = 0.5f + 0.5f * FMath::Cos(Angle);
         float V = 0.5f + 0.5f * FMath::Sin(Angle);
@@ -133,7 +131,6 @@ void FPyramidBuilder::GeneratePolygonFace(const TArray<FVector>& PolygonVerts, c
         VertexIndices.Add(VertexIndex);
     }
     
-    // 生成三角形（扇形三角剖分）
     for (int32 i = 1; i < PolygonVerts.Num() - 1; ++i)
     {
         int32 V0 = VertexIndices[0];
@@ -162,20 +159,17 @@ void FPyramidBuilder::GenerateSideStrip(const TArray<FVector>& BottomVerts, cons
     {
         const int32 NextI = (i + 1) % BottomVerts.Num();
         
-        // 计算侧面法线（确保指向外部）
         FVector Edge1 = BottomVerts[NextI] - BottomVerts[i];
         FVector Edge2 = TopVerts[i] - BottomVerts[i];
         FVector SideNormal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
         
         if (bReverseNormal) SideNormal = -SideNormal;
         
-        // 添加四个顶点
         int32 V1 = GetOrAddVertex(BottomVerts[i], SideNormal, FVector2D(static_cast<float>(i) / BottomVerts.Num(), UVOffsetY));
         int32 V2 = GetOrAddVertex(BottomVerts[NextI], SideNormal, FVector2D(static_cast<float>(NextI) / BottomVerts.Num(), UVOffsetY));
         int32 V3 = GetOrAddVertex(TopVerts[NextI], SideNormal, FVector2D(static_cast<float>(NextI) / TopVerts.Num(), UVOffsetY + UVScaleY));
         int32 V4 = GetOrAddVertex(TopVerts[i], SideNormal, FVector2D(static_cast<float>(i) / TopVerts.Num(), UVOffsetY + UVScaleY));
         
-        // 添加四边形（两个三角形）
         if (bReverseNormal)
         {
             AddTriangle(V1, V3, V2);
@@ -212,7 +206,6 @@ TArray<FVector> FPyramidBuilder::GenerateBevelVertices(float BottomRadius, float
     return GenerateCircleVertices(TopRadius, Z, NumSides);
 }
 
-// 新增：预计算常量
 void FPyramidBuilder::PrecomputeConstants()
 {
     BaseRadius = Pyramid.BaseRadius;
@@ -222,7 +215,6 @@ void FPyramidBuilder::PrecomputeConstants()
     BevelTopRadius = Pyramid.GetBevelTopRadius();
 }
 
-// 新增：预计算三角函数值
 void FPyramidBuilder::PrecomputeTrigonometricValues()
 {
     AngleValues.SetNum(Sides);
@@ -238,7 +230,6 @@ void FPyramidBuilder::PrecomputeTrigonometricValues()
     }
 }
 
-// 新增：预计算UV缩放值
 void FPyramidBuilder::PrecomputeUVScaleValues()
 {
     UVScaleValues.SetNum(Sides);
@@ -248,19 +239,14 @@ void FPyramidBuilder::PrecomputeUVScaleValues()
     }
 }
 
-// 新增：预计算顶点
 void FPyramidBuilder::PrecomputeVertices()
 {
-    // 先预计算三角函数值
     PrecomputeTrigonometricValues();
-    
-    // 初始化各种顶点
     InitializeBaseVertices();
     InitializeBevelVertices();
     InitializePyramidVertices();
 }
 
-// 新增：初始化底面顶点
 void FPyramidBuilder::InitializeBaseVertices()
 {
     BaseVertices.SetNum(Sides);
@@ -272,7 +258,6 @@ void FPyramidBuilder::InitializeBaseVertices()
     }
 }
 
-// 新增：初始化倒角顶点
 void FPyramidBuilder::InitializeBevelVertices()
 {
     if (BevelRadius <= 0.0f)
@@ -282,10 +267,8 @@ void FPyramidBuilder::InitializeBevelVertices()
         return;
     }
     
-    // 倒角底部顶点（与底面相同）
     BevelBottomVertices = BaseVertices;
     
-    // 倒角顶部顶点
     BevelTopVertices.SetNum(Sides);
     for (int32 i = 0; i < Sides; ++i)
     {
@@ -295,7 +278,6 @@ void FPyramidBuilder::InitializeBevelVertices()
     }
 }
 
-// 新增：初始化金字塔顶点
 void FPyramidBuilder::InitializePyramidVertices()
 {
     // 金字塔底部顶点（倒角顶部或底面）
