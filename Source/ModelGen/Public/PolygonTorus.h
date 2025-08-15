@@ -5,7 +5,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ProceduralMeshComponent.h"
-#include "PolygonTorusParameters.h"
 #include "ModelGenMeshData.h"
 #include "PolygonTorus.generated.h"
 
@@ -17,17 +16,87 @@ class MODELGEN_API APolygonTorus : public AActor
 public:
     APolygonTorus();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Parameters")
-    FPolygonTorusParameters Parameters;
+    //~ Begin Geometry Parameters
+    /** 主半径（圆环中心到截面中心的距离） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Geometry", 
+        meta = (ClampMin = "1.0", UIMin = "1.0", 
+        DisplayName = "Major Radius", ToolTip = "Distance from torus center to section center"))
+    float MajorRadius = 100.0f;
+
+    /** 次半径（截面半径） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Geometry", 
+        meta = (ClampMin = "1.0", UIMin = "1.0", 
+        DisplayName = "Minor Radius", ToolTip = "Section radius"))
+    float MinorRadius = 25.0f;
+
+    /** 主分段数（圆环分段数） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Geometry", 
+        meta = (ClampMin = 3, UIMin = 3, ClampMax = 256, UIMax = 100, 
+        DisplayName = "Major Segments", ToolTip = "Number of torus segments"))
+    int32 MajorSegments = 8;
+
+    /** 次分段数（截面分段数） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Geometry", 
+        meta = (ClampMin = 3, UIMin = 3, ClampMax = 256, UIMax = 100, 
+        DisplayName = "Minor Segments", ToolTip = "Number of section segments"))
+    int32 MinorSegments = 4;
+
+    /** 圆环角度（度数） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Geometry", 
+        meta = (ClampMin = "1.0", UIMin = "1.0", ClampMax = "360.0", UIMax = "360.0", 
+        DisplayName = "Torus Angle", ToolTip = "Torus angle in degrees"))
+    float TorusAngle = 360.0f;
+
+    /** 横切面光滑 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Smoothing", 
+        meta = (DisplayName = "Smooth Cross Section", ToolTip = "Smooth cross sections"))
+    bool bSmoothCrossSection = true;
+
+    /** 竖面光滑 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Smoothing", 
+        meta = (DisplayName = "Smooth Vertical Section", ToolTip = "Smooth vertical sections"))
+    bool bSmoothVerticalSection = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Materials")
+    UMaterialInterface* Material;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Collision")
+    bool bGenerateCollision = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Collision")
+    bool bUseAsyncCooking = true;
 
     UFUNCTION(BlueprintCallable, Category = "PolygonTorus|Generation")
     void RegenerateMesh();
+
+    UFUNCTION(BlueprintCallable, Category = "PolygonTorus|Materials")
+    void SetMaterial(UMaterialInterface* NewMaterial);
 
 protected:
     virtual void BeginPlay() override;
     virtual void OnConstruction(const FTransform& Transform) override;
 
+#if WITH_EDITOR
+    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+    virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
+#endif
+
 private:
     UPROPERTY(VisibleAnywhere, Category = "PolygonTorus|Components")
     UProceduralMeshComponent* ProceduralMesh;
+
+    void InitializeComponents();
+    void ApplyMaterial();
+    void SetupCollision();
+
+public:
+    // 参数验证和计算函数
+    /** 验证参数的有效性 */
+    bool IsValid() const;
+    
+    /** 计算预估的顶点数量 */
+    int32 CalculateVertexCountEstimate() const;
+    
+    /** 计算预估的三角形数量 */
+    int32 CalculateTriangleCountEstimate() const;
 };

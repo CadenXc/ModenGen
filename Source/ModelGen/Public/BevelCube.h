@@ -18,7 +18,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ProceduralMeshComponent.h"
-#include "BevelCubeParameters.h"
 
 // Generated header must be the last include
 #include "BevelCube.generated.h"
@@ -41,9 +40,20 @@ public:
     virtual void BeginPlay() override;
     virtual void OnConstruction(const FTransform& Transform) override;
 
-protected:
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters")
-    FBevelCubeParameters Parameters;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters", 
+        meta = (ClampMin = "0.01", UIMin = "0.01", DisplayName = "Size", 
+        ToolTip = "立方体的基础大小"))
+    float Size = 100.0f;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters", 
+        meta = (ClampMin = "0.0", UIMin = "0.0", DisplayName = "Bevel Size", 
+        ToolTip = "倒角的大小，不能超过立方体半边长"))
+    float BevelRadius = 10.0f;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters", 
+        meta = (ClampMin = "1", ClampMax = "10", UIMin = "1", UIMax = "10", 
+        DisplayName = "Bevel Sections", ToolTip = "倒角的分段数，影响倒角的平滑度"))
+    int32 BevelSegments = 3;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Materials")
     UMaterialInterface* Material;
@@ -53,6 +63,14 @@ protected:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Collision")
     bool bUseAsyncCooking = true;
+
+public:
+    // 参数验证和计算函数
+    bool IsValid() const;
+    float GetHalfSize() const { return Size * 0.5f; }
+    float GetInnerOffset() const { return GetHalfSize() - BevelRadius; }
+    int32 GetVertexCount() const;
+    int32 GetTriangleCount() const;
 
 private:
     UPROPERTY(VisibleAnywhere, Category = "BevelCube|Components")
@@ -67,5 +85,6 @@ private:
     void RegenerateMesh();
     
     UFUNCTION(BlueprintCallable, Category = "BevelCube|Generation")
-    void GenerateBeveledCube(float Size, float BevelSize, int32 Sections);
+    void GenerateBeveledCube(float InSize, float InBevelSize, int32 InSections);
+
 };

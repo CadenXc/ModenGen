@@ -38,7 +38,18 @@ void AHollowPrism::PostEditChangeProperty(FPropertyChangedEvent& PropertyChanged
     const FName PropertyName = PropertyChangedEvent.GetPropertyName();
     const FString PropertyNameStr = PropertyName.ToString();
     
-    if (PropertyNameStr.StartsWith("Parameters."))
+    if (PropertyNameStr.StartsWith("InnerRadius") || 
+        PropertyNameStr.StartsWith("OuterRadius") || 
+        PropertyNameStr.StartsWith("Height") || 
+        PropertyNameStr.StartsWith("Sides") || 
+        PropertyNameStr.StartsWith("OuterSides") || 
+        PropertyNameStr.StartsWith("InnerSides") || 
+        PropertyNameStr.StartsWith("ArcAngle") || 
+        PropertyNameStr.StartsWith("BevelRadius") || 
+        PropertyNameStr.StartsWith("BevelSegments") || 
+        PropertyNameStr.StartsWith("bUseTriangleMethod") || 
+        PropertyNameStr.StartsWith("bFlipNormals") || 
+        PropertyNameStr.StartsWith("bDisableDebounce"))
     {
         RegenerateMesh();
         return;
@@ -68,7 +79,18 @@ void AHollowPrism::PostEditChangeChainProperty(FPropertyChangedChainEvent& Prope
     const FName PropertyName = PropertyChangedEvent.GetPropertyName();
     const FString PropertyNameStr = PropertyName.ToString();
     
-    if (PropertyNameStr.StartsWith("Parameters."))
+    if (PropertyNameStr.StartsWith("InnerRadius") || 
+        PropertyNameStr.StartsWith("OuterRadius") || 
+        PropertyNameStr.StartsWith("Height") || 
+        PropertyNameStr.StartsWith("Sides") || 
+        PropertyNameStr.StartsWith("OuterSides") || 
+        PropertyNameStr.StartsWith("InnerSides") || 
+        PropertyNameStr.StartsWith("ArcAngle") || 
+        PropertyNameStr.StartsWith("BevelRadius") || 
+        PropertyNameStr.StartsWith("BevelSegments") || 
+        PropertyNameStr.StartsWith("bUseTriangleMethod") || 
+        PropertyNameStr.StartsWith("bFlipNormals") || 
+        PropertyNameStr.StartsWith("bDisableDebounce"))
     {
         RegenerateMesh();
         return;
@@ -145,18 +167,18 @@ void AHollowPrism::RegenerateMesh()
     const float CurrentTime = FPlatformTime::Seconds();
     const float MinUpdateInterval = 0.05f;
     
-    if (!Parameters.bDisableDebounce && CurrentTime - LastUpdateTime < MinUpdateInterval)
+    if (!bDisableDebounce && CurrentTime - LastUpdateTime < MinUpdateInterval)
     {
         return;
     }
     
     LastUpdateTime = CurrentTime;
 
-    static FHollowPrismParameters LastParameters;
+    static AHollowPrism* LastHollowPrism = nullptr;
     static UMaterialInterface* LastMaterial = nullptr;
     static bool bFirstGeneration = true;
     
-    bool bParametersChanged = bFirstGeneration || LastParameters != Parameters;
+    bool bParametersChanged = bFirstGeneration || LastHollowPrism != this;
     bool bMaterialChanged = bFirstGeneration || LastMaterial != Material;
     
     if (!bFirstGeneration && !bParametersChanged && !bMaterialChanged)
@@ -164,13 +186,13 @@ void AHollowPrism::RegenerateMesh()
         return;
     }
     
-    LastParameters = Parameters;
+    LastHollowPrism = this;
     LastMaterial = Material;
     bFirstGeneration = false;
 
     ProceduralMesh->ClearAllMeshSections();
 
-    FHollowPrismBuilder Builder(Parameters);
+    FHollowPrismBuilder Builder(*this);
     FModelGenMeshData MeshData;
 
     if (Builder.Generate(MeshData))
@@ -199,4 +221,113 @@ void AHollowPrism::SetMaterial(UMaterialInterface* NewMaterial)
         Material = NewMaterial;
         ApplyMaterial();
     }
+}
+
+bool AHollowPrism::IsValid() const
+{
+    if (InnerRadius <= 0.0f || OuterRadius <= 0.0f || Height <= 0.0f)
+    {
+        return false;
+    }
+
+    if (InnerRadius >= OuterRadius)
+    {
+        return false;
+    }
+
+    if (Sides < 3 || InnerSides < 3 || OuterSides < 3)
+    {
+        return false;
+    }
+
+    if (ArcAngle <= 0.0f || ArcAngle > 360.0f)
+    {
+        return false;
+    }
+
+    if (BevelRadius < 0.0f || BevelSegments < 1)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+float AHollowPrism::GetWallThickness() const
+{
+    return OuterRadius - InnerRadius;
+}
+
+bool AHollowPrism::IsFullCircle() const
+{
+    return FMath::IsNearlyEqual(ArcAngle, 360.0f, 0.1f);
+}
+
+int32 AHollowPrism::CalculateVertexCountEstimate() const
+{
+    if (!IsValid())
+    {
+        return 0;
+    }
+
+    int32 BaseVertices = InnerSides + OuterSides;
+    
+    int32 BevelVertices = 0;
+    if (BevelRadius > 0.0f)
+    {
+        BevelVertices = (InnerSides + OuterSides) * BevelSegments * 2;
+    }
+    
+    int32 EndCapVertices = 0;
+    if (!IsFullCircle())
+    {
+        EndCapVertices = InnerSides + OuterSides;
+    }
+
+    return BaseVertices + BevelVertices + EndCapVertices;
+}
+
+int32 AHollowPrism::CalculateTriangleCountEstimate() const
+{
+    if (!IsValid())
+    {
+        return 0;
+    }
+
+    int32 BaseTriangles = InnerSides + OuterSides;
+    
+    int32 BevelTriangles = 0;
+    if (BevelRadius > 0.0f)
+    {
+        BevelTriangles = (InnerSides + OuterSides) * BevelSegments * 2;
+    }
+    
+    int32 EndCapTriangles = 0;
+    if (!IsFullCircle())
+    {
+        EndCapTriangles = InnerSides + OuterSides;
+    }
+
+    return BaseTriangles + BevelTriangles + EndCapTriangles;
+}
+
+bool AHollowPrism::operator==(const AHollowPrism& Other) const
+{
+    return InnerRadius == Other.InnerRadius &&
+           OuterRadius == Other.OuterRadius &&
+           Height == Other.Height &&
+           Sides == Other.Sides &&
+           InnerSides == Other.InnerSides &&
+           OuterSides == Other.OuterSides &&
+           ArcAngle == Other.ArcAngle &&
+           BevelRadius == Other.BevelRadius &&
+           BevelSegments == Other.BevelSegments &&
+           bUseTriangleMethod == Other.bUseTriangleMethod &&
+           bFlipNormals == Other.bFlipNormals &&
+           bDisableDebounce == Other.bDisableDebounce;
+}
+
+bool AHollowPrism::operator!=(const AHollowPrism& Other) const
+{
+    return !(*this == Other);
 }

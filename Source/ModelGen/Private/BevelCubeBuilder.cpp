@@ -1,11 +1,11 @@
 // Copyright (c) 2024. All rights reserved.
 
 #include "BevelCubeBuilder.h"
-#include "BevelCubeParameters.h"
+#include "BevelCube.h"
 #include "ModelGenMeshData.h"
 
-FBevelCubeBuilder::FBevelCubeBuilder(const FBevelCubeParameters& InParams)
-    : Params(InParams)
+FBevelCubeBuilder::FBevelCubeBuilder(const ABevelCube& InBevelCube)
+    : BevelCube(InBevelCube)
 {
     Clear();
     PrecomputeConstants();
@@ -41,25 +41,25 @@ bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
 
 bool FBevelCubeBuilder::ValidateParameters() const
 {
-    return Params.IsValid();
+    return BevelCube.IsValid();
 }
 
 int32 FBevelCubeBuilder::CalculateVertexCountEstimate() const
 {
-    return Params.GetVertexCount();
+    return BevelCube.GetVertexCount();
 }
 
 int32 FBevelCubeBuilder::CalculateTriangleCountEstimate() const
 {
-    return Params.GetTriangleCount();
+    return BevelCube.GetTriangleCount();
 }
 
 void FBevelCubeBuilder::PrecomputeConstants()
 {
-    HalfSize = Params.GetHalfSize();
-    InnerOffset = Params.GetInnerOffset();
-    BevelRadius = Params.BevelRadius;
-    BevelSegments = Params.BevelSegments;
+    HalfSize = BevelCube.GetHalfSize();
+    InnerOffset = BevelCube.GetInnerOffset();
+    BevelRadius = BevelCube.BevelRadius;
+    BevelSegments = BevelCube.BevelSegments;
 }
 
 void FBevelCubeBuilder::PrecomputeAlphaValues()

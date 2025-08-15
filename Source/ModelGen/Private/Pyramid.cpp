@@ -7,7 +7,6 @@
 
 #include "Pyramid.h"
 #include "PyramidBuilder.h"
-#include "PyramidParameters.h"
 #include "ModelGenMeshData.h"
 #include "ProceduralMeshComponent.h"
 #include "Materials/MaterialInterface.h"
@@ -19,10 +18,10 @@ APyramid::APyramid()
     ProceduralMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProceduralMesh"));
     RootComponent = ProceduralMesh;
     
-    Parameters.BaseRadius = 100.0f;
-    Parameters.Height = 200.0f;
-    Parameters.Sides = 4;
-    Parameters.BevelRadius = 0.0f;
+    BaseRadius = 100.0f;
+    Height = 200.0f;
+    Sides = 4;
+    BevelRadius = 0.0f;
     
     InitializeComponents();
 }
@@ -80,12 +79,12 @@ void APyramid::RegenerateMesh()
     
     ProceduralMesh->ClearAllMeshSections();
     
-    if (!Parameters.IsValid())
+    if (!IsValid())
     {
         return;
     }
     
-    FPyramidBuilder Builder(Parameters);
+    FPyramidBuilder Builder(*this);
     FModelGenMeshData MeshData;
     
     if (Builder.Generate(MeshData))
@@ -105,9 +104,48 @@ void APyramid::RegenerateMesh()
 
 void APyramid::GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides)
 {
-    Parameters.BaseRadius = InBaseRadius;
-    Parameters.Height = InHeight;
-    Parameters.Sides = InSides;
+    BaseRadius = InBaseRadius;
+    Height = InHeight;
+    Sides = InSides;
     
     RegenerateMesh();
+}
+
+bool APyramid::IsValid() const
+{
+    const bool bValidBaseRadius = BaseRadius > 0.0f;
+    const bool bValidHeight = Height > 0.0f;
+    const bool bValidSides = Sides >= 3 && Sides <= 100;
+    const bool bValidBevelRadius = BevelRadius >= 0.0f && BevelRadius < Height;
+    
+    return bValidBaseRadius && bValidHeight && bValidSides && bValidBevelRadius;
+}
+
+float APyramid::GetBevelTopRadius() const
+{
+    if (BevelRadius <= 0.0f) 
+    {
+        return BaseRadius;
+    }
+    
+    float ScaleFactor = 1.0f - (BevelRadius / Height);
+    return FMath::Max(0.0f, BaseRadius * ScaleFactor);
+}
+
+int32 APyramid::CalculateVertexCountEstimate() const
+{
+    int32 BaseVertexCount = Sides;
+    int32 BevelVertexCount = (BevelRadius > 0.0f) ? Sides * 2 : 0;
+    int32 PyramidVertexCount = Sides + 1;
+    
+    return BaseVertexCount + BevelVertexCount + PyramidVertexCount;
+}
+
+int32 APyramid::CalculateTriangleCountEstimate() const
+{
+    int32 BaseTriangleCount = Sides - 2;
+    int32 BevelTriangleCount = (BevelRadius > 0.0f) ? Sides * 2 : 0;
+    int32 PyramidTriangleCount = Sides;
+    
+    return BaseTriangleCount + BevelTriangleCount + PyramidTriangleCount;
 }

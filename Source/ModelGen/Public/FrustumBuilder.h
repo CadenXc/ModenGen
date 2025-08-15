@@ -8,13 +8,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "FrustumParameters.h"
 #include "ModelGenMeshBuilder.h"
+
+// Forward declarations
+class AFrustum;
 
 class MODELGEN_API FFrustumBuilder : public FModelGenMeshBuilder
 {
 public:
-    explicit FFrustumBuilder(const FFrustumParameters& InParams);
+    explicit FFrustumBuilder(const AFrustum& InFrustum);
 
     //~ Begin FModelGenMeshBuilder Interface
     virtual bool Generate(FModelGenMeshData& OutMeshData) override;
@@ -23,7 +25,7 @@ public:
     virtual int32 CalculateTriangleCountEstimate() const override;
 
 private:
-    FFrustumParameters Params;
+    const AFrustum& Frustum;
 
     float StartAngle;
     float EndAngle;
@@ -64,5 +66,5 @@ private:
     
     /** 使用双UV通道添加顶点 */
     int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal);
-    
+
 };

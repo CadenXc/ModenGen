@@ -1,12 +1,14 @@
 // Copyright (c) 2024. All rights reserved.
 
 #include "HollowPrismBuilder.h"
+#include "HollowPrism.h"
 #include "ModelGenMeshData.h"
 #include "Engine/Engine.h"
 
-FHollowPrismBuilder::FHollowPrismBuilder(const FHollowPrismParameters& InParams)
-    : Params(InParams)
+FHollowPrismBuilder::FHollowPrismBuilder(const AHollowPrism& InHollowPrism)
+    : HollowPrism(InHollowPrism)
 {
+    Clear();
 }
 
 bool FHollowPrismBuilder::Generate(FModelGenMeshData& OutMeshData)
@@ -18,9 +20,23 @@ bool FHollowPrismBuilder::Generate(FModelGenMeshData& OutMeshData)
 
     Clear();
     ReserveMemory();
-    
+
     GenerateBaseGeometry();
-    
+    GenerateSideWalls();
+    GenerateTopCapWithTriangles();
+    GenerateBottomCapWithTriangles();
+
+    if (HollowPrism.BevelRadius > 0.0f)
+    {
+        GenerateTopBevelGeometry();
+        GenerateBottomBevelGeometry();
+    }
+
+    if (!HollowPrism.IsFullCircle())
+    {
+        GenerateEndCaps();
+    }
+
     if (!ValidateGeneratedData())
     {
         return false;
@@ -32,17 +48,17 @@ bool FHollowPrismBuilder::Generate(FModelGenMeshData& OutMeshData)
 
 bool FHollowPrismBuilder::ValidateParameters() const
 {
-    return Params.IsValid();
+    return HollowPrism.IsValid();
 }
 
 int32 FHollowPrismBuilder::CalculateVertexCountEstimate() const
 {
-    return Params.CalculateVertexCountEstimate();
+    return HollowPrism.CalculateVertexCountEstimate();
 }
 
 int32 FHollowPrismBuilder::CalculateTriangleCountEstimate() const
 {
-    return Params.CalculateTriangleCountEstimate();
+    return HollowPrism.CalculateTriangleCountEstimate();
 }
 
 void FHollowPrismBuilder::GenerateBaseGeometry()
@@ -51,13 +67,13 @@ void FHollowPrismBuilder::GenerateBaseGeometry()
     GenerateTopCapWithTriangles();
     GenerateBottomCapWithTriangles();
     
-    if (Params.BevelRadius > 0.0f)
+    if (HollowPrism.BevelRadius > 0.0f)
     {
         GenerateTopBevelGeometry();
         GenerateBottomBevelGeometry();
     }
     
-    if (!Params.IsFullCircle())
+    if (!HollowPrism.IsFullCircle())
     {
         GenerateEndCaps();
     }
@@ -71,29 +87,29 @@ void FHollowPrismBuilder::GenerateSideWalls()
 
 void FHollowPrismBuilder::GenerateInnerWalls()
 {
-    const float HalfHeight = Params.GetHalfHeight();
+    const float HalfHeight = HollowPrism.GetHalfHeight();
     const float StartAngle = CalculateStartAngle();
-    const float AngleStep = CalculateAngleStep(Params.InnerSides);
+    const float AngleStep = CalculateAngleStep(HollowPrism.InnerSides);
     
     TArray<int32> InnerTopVertices, InnerBottomVertices;
     
-    for (int32 i = 0; i <= Params.InnerSides; ++i)
+    for (int32 i = 0; i <= HollowPrism.InnerSides; ++i)
     {
         const float Angle = StartAngle + i * AngleStep;
         
-        const FVector InnerPos = CalculateVertexPosition(Params.InnerRadius, Angle, HalfHeight - Params.BevelRadius);
+        const FVector InnerPos = CalculateVertexPosition(HollowPrism.InnerRadius, Angle, HalfHeight - HollowPrism.BevelRadius);
         FVector InnerNormal = FVector(-FMath::Cos(Angle), -FMath::Sin(Angle), 0.0f);
-        if (Params.bFlipNormals) InnerNormal = -InnerNormal;
+        if (HollowPrism.bFlipNormals) InnerNormal = -InnerNormal;
         
         const int32 InnerTopVertex = GetOrAddVertexWithDualUV(InnerPos, InnerNormal);
         InnerTopVertices.Add(InnerTopVertex);
         
-        const FVector InnerBottomPos = CalculateVertexPosition(Params.InnerRadius, Angle, -HalfHeight + Params.BevelRadius);
+        const FVector InnerBottomPos = CalculateVertexPosition(HollowPrism.InnerRadius, Angle, -HalfHeight + HollowPrism.BevelRadius);
         const int32 InnerBottomVertex = GetOrAddVertexWithDualUV(InnerBottomPos, InnerNormal);
         InnerBottomVertices.Add(InnerBottomVertex);
     }
     
-    for (int32 i = 0; i < Params.InnerSides; ++i)
+    for (int32 i = 0; i < HollowPrism.InnerSides; ++i)
     {
         AddQuad(InnerTopVertices[i], InnerBottomVertices[i], 
                InnerBottomVertices[i + 1], InnerTopVertices[i + 1]);
@@ -102,29 +118,29 @@ void FHollowPrismBuilder::GenerateInnerWalls()
 
 void FHollowPrismBuilder::GenerateOuterWalls()
 {
-    const float HalfHeight = Params.GetHalfHeight();
+    const float HalfHeight = HollowPrism.GetHalfHeight();
     const float StartAngle = CalculateStartAngle();
-    const float AngleStep = CalculateAngleStep(Params.OuterSides);
+    const float AngleStep = CalculateAngleStep(HollowPrism.OuterSides);
     
     TArray<int32> OuterTopVertices, OuterBottomVertices;
     
-    for (int32 i = 0; i <= Params.OuterSides; ++i)
+    for (int32 i = 0; i <= HollowPrism.OuterSides; ++i)
     {
         const float Angle = StartAngle + i * AngleStep;
         
-        const FVector OuterPos = CalculateVertexPosition(Params.OuterRadius, Angle, HalfHeight - Params.BevelRadius);
+        const FVector OuterPos = CalculateVertexPosition(HollowPrism.OuterRadius, Angle, HalfHeight - HollowPrism.BevelRadius);
         FVector OuterNormal = FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.0f);
-        if (Params.bFlipNormals) OuterNormal = -OuterNormal;
+        if (HollowPrism.bFlipNormals) OuterNormal = -OuterNormal;
         
         const int32 OuterTopVertex = GetOrAddVertexWithDualUV(OuterPos, OuterNormal);
         OuterTopVertices.Add(OuterTopVertex);
         
-        const FVector OuterBottomPos = CalculateVertexPosition(Params.OuterRadius, Angle, -HalfHeight + Params.BevelRadius);
+        const FVector OuterBottomPos = CalculateVertexPosition(HollowPrism.OuterRadius, Angle, -HalfHeight + HollowPrism.BevelRadius);
         const int32 OuterBottomVertex = GetOrAddVertexWithDualUV(OuterBottomPos, OuterNormal);
         OuterBottomVertices.Add(OuterBottomVertex);
     }
     
-    for (int32 i = 0; i < Params.OuterSides; ++i)
+    for (int32 i = 0; i < HollowPrism.OuterSides; ++i)
     {
         AddQuad(OuterTopVertices[i], OuterTopVertices[i + 1], 
                OuterBottomVertices[i + 1], OuterBottomVertices[i]);
@@ -161,12 +177,12 @@ void FHollowPrismBuilder::GenerateBottomBevelGeometry()
 
 void FHollowPrismBuilder::GenerateEndCaps()
 {
-    if (Params.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER)
+    if (HollowPrism.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER)
     {
         return; // 完整环形，不需要端盖
     }
 
-    const float ArcAngleRadians = FMath::DegreesToRadians(Params.ArcAngle);
+    const float ArcAngleRadians = FMath::DegreesToRadians(HollowPrism.ArcAngle);
     const float StartAngle = -ArcAngleRadians / 2.0f;
     const float EndAngle = ArcAngleRadians / 2.0f;
 
@@ -184,13 +200,13 @@ void FHollowPrismBuilder::GenerateEndCap(float Angle, const FVector& Normal, boo
 
 float FHollowPrismBuilder::CalculateStartAngle() const
 {
-    const float ArcAngleRadians = FMath::DegreesToRadians(Params.ArcAngle);
+    const float ArcAngleRadians = FMath::DegreesToRadians(HollowPrism.ArcAngle);
     return -ArcAngleRadians / 2.0f;
 }
 
 float FHollowPrismBuilder::CalculateAngleStep(int32 Sides) const
 {
-    const float ArcAngleRadians = FMath::DegreesToRadians(Params.ArcAngle);
+    const float ArcAngleRadians = FMath::DegreesToRadians(HollowPrism.ArcAngle);
     return ArcAngleRadians / Sides;
 }
 
@@ -198,18 +214,18 @@ float FHollowPrismBuilder::CalculateInnerRadius(bool bIncludeBevel) const
 {
     if (bIncludeBevel)
     {
-        return Params.InnerRadius + Params.BevelRadius;
+        return HollowPrism.InnerRadius + HollowPrism.BevelRadius;
     }
-    return Params.InnerRadius;
+    return HollowPrism.InnerRadius;
 }
 
 float FHollowPrismBuilder::CalculateOuterRadius(bool bIncludeBevel) const
 {
     if (bIncludeBevel)
     {
-        return Params.OuterRadius - Params.BevelRadius;
+        return HollowPrism.OuterRadius - HollowPrism.BevelRadius;
     }
-    return Params.OuterRadius;
+    return HollowPrism.OuterRadius;
 }
 
 FVector FHollowPrismBuilder::CalculateVertexPosition(float Radius, float Angle, float Z) const
@@ -225,28 +241,28 @@ void FHollowPrismBuilder::GenerateCapTriangles(const TArray<int32>& InnerVertice
                                               const TArray<int32>& OuterVertices, 
                                               bool bIsTopCap)
 {
-    const int32 MaxSides = FMath::Max(Params.InnerSides, Params.OuterSides);
+    const int32 MaxSides = FMath::Max(HollowPrism.InnerSides, HollowPrism.OuterSides);
     
     for (int32 i = 0; i < MaxSides; ++i)
     {
         const float CurrentAngleRatio = static_cast<float>(i) / MaxSides;
         
-        const float InnerIndex = CurrentAngleRatio * Params.InnerSides;
-        const float OuterIndex = CurrentAngleRatio * Params.OuterSides;
+        const float InnerIndex = CurrentAngleRatio * HollowPrism.InnerSides;
+        const float OuterIndex = CurrentAngleRatio * HollowPrism.OuterSides;
         
         const float NextAngleRatio = static_cast<float>(i + 1) / MaxSides;
-        const float NextInnerIndex = NextAngleRatio * Params.InnerSides;
-        const float NextOuterIndex = NextAngleRatio * Params.OuterSides;
+        const float NextInnerIndex = NextAngleRatio * HollowPrism.InnerSides;
+        const float NextOuterIndex = NextAngleRatio * HollowPrism.OuterSides;
         
         const int32 InnerIndexFloor = FMath::FloorToInt(InnerIndex);
-        const int32 InnerIndexCeil = FMath::Min(InnerIndexFloor + 1, Params.InnerSides);
+        const int32 InnerIndexCeil = FMath::Min(InnerIndexFloor + 1, HollowPrism.InnerSides);
         const int32 NextInnerIndexFloor = FMath::FloorToInt(NextInnerIndex);
-        const int32 NextInnerIndexCeil = FMath::Min(NextInnerIndexFloor + 1, Params.InnerSides);
+        const int32 NextInnerIndexCeil = FMath::Min(NextInnerIndexFloor + 1, HollowPrism.InnerSides);
         
         const int32 OuterIndexFloor = FMath::FloorToInt(OuterIndex);
-        const int32 OuterIndexCeil = FMath::Min(OuterIndexFloor + 1, Params.OuterSides);
+        const int32 OuterIndexCeil = FMath::Min(OuterIndexFloor + 1, HollowPrism.OuterSides);
         const int32 NextOuterIndexFloor = FMath::FloorToInt(NextOuterIndex);
-        const int32 NextOuterIndexCeil = FMath::Min(NextOuterIndexFloor + 1, Params.OuterSides);
+        const int32 NextOuterIndexCeil = FMath::Min(NextOuterIndexFloor + 1, HollowPrism.OuterSides);
         
         const float InnerWeight = InnerIndex - InnerIndexFloor;
         const int32 BestInnerVertex = (InnerWeight < 0.5f) ? InnerIndexFloor : InnerIndexCeil;
@@ -277,14 +293,14 @@ void FHollowPrismBuilder::GenerateCapVertices(TArray<int32>& OutInnerVertices,
                                              TArray<int32>& OutOuterVertices, 
                                              bool bIsTopCap)
 {
-    const float HalfHeight = Params.GetHalfHeight();
+    const float HalfHeight = HollowPrism.GetHalfHeight();
     const float StartAngle = CalculateStartAngle();
     
-    const float InnerAngleStep = CalculateAngleStep(Params.InnerSides);
-    const float OuterAngleStep = CalculateAngleStep(Params.OuterSides);
+    const float InnerAngleStep = CalculateAngleStep(HollowPrism.InnerSides);
+    const float OuterAngleStep = CalculateAngleStep(HollowPrism.OuterSides);
     
     FVector Normal(0.0f, 0.0f, bIsTopCap ? 1.0f : -1.0f);
-    if (Params.bFlipNormals)
+    if (HollowPrism.bFlipNormals)
     {
         Normal = -Normal;
     }
@@ -295,10 +311,10 @@ void FHollowPrismBuilder::GenerateCapVertices(TArray<int32>& OutInnerVertices,
     OutInnerVertices.Empty();
     OutOuterVertices.Empty();
     
-    OutInnerVertices.Reserve(Params.InnerSides + 1);
-    OutOuterVertices.Reserve(Params.OuterSides + 1);
+    OutInnerVertices.Reserve(HollowPrism.InnerSides + 1);
+    OutOuterVertices.Reserve(HollowPrism.OuterSides + 1);
     
-    for (int32 i = 0; i <= Params.InnerSides; ++i)
+    for (int32 i = 0; i <= HollowPrism.InnerSides; ++i)
     {
         const float Angle = StartAngle + i * InnerAngleStep;
         
@@ -307,7 +323,7 @@ void FHollowPrismBuilder::GenerateCapVertices(TArray<int32>& OutInnerVertices,
         OutInnerVertices.Add(InnerVertex);
     }
     
-    for (int32 i = 0; i <= Params.OuterSides; ++i)
+    for (int32 i = 0; i <= HollowPrism.OuterSides; ++i)
     {
         const float Angle = StartAngle + i * OuterAngleStep;
         
@@ -319,8 +335,8 @@ void FHollowPrismBuilder::GenerateCapVertices(TArray<int32>& OutInnerVertices,
 
 void FHollowPrismBuilder::GenerateBevelGeometry(bool bIsTop, bool bIsInner)
 {
-    const float BevelRadiusLocal = Params.BevelRadius;
-    const int32 BevelSectionsLocal = Params.BevelSegments;
+    const float BevelRadiusLocal = HollowPrism.BevelRadius;
+    const int32 BevelSectionsLocal = HollowPrism.BevelSegments;
 
     if (BevelRadiusLocal <= 0.0f || BevelSectionsLocal <= 0) return;
 
@@ -345,8 +361,8 @@ void FHollowPrismBuilder::GenerateBevelRing(const TArray<int32>& PrevRing,
                                            bool bIsTop, bool bIsInner, 
                                            int32 RingIndex, int32 TotalRings)
 {
-    const float HalfHeight = Params.GetHalfHeight();
-    const float BevelRadiusLocal = Params.BevelRadius;
+    const float HalfHeight = HollowPrism.GetHalfHeight();
+    const float BevelRadiusLocal = HollowPrism.BevelRadius;
     
     const float alpha = static_cast<float>(RingIndex) / TotalRings;
     
@@ -354,13 +370,13 @@ void FHollowPrismBuilder::GenerateBevelRing(const TArray<int32>& PrevRing,
     const float ZDirection = bIsTop ? 1.0f : -1.0f;
     const float RadiusDirection = bIsInner ? 1.0f : -1.0f;
     
-    const float StartRadius = bIsInner ? Params.InnerRadius : Params.OuterRadius;
+    const float StartRadius = bIsInner ? HollowPrism.InnerRadius : HollowPrism.OuterRadius;
     const float EndRadius = StartRadius + (RadiusDirection * BevelRadiusLocal);
     const float CurrentRadius = FMath::Lerp(StartRadius, EndRadius, alpha);
     const float CurrentZ = FMath::Lerp(ZOffset - (ZDirection * BevelRadiusLocal), ZOffset, alpha);
     
-    const int32 Sides = bIsInner ? Params.InnerSides : Params.OuterSides;
-    const float ArcAngleRadians = FMath::DegreesToRadians(Params.ArcAngle);
+    const int32 Sides = bIsInner ? HollowPrism.InnerSides : HollowPrism.OuterSides;
+    const float ArcAngleRadians = FMath::DegreesToRadians(HollowPrism.ArcAngle);
     const float StartAngle = -ArcAngleRadians / 2.0f;
     const float LocalAngleStep = ArcAngleRadians / Sides;
     
@@ -401,14 +417,14 @@ FVector FHollowPrismBuilder::CalculateBevelNormal(float Angle, float Alpha, bool
         Normal = -Normal;
     }
 
-    return Params.bFlipNormals ? -Normal : Normal;
+    return HollowPrism.bFlipNormals ? -Normal : Normal;
 }
 
 void FHollowPrismBuilder::ConnectBevelRings(const TArray<int32>& PrevRing, 
                                            const TArray<int32>& CurrentRing, 
                                            bool bIsInner, bool bIsTop)
 {
-    const int32 Sides = bIsInner ? Params.InnerSides : Params.OuterSides;
+    const int32 Sides = bIsInner ? HollowPrism.InnerSides : HollowPrism.OuterSides;
     
     for (int32 s = 0; s < Sides; ++s)
     {
@@ -445,7 +461,7 @@ void FHollowPrismBuilder::ConnectBevelRings(const TArray<int32>& PrevRing,
 void FHollowPrismBuilder::GenerateEndCapVertices(float Angle, const FVector& Normal, bool IsStart,
                                                 TArray<int32>& OutOrderedVertices)
 {
-    const float HalfHeight = Params.GetHalfHeight();
+    const float HalfHeight = HollowPrism.GetHalfHeight();
     
     OutOrderedVertices.Empty();
     
@@ -455,14 +471,14 @@ void FHollowPrismBuilder::GenerateEndCapVertices(float Angle, const FVector& Nor
     );
     OutOrderedVertices.Add(TopCenterVertex);
 
-    if (Params.BevelRadius > 0.0f)
+    if (HollowPrism.BevelRadius > 0.0f)
     {
         GenerateEndCapBevelVertices(Angle, Normal, IsStart, true, OutOrderedVertices);
     }
 
     GenerateEndCapSideVertices(Angle, Normal, IsStart, OutOrderedVertices);
 
-    if (Params.BevelRadius > 0.0f)
+    if (HollowPrism.BevelRadius > 0.0f)
     {
         GenerateEndCapBevelVertices(Angle, Normal, IsStart, false, OutOrderedVertices);
     }
@@ -477,14 +493,14 @@ void FHollowPrismBuilder::GenerateEndCapVertices(float Angle, const FVector& Nor
 void FHollowPrismBuilder::GenerateEndCapBevelVertices(float Angle, const FVector& Normal, bool IsStart,
                                                      bool bIsTopBevel, TArray<int32>& OutVertices)
 {
-    const float HalfHeight = Params.GetHalfHeight();
+    const float HalfHeight = HollowPrism.GetHalfHeight();
     float TopBevelHeight, BottomBevelHeight;
     CalculateEndCapBevelHeights(TopBevelHeight, BottomBevelHeight);
     
     float StartZ, EndZ;
     CalculateEndCapZRange(TopBevelHeight, BottomBevelHeight, StartZ, EndZ);
     
-    const int32 BevelSections = Params.BevelSegments;
+    const int32 BevelSections = HollowPrism.BevelSegments;
     const float StartZPos = bIsTopBevel ? HalfHeight : StartZ;
     const float EndZPos = bIsTopBevel ? EndZ : -HalfHeight;
     const int32 StartIndex = bIsTopBevel ? 0 : 1;
@@ -498,15 +514,15 @@ void FHollowPrismBuilder::GenerateEndCapBevelVertices(float Angle, const FVector
         float CurrentInnerRadius, CurrentOuterRadius;
         if (bIsTopBevel)
         {
-            const float TopInnerRadius = Params.InnerRadius + Params.BevelRadius;
-            const float TopOuterRadius = Params.OuterRadius - Params.BevelRadius;
-            CurrentInnerRadius = FMath::Lerp(TopInnerRadius, Params.InnerRadius, Alpha);
-            CurrentOuterRadius = FMath::Lerp(TopOuterRadius, Params.OuterRadius, Alpha);
+            const float TopInnerRadius = HollowPrism.InnerRadius + HollowPrism.BevelRadius;
+            const float TopOuterRadius = HollowPrism.OuterRadius - HollowPrism.BevelRadius;
+            CurrentInnerRadius = FMath::Lerp(TopInnerRadius, HollowPrism.InnerRadius, Alpha);
+            CurrentOuterRadius = FMath::Lerp(TopOuterRadius, HollowPrism.OuterRadius, Alpha);
         }
         else
         {
-            CurrentInnerRadius = FMath::Lerp(Params.InnerRadius, Params.InnerRadius + Params.BevelRadius, Alpha);
-            CurrentOuterRadius = FMath::Lerp(Params.OuterRadius, Params.OuterRadius - Params.BevelRadius, Alpha);
+            CurrentInnerRadius = FMath::Lerp(HollowPrism.InnerRadius, HollowPrism.InnerRadius + HollowPrism.BevelRadius, Alpha);
+            CurrentOuterRadius = FMath::Lerp(HollowPrism.OuterRadius, HollowPrism.OuterRadius - HollowPrism.BevelRadius, Alpha);
         }
         
         const FVector InnerBevelPos = FVector(CurrentInnerRadius * FMath::Cos(Angle), 
@@ -524,7 +540,7 @@ void FHollowPrismBuilder::GenerateEndCapBevelVertices(float Angle, const FVector
 void FHollowPrismBuilder::GenerateEndCapSideVertices(float Angle, const FVector& Normal, bool IsStart,
                                                     TArray<int32>& OutVertices)
 {
-    const float HalfHeight = Params.GetHalfHeight();
+    const float HalfHeight = HollowPrism.GetHalfHeight();
     float TopBevelHeight, BottomBevelHeight;
     CalculateEndCapBevelHeights(TopBevelHeight, BottomBevelHeight);
     
@@ -535,13 +551,13 @@ void FHollowPrismBuilder::GenerateEndCapSideVertices(float Angle, const FVector&
     {
         const float Z = FMath::Lerp(EndZ, StartZ, static_cast<float>(h) / 1.0f);
 
-        const FVector InnerEdgePos = FVector(Params.InnerRadius * FMath::Cos(Angle), 
-                                           Params.InnerRadius * FMath::Sin(Angle), Z);
+        const FVector InnerEdgePos = FVector(HollowPrism.InnerRadius * FMath::Cos(Angle), 
+                                           HollowPrism.InnerRadius * FMath::Sin(Angle), Z);
         const int32 InnerEdgeVertex = GetOrAddVertexWithDualUV(InnerEdgePos, Normal);
         OutVertices.Add(InnerEdgeVertex);
         
-        const FVector OuterEdgePos = FVector(Params.OuterRadius * FMath::Cos(Angle), 
-                                           Params.OuterRadius * FMath::Sin(Angle), Z);
+        const FVector OuterEdgePos = FVector(HollowPrism.OuterRadius * FMath::Cos(Angle), 
+                                           HollowPrism.OuterRadius * FMath::Sin(Angle), Z);
         const int32 OuterEdgeVertex = GetOrAddVertexWithDualUV(OuterEdgePos, Normal);
         OutVertices.Add(OuterEdgeVertex);
     }
@@ -566,8 +582,8 @@ void FHollowPrismBuilder::GenerateEndCapTriangles(const TArray<int32>& OrderedVe
 
 void FHollowPrismBuilder::CalculateEndCapBevelHeights(float& OutTopBevelHeight, float& OutBottomBevelHeight) const
 {
-    const float BevelRadiusLocal = Params.BevelRadius;
-    const float MaxBevelHeight = Params.OuterRadius - Params.InnerRadius;
+    const float BevelRadiusLocal = HollowPrism.BevelRadius;
+    const float MaxBevelHeight = HollowPrism.OuterRadius - HollowPrism.InnerRadius;
     
     OutTopBevelHeight = FMath::Min(BevelRadiusLocal, MaxBevelHeight);
     OutBottomBevelHeight = FMath::Min(BevelRadiusLocal, MaxBevelHeight);
@@ -576,7 +592,7 @@ void FHollowPrismBuilder::CalculateEndCapBevelHeights(float& OutTopBevelHeight, 
 void FHollowPrismBuilder::CalculateEndCapZRange(float TopBevelHeight, float BottomBevelHeight, 
                                                float& OutStartZ, float& OutEndZ) const
 {
-    const float HalfHeight = Params.GetHalfHeight();
+    const float HalfHeight = HollowPrism.GetHalfHeight();
     
     OutStartZ = -HalfHeight + BottomBevelHeight;
     OutEndZ = HalfHeight - TopBevelHeight;
@@ -596,7 +612,7 @@ FVector2D FHollowPrismBuilder::GenerateStableUVCustom(const FVector& Position, c
     if (FMath::Abs(Normal.Z) > 0.9f)
     {
         // 顶底面：使用2U系统
-        if (DistanceFromCenter < (Params.InnerRadius + Params.OuterRadius) * 0.5f)
+        if (DistanceFromCenter < (HollowPrism.InnerRadius + HollowPrism.OuterRadius) * 0.5f)
         {
             // 内环：U从0.0到1.0
             float U = (Angle / (2.0f * PI));
@@ -615,9 +631,9 @@ FVector2D FHollowPrismBuilder::GenerateStableUVCustom(const FVector& Position, c
     {
         // 侧面：使用2U系统
         float U = (Angle / (2.0f * PI));  // 0到1
-        float V = (Z + Params.GetHalfHeight()) / Params.Height;  // 0到1
+        float V = (Z + HollowPrism.GetHalfHeight()) / HollowPrism.Height;  // 0到1
         
-        if (DistanceFromCenter < (Params.InnerRadius + Params.OuterRadius) * 0.5f)
+        if (DistanceFromCenter < (HollowPrism.InnerRadius + HollowPrism.OuterRadius) * 0.5f)
         {
             // 内环：U从0.0到1.0
             return FVector2D(U, V);
@@ -643,10 +659,10 @@ FVector2D FHollowPrismBuilder::GenerateSecondaryUV(const FVector& Position, cons
     
     // 第二UV通道：使用传统UV系统（0-1范围）
     float U = Angle / (2.0f * PI);  // 0到1
-    float V = (Z + Params.GetHalfHeight()) / Params.Height;  // 0到1
+    float V = (Z + HollowPrism.GetHalfHeight()) / HollowPrism.Height;  // 0到1
     
     // 根据半径调整V坐标，避免内外环重叠
-    if (DistanceFromCenter < (Params.InnerRadius + Params.OuterRadius) * 0.5f)
+    if (DistanceFromCenter < (HollowPrism.InnerRadius + HollowPrism.OuterRadius) * 0.5f)
     {
         V = V * 0.8f;  // 内环：0到0.8
     }

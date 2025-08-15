@@ -12,13 +12,15 @@
 
 #include "CoreMinimal.h"
 #include "ModelGenMeshBuilder.h"
-#include "HollowPrismParameters.h"
+
+// Forward declarations
+class AHollowPrism;
 
 class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
 {
 public:
     //~ Begin Constructor
-    explicit FHollowPrismBuilder(const FHollowPrismParameters& InParams);
+    explicit FHollowPrismBuilder(const AHollowPrism& InHollowPrism);
 
     //~ Begin FModelGenMeshBuilder Interface
     virtual bool Generate(FModelGenMeshData& OutMeshData) override;
@@ -27,7 +29,7 @@ public:
     virtual int32 CalculateTriangleCountEstimate() const override;
 
 private:
-    FHollowPrismParameters Params;
+    const AHollowPrism& HollowPrism;
 
     /** 生成基础几何体 */
     void GenerateBaseGeometry();

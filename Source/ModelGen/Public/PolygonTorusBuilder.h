@@ -10,7 +10,9 @@
 #pragma once
 
 #include "ModelGenMeshBuilder.h"
-#include "PolygonTorusParameters.h"
+
+// Forward declarations
+class APolygonTorus;
 
 /**
  * 圆环生成器
@@ -20,7 +22,7 @@ class MODELGEN_API FPolygonTorusBuilder : public FModelGenMeshBuilder
 {
 public:
     /** 构造函数 */
-    FPolygonTorusBuilder(const FPolygonTorusParameters& InParams);
+    FPolygonTorusBuilder(const APolygonTorus& InPolygonTorus);
 
     //~ Begin FModelGenMeshBuilder Interface
     virtual bool Generate(FModelGenMeshData& OutMeshData) override;
@@ -31,7 +33,7 @@ public:
 
 private:
     /** 生成参数 */
-    FPolygonTorusParameters Params;
+    const APolygonTorus& PolygonTorus;
 
     /** 生成顶点 */
     void GenerateVertices();
@@ -62,5 +64,12 @@ private:
     
     /** 基于顶点位置的稳定UV映射 - 重写父类实现 */
     virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const override;
+    
+    /** 生成第二UV通道 - 传统UV系统 */
+    FVector2D GenerateSecondaryUV(const FVector& Position, const FVector& Normal) const;
+    
+    /** 使用双UV通道添加顶点 */
+    int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal);
+    
     
 };

@@ -12,12 +12,14 @@
 
 #include "CoreMinimal.h"
 #include "ModelGenMeshBuilder.h"
-#include "PyramidParameters.h"
+
+// Forward declarations
+class APyramid;
 
 class MODELGEN_API FPyramidBuilder : public FModelGenMeshBuilder
 {
 public:
-    explicit FPyramidBuilder(const FPyramidParameters& InParams);
+    explicit FPyramidBuilder(const APyramid& InPyramid);
 
     virtual bool Generate(FModelGenMeshData& OutMeshData) override;
     virtual bool ValidateParameters() const override;
@@ -25,7 +27,7 @@ public:
     virtual int32 CalculateTriangleCountEstimate() const override;
 
 private:
-    FPyramidParameters Params;
+    const APyramid& Pyramid;
 
     float BaseRadius;
     float Height;
@@ -87,6 +89,12 @@ private:
     
     /** 基于顶点位置的稳定UV映射 - 重写父类实现 */
     virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const override;
+    
+    /** 生成第二UV通道 - 传统UV系统 */
+    FVector2D GenerateSecondaryUV(const FVector& Position, const FVector& Normal) const;
+    
+    /** 使用双UV通道添加顶点 */
+    int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal);
     
     bool ValidatePrecomputedData() const;
 };

@@ -1,14 +1,13 @@
 // Copyright (c) 2024. All rights reserved.
 
 #include "PyramidBuilder.h"
-#include "PyramidParameters.h"
+#include "Pyramid.h"
 #include "ModelGenMeshData.h"
 
-FPyramidBuilder::FPyramidBuilder(const FPyramidParameters& InParams)
-    : Params(InParams)
+FPyramidBuilder::FPyramidBuilder(const APyramid& InPyramid)
+    : Pyramid(InPyramid)
 {
     Clear();
-    
     PrecomputeConstants();
     PrecomputeVertices();
     PrecomputeUVs();
@@ -25,14 +24,9 @@ bool FPyramidBuilder::Generate(FModelGenMeshData& OutMeshData)
     ReserveMemory();
 
     GenerateBaseFace();
-    
-    if (Params.BevelRadius > 0.0f)
-    {
-        GenerateBevelSection();
-    }
-    
+    GenerateBevelSection();
     GeneratePyramidSides();
-    
+
     if (!ValidateGeneratedData())
     {
         return false;
@@ -44,17 +38,17 @@ bool FPyramidBuilder::Generate(FModelGenMeshData& OutMeshData)
 
 bool FPyramidBuilder::ValidateParameters() const
 {
-    return Params.IsValid();
+    return Pyramid.IsValid();
 }
 
 int32 FPyramidBuilder::CalculateVertexCountEstimate() const
 {
-    return Params.CalculateVertexCountEstimate();
+    return Pyramid.CalculateVertexCountEstimate();
 }
 
 int32 FPyramidBuilder::CalculateTriangleCountEstimate() const
 {
-    return Params.CalculateTriangleCountEstimate();
+    return Pyramid.CalculateTriangleCountEstimate();
 }
 
 void FPyramidBuilder::GenerateBaseFace()
@@ -110,9 +104,9 @@ void FPyramidBuilder::GeneratePyramidSideTriangles()
         FVector2D BaseUV2 = GenerateStableUV(PyramidBaseVertices[NextI], SideNormal);
         
         // 添加顶点
-        int32 TopVertex = GetOrAddVertex(PyramidTopPoint, SideNormal, TopUV);
-        int32 V1 = GetOrAddVertex(PyramidBaseVertices[i], SideNormal, BaseUV1);
-        int32 V2 = GetOrAddVertex(PyramidBaseVertices[NextI], SideNormal, BaseUV2);
+        int32 TopVertex = GetOrAddVertexWithDualUV(PyramidTopPoint, SideNormal);
+        int32 V1 = GetOrAddVertexWithDualUV(PyramidBaseVertices[i], SideNormal);
+        int32 V2 = GetOrAddVertexWithDualUV(PyramidBaseVertices[NextI], SideNormal);
         
         // 添加三角形
         AddTriangle(V2, V1, TopVertex);
@@ -221,11 +215,11 @@ TArray<FVector> FPyramidBuilder::GenerateBevelVertices(float BottomRadius, float
 // 新增：预计算常量
 void FPyramidBuilder::PrecomputeConstants()
 {
-    BaseRadius = Params.BaseRadius;
-    Height = Params.Height;
-    Sides = Params.Sides;
-    BevelRadius = Params.BevelRadius;
-    BevelTopRadius = Params.GetBevelTopRadius();
+    BaseRadius = Pyramid.BaseRadius;
+    Height = Pyramid.Height;
+    Sides = Pyramid.Sides;
+    BevelRadius = Pyramid.BevelRadius;
+    BevelTopRadius = Pyramid.GetBevelTopRadius();
 }
 
 // 新增：预计算三角函数值
@@ -326,7 +320,7 @@ FVector2D FPyramidBuilder::GenerateStableUVCustom(const FVector& Position, const
     float Y = Position.Y;
     float Z = Position.Z;
     
-    // 根据法线方向选择UV映射策略（2U系统：0-2范围）
+    // 根据法线方向选择UV映射策略（真正的2U系统：0-1范围）
     if (FMath::Abs(Normal.Z) > 0.9f)
     {
         // 水平面（底面或顶面）
@@ -343,20 +337,20 @@ FVector2D FPyramidBuilder::GenerateStableUVCustom(const FVector& Position, const
         }
         else
         {
-            // 顶面：使用投影映射，范围 (1,0) 到 (2,1)
-            float U = 1.0f + (X / BaseRadius + 1.0f) * 0.5f;
+            // 顶面：使用投影映射，范围 (0,0) 到 (1,1)
+            float U = (X / BaseRadius + 1.0f) * 0.5f;
             float V = (Y / BaseRadius + 1.0f) * 0.5f;
             return FVector2D(U, V);
         }
     }
     else
     {
-        // 侧面：使用柱面映射，范围 (0,1) 到 (2,2) - 避免与底面重叠
+        // 侧面：使用柱面映射，范围 (0,0) 到 (1,1) - 真正的2U系统
         float Angle = FMath::Atan2(Y, X);
         if (Angle < 0) Angle += 2.0f * PI;
         
-        float U = Angle / (2.0f * PI) * 2.0f;  // 0 到 2
-        float V = 1.0f + (Z / Height);          // 1 到 2
+        float U = Angle / (2.0f * PI);  // 0 到 1
+        float V = (Z / Height);          // 0 到 1
         return FVector2D(U, V);
     }
 }
@@ -437,7 +431,7 @@ void FPyramidBuilder::GeneratePolygonFaceOptimized(const TArray<FVector>& Vertic
     {
         // 使用稳定UV映射而不是预计算的UV
         FVector2D StableUV = GenerateStableUV(Vertices[i], Normal);
-        int32 VertexIndex = GetOrAddVertex(Vertices[i], Normal, StableUV);
+        int32 VertexIndex = GetOrAddVertexWithDualUV(Vertices[i], Normal);
         VertexIndices.Add(VertexIndex);
     }
     
@@ -488,10 +482,10 @@ void FPyramidBuilder::GenerateSideStripOptimized(const TArray<FVector>& BottomVe
         FVector2D TopUV2 = GenerateStableUV(TopVerts[NextI], SideNormal);
         
         // 添加四个顶点
-        int32 V1 = GetOrAddVertex(BottomVerts[i], SideNormal, BottomUV1);
-        int32 V2 = GetOrAddVertex(BottomVerts[NextI], SideNormal, BottomUV2);
-        int32 V3 = GetOrAddVertex(TopVerts[NextI], SideNormal, TopUV2);
-        int32 V4 = GetOrAddVertex(TopVerts[i], SideNormal, TopUV1);
+        int32 V1 = GetOrAddVertexWithDualUV(BottomVerts[i], SideNormal);
+        int32 V2 = GetOrAddVertexWithDualUV(BottomVerts[NextI], SideNormal);
+        int32 V3 = GetOrAddVertexWithDualUV(TopVerts[NextI], SideNormal);
+        int32 V4 = GetOrAddVertexWithDualUV(TopVerts[i], SideNormal);
         
         // 添加四边形（两个三角形）
         if (bReverseNormal)
@@ -550,4 +544,54 @@ bool FPyramidBuilder::ValidatePrecomputedData() const
     }
     
     return bIsValid;
+}
+
+FVector2D FPyramidBuilder::GenerateSecondaryUV(const FVector& Position, const FVector& Normal) const
+{
+    // 第二UV通道：使用传统UV系统（0-1范围）
+    float X = Position.X;
+    float Y = Position.Y;
+    float Z = Position.Z;
+    
+    // 根据法线方向选择UV映射策略
+    if (FMath::Abs(Normal.Z) > 0.9f)
+    {
+        // 水平面（底面或顶面）
+        if (Z < 0.1f)
+        {
+            // 底面：使用传统UV系统
+            float Radius = FMath::Sqrt(X * X + Y * Y);
+            float Angle = FMath::Atan2(Y, X);
+            if (Angle < 0) Angle += 2.0f * PI;
+            
+            float U = 0.5f + 0.5f * FMath::Cos(Angle);
+            float V = 0.5f + 0.5f * FMath::Sin(Angle);
+            return FVector2D(U, V);
+        }
+        else
+        {
+            // 顶面：使用传统UV系统
+            float U = (X / BaseRadius + 1.0f) * 0.5f;
+            float V = (Y / BaseRadius + 1.0f) * 0.5f;
+            return FVector2D(U, V);
+        }
+    }
+    else
+    {
+        // 侧面：使用传统UV系统
+        float Angle = FMath::Atan2(Y, X);
+        if (Angle < 0) Angle += 2.0f * PI;
+        
+        float U = Angle / (2.0f * PI);  // 0 到 1
+        float V = (Z / Height);          // 0 到 1
+        return FVector2D(U, V);
+    }
+}
+
+int32 FPyramidBuilder::GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal)
+{
+    FVector2D MainUV = GenerateStableUVCustom(Pos, Normal);
+    FVector2D SecondaryUV = GenerateSecondaryUV(Pos, Normal);
+    
+    return FModelGenMeshBuilder::GetOrAddVertexWithDualUV(Pos, Normal, MainUV, SecondaryUV);
 }

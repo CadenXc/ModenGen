@@ -12,7 +12,9 @@
 
 #include "CoreMinimal.h"
 #include "ModelGenMeshBuilder.h"
-#include "BevelCubeParameters.h"
+
+// Forward declarations
+class ABevelCube;
 
 struct FFaceData
 {
@@ -35,7 +37,7 @@ struct FEdgeBevelDef
 class MODELGEN_API FBevelCubeBuilder : public FModelGenMeshBuilder
 {
 public:
-    explicit FBevelCubeBuilder(const FBevelCubeParameters& InParams);
+    explicit FBevelCubeBuilder(const ABevelCube& InBevelCube);
 
     virtual bool Generate(FModelGenMeshData& OutMeshData) override;
     virtual bool ValidateParameters() const override;
@@ -43,7 +45,7 @@ public:
     virtual int32 CalculateTriangleCountEstimate() const override;
 
 private:
-    FBevelCubeParameters Params;
+    const ABevelCube& BevelCube;
 
     TArray<FVector> CorePoints;
     float HalfSize;
