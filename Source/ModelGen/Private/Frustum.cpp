@@ -3,135 +3,26 @@
 #include "Frustum.h"
 #include "FrustumBuilder.h"
 #include "ModelGenMeshData.h"
-#include "ProceduralMeshComponent.h"
-#include "Materials/MaterialInterface.h"
-#include "HAL/PlatformTime.h"
 
 AFrustum::AFrustum()
 {
     PrimaryActorTick.bCanEverTick = false;
-
-    ProceduralMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("FrustumMesh"));
-    RootComponent = ProceduralMesh;
-
-    InitializeComponents();
 }
 
-void AFrustum::BeginPlay()
+
+
+
+
+
+
+void AFrustum::GenerateMesh()
 {
-    Super::BeginPlay();
-    RegenerateMesh();
-}
-
-void AFrustum::OnConstruction(const FTransform& Transform)
-{
-    Super::OnConstruction(Transform);
-    RegenerateMesh();
-}
-
-#if WITH_EDITOR
-void AFrustum::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
-{
-    Super::PostEditChangeProperty(PropertyChangedEvent);
-
-    const FName PropertyName = PropertyChangedEvent.GetPropertyName();
-    const FString PropertyNameStr = PropertyName.ToString();
-    
-    if (PropertyNameStr.StartsWith("TopRadius") || PropertyNameStr.StartsWith("BottomRadius") || 
-        PropertyNameStr.StartsWith("Height") || PropertyNameStr.StartsWith("TopSides") || 
-        PropertyNameStr.StartsWith("BottomSides") || PropertyNameStr.StartsWith("HeightSegments") || 
-        PropertyNameStr.StartsWith("BevelRadius") || PropertyNameStr.StartsWith("BevelSegments") || 
-        PropertyNameStr.StartsWith("BendAmount") || PropertyNameStr.StartsWith("MinBendRadius") || 
-        PropertyNameStr.StartsWith("ArcAngle") || PropertyName == "bGenerateCollision" || 
-        PropertyName == "bUseAsyncCooking")
-    {
-        RegenerateMesh();
-    }
-    else if (PropertyName == "Material")
-    {
-        ApplyMaterial();
-    }
-}
-
-void AFrustum::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent)
-{
-    Super::PostEditChangeChainProperty(PropertyChangedEvent);
-
-    const FName PropertyName = PropertyChangedEvent.GetPropertyName();
-    const FString PropertyNameStr = PropertyName.ToString();
-    
-    if (PropertyNameStr.StartsWith("TopRadius") || PropertyNameStr.StartsWith("BottomRadius") || 
-        PropertyNameStr.StartsWith("Height") || PropertyNameStr.StartsWith("TopSides") || 
-        PropertyNameStr.StartsWith("BottomSides") || PropertyNameStr.StartsWith("HeightSegments") || 
-        PropertyNameStr.StartsWith("BevelRadius") || PropertyNameStr.StartsWith("BevelSegments") || 
-        PropertyNameStr.StartsWith("BendAmount") || PropertyNameStr.StartsWith("MinBendRadius") || 
-        PropertyNameStr.StartsWith("ArcAngle") || PropertyName == "bGenerateCollision" || 
-        PropertyName == "bUseAsyncCooking")
-    {
-        RegenerateMesh();
-    }
-    else if (PropertyName == "Material")
-    {
-        ApplyMaterial();
-    }
-}
-#endif
-
-void AFrustum::InitializeComponents()
-{
-    if (ProceduralMesh)
-    {
-        ProceduralMesh->bUseAsyncCooking = bUseAsyncCooking;
-        ProceduralMesh->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
-        ProceduralMesh->SetSimulatePhysics(false);
-        
-        SetupCollision();
-        ApplyMaterial();
-    }
-}
-
-void AFrustum::ApplyMaterial()
-{
-    if (ProceduralMesh && Material)
-    {
-        ProceduralMesh->SetMaterial(0, Material);
-    }
-}
-
-void AFrustum::SetupCollision()
-{
-    if (!ProceduralMesh)
-    {
-        return;
-    }
-
-    if (bGenerateCollision)
-    {
-        ProceduralMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-        ProceduralMesh->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
-    }
-    else
-    {
-        ProceduralMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    }
-}
-
-void AFrustum::RegenerateMesh()
-{
-    if (!ProceduralMesh)
-    {
-        UE_LOG(LogTemp, Error, TEXT("ProceduralMesh component is null"));
-        return;
-    }
-
     if (!IsValid())
     {
         UE_LOG(LogTemp, Warning, TEXT("Invalid Frustum parameters: TopRadius=%f, BottomRadius=%f, Height=%f, TopSides=%d, BottomSides=%d"), 
                TopRadius, BottomRadius, Height, TopSides, BottomSides);
         return;
     }
-
-    ProceduralMesh->ClearAllMeshSections();
 
     FFrustumBuilder Builder(*this);
     FModelGenMeshData MeshData;
@@ -144,9 +35,7 @@ void AFrustum::RegenerateMesh()
             return;
         }
 
-        MeshData.ToProceduralMesh(ProceduralMesh, 0);
-        ApplyMaterial();
-        SetupCollision();
+        MeshData.ToProceduralMesh(GetProceduralMesh(), 0);
     }
     else
     {
@@ -162,6 +51,7 @@ void AFrustum::GenerateFrustum(float InTopRadius, float InBottomRadius, float In
     TopSides = InSides;
     BottomSides = InSides;
     
+    // 调用父类的方法重新生成网格
     RegenerateMesh();
 }
 
@@ -174,21 +64,20 @@ void AFrustum::GenerateFrustumWithDifferentSides(float InTopRadius, float InBott
     TopSides = InTopSides;
     BottomSides = InBottomSides;
     
+    // 调用父类的方法重新生成网格
     RegenerateMesh();
 }
 
 void AFrustum::RegenerateMeshBlueprint()
 {
+    // 调用父类的方法重新生成网格
     RegenerateMesh();
 }
 
 void AFrustum::SetMaterial(UMaterialInterface* NewMaterial)
 {
-    if (Material != NewMaterial)
-    {
-        Material = NewMaterial;
-        ApplyMaterial();
-    }
+    // 调用父类的方法设置材质
+    Super::SetMaterial(NewMaterial);
 }
 
 bool AFrustum::IsValid() const
@@ -263,9 +152,7 @@ int32 AFrustum::CalculateTriangleCountEstimate() const
     return BaseTriangles + SideTriangles + BevelTriangles;
 }
 
-void AFrustum::PostEditChangeProperty(const FName& PropertyName)
-{
-}
+
 
 bool AFrustum::operator==(const AFrustum& Other) const
 {

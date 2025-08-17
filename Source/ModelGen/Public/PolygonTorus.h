@@ -3,13 +3,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
-#include "ProceduralMeshComponent.h"
-#include "ModelGenMeshData.h"
+#include "ProceduralMeshActor.h"
 #include "PolygonTorus.generated.h"
 
 UCLASS(BlueprintType, meta=(DisplayName = "Polygon Torus"))
-class MODELGEN_API APolygonTorus : public AActor
+class MODELGEN_API APolygonTorus : public AProceduralMeshActor
 {
     GENERATED_BODY()
 
@@ -57,43 +55,24 @@ public:
         meta = (DisplayName = "Smooth Vertical Section", ToolTip = "Smooth vertical sections"))
     bool bSmoothVerticalSection = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Materials")
-    UMaterialInterface* Material;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Collision")
-    bool bGenerateCollision = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Collision")
-    bool bUseAsyncCooking = true;
 
-    UFUNCTION(BlueprintCallable, Category = "PolygonTorus|Generation")
-    void RegenerateMesh();
 
-    UFUNCTION(BlueprintCallable, Category = "PolygonTorus|Materials")
     void SetMaterial(UMaterialInterface* NewMaterial);
 
+
+
 protected:
-    virtual void BeginPlay() override;
-    virtual void OnConstruction(const FTransform& Transform) override;
+    // 实现父类的纯虚函数
+    virtual void GenerateMesh() override;
 
-#if WITH_EDITOR
-    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-    virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
-#endif
-
-private:
-    UPROPERTY(VisibleAnywhere, Category = "PolygonTorus|Components")
-    UProceduralMeshComponent* ProceduralMesh;
-
-    void InitializeComponents();
-    void ApplyMaterial();
-    void SetupCollision();
+public:
+    // 实现父类的纯虚函数
+    virtual bool IsValid() const override;
 
 public:
     // 参数验证和计算函数
-    /** 验证参数的有效性 */
-    bool IsValid() const;
-    
     /** 计算预估的顶点数量 */
     int32 CalculateVertexCountEstimate() const;
     

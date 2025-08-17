@@ -8,29 +8,21 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
-#include "ProceduralMeshComponent.h"
+#include "ProceduralMeshActor.h"
 #include "Frustum.generated.h"
 
-class UProceduralMeshComponent;
 class FFrustumBuilder;
 struct FModelGenMeshData;
 
 UCLASS(BlueprintType, meta=(DisplayName = "Frustum"))
-class MODELGEN_API AFrustum : public AActor
+class MODELGEN_API AFrustum : public AProceduralMeshActor
 {
     GENERATED_BODY()
 
 public:
     AFrustum();
 
-    virtual void BeginPlay() override;
-    virtual void OnConstruction(const FTransform& Transform) override;
 
-#if WITH_EDITOR
-    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-    virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
-#endif
 
     //~ Begin Geometry Parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Geometry", 
@@ -77,23 +69,15 @@ public:
         meta = (UIMin = "0.0", UIMax = "360.0", DisplayName = "Arc Angle"))
     float ArcAngle = 360.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Materials")
-    UMaterialInterface* Material;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Collision")
-    bool bGenerateCollision = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Collision")
-    bool bUseAsyncCooking = true;
+protected:
+    // 实现父类的纯虚函数
+    virtual void GenerateMesh() override;
 
-private:
-    UPROPERTY(VisibleAnywhere, Category = "Frustum|Components")
-    UProceduralMeshComponent* ProceduralMesh;
-
-    void InitializeComponents();
-    void ApplyMaterial();
-    void SetupCollision();
-    void RegenerateMesh();
+public:
+    // 实现父类的纯虚函数
+    virtual bool IsValid() const override;
     
     UFUNCTION(BlueprintCallable, Category = "Frustum|Generation")
     void GenerateFrustum(float InTopRadius, float InBottomRadius, float InHeight, int32 InSides);
@@ -105,16 +89,14 @@ private:
     UFUNCTION(BlueprintCallable, Category = "Frustum|Generation")
     void RegenerateMeshBlueprint();
     
-    UFUNCTION(BlueprintCallable, Category = "Frustum|Materials")
     void SetMaterial(UMaterialInterface* NewMaterial);
 
 public:
     // 参数验证和计算函数
-    bool IsValid() const;
     float GetHalfHeight() const { return Height * 0.5f; }
     int32 CalculateVertexCountEstimate() const;
     int32 CalculateTriangleCountEstimate() const;
-    void PostEditChangeProperty(const FName& PropertyName);
+
     
     bool operator==(const AFrustum& Other) const;
     bool operator!=(const AFrustum& Other) const;

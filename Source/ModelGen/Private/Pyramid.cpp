@@ -8,68 +8,29 @@
 #include "Pyramid.h"
 #include "PyramidBuilder.h"
 #include "ModelGenMeshData.h"
-#include "ProceduralMeshComponent.h"
-#include "Materials/MaterialInterface.h"
 
 APyramid::APyramid()
 {
     PrimaryActorTick.bCanEverTick = false;
-    
-    ProceduralMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProceduralMesh"));
-    RootComponent = ProceduralMesh;
-    
-    InitializeComponents();
 }
 
-void APyramid::BeginPlay()
-{
-    Super::BeginPlay();
-    RegenerateMesh();
-}
 
-void APyramid::OnConstruction(const FTransform& Transform)
-{
-    Super::OnConstruction(Transform);
-    RegenerateMesh();
-}
 
-void APyramid::InitializeComponents()
-{
-    if (ProceduralMesh)
-    {
-        ProceduralMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-        ProceduralMesh->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
-        ProceduralMesh->bUseAsyncCooking = bUseAsyncCooking;
-        
-        if (Material)
-        {
-            ProceduralMesh->SetMaterial(0, Material);
-        }
-    }
-}
 
-void APyramid::RegenerateMesh()
+
+void APyramid::GenerateMesh()
 {
-    if (!ProceduralMesh || !IsValid())
+    if (!IsValid())
     {
         return;
     }
-    
-    ProceduralMesh->ClearAllMeshSections();
     
     FPyramidBuilder Builder(*this);
     FModelGenMeshData MeshData;
     
     if (Builder.Generate(MeshData) && MeshData.IsValid())
     {
-        MeshData.ToProceduralMesh(ProceduralMesh, 0);
-        
-        if (Material)
-        {
-            ProceduralMesh->SetMaterial(0, Material);
-        }
-        
-        ProceduralMesh->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+        MeshData.ToProceduralMesh(GetProceduralMesh(), 0);
     }
 }
 
@@ -78,6 +39,8 @@ void APyramid::GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides
     BaseRadius = InBaseRadius;
     Height = InHeight;
     Sides = InSides;
+    
+    // 调用父类的方法重新生成网格
     RegenerateMesh();
 }
 

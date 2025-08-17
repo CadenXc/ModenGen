@@ -8,28 +8,21 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
-#include "ProceduralMeshComponent.h"
+#include "ProceduralMeshActor.h"
 #include "HollowPrism.generated.h"
 
 class UProceduralMeshComponent;
 class FHollowPrismBuilder;
 
 UCLASS(BlueprintType, meta=(DisplayName = "Hollow Prism"))
-class MODELGEN_API AHollowPrism : public AActor
+class MODELGEN_API AHollowPrism : public AProceduralMeshActor
 {
     GENERATED_BODY()
 
 public:
     AHollowPrism();
 
-    virtual void BeginPlay() override;
-    virtual void OnConstruction(const FTransform& Transform) override;
 
-#if WITH_EDITOR
-    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-    virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
-#endif
 
     //~ Begin Geometry Parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Geometry", 
@@ -44,9 +37,7 @@ public:
         meta = (ClampMin = "0.01", UIMin = "0.01", DisplayName = "Height"))
     float Height = 200.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Geometry", 
-        meta = (ClampMin = "3", UIMin = "3", ClampMax = "100", UIMax = "50", DisplayName = "Sides"))
-    int32 Sides = 8;
+
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Geometry", 
         meta = (ClampMin = "3", UIMin = "3", ClampMax = "100", UIMax = "50", DisplayName = "Outer Sides"))
@@ -78,28 +69,16 @@ public:
     
 
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Materials")
-    UMaterialInterface* Material;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Collision")
-    bool bGenerateCollision = true;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Collision")
-    bool bUseAsyncCooking = true;
+protected:
+    // 实现父类的纯虚函数
+    virtual void GenerateMesh() override;
 
 private:
-    UPROPERTY(VisibleAnywhere, Category = "HollowPrism|Components")
-    UProceduralMeshComponent* ProceduralMesh;
-
-    void InitializeComponents();
-    void ApplyMaterial();
-    void SetupCollision();
-    void RegenerateMesh();
-    
     UFUNCTION(BlueprintCallable, Category = "HollowPrism|Generation")
     void RegenerateMeshBlueprint();
     
-    UFUNCTION(BlueprintCallable, Category = "HollowPrism|Materials")
     void SetMaterial(UMaterialInterface* NewMaterial);
 
 public:

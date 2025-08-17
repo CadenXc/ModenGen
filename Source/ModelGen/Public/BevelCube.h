@@ -8,23 +8,19 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
-#include "ProceduralMeshComponent.h"
+#include "ProceduralMeshActor.h"
 #include "BevelCube.generated.h"
 
-class UProceduralMeshComponent;
 class FBevelCubeBuilder;
 struct FModelGenMeshData;
 
 UCLASS(BlueprintType, meta=(DisplayName = "Bevel Cube"))
-class MODELGEN_API ABevelCube : public AActor
+class MODELGEN_API ABevelCube : public AProceduralMeshActor
 {
     GENERATED_BODY()
 
 public:
     ABevelCube();
-    virtual void BeginPlay() override;
-    virtual void OnConstruction(const FTransform& Transform) override;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters", 
         meta = (ClampMin = "0.01", UIMin = "0.01", DisplayName = "Size"))
@@ -39,30 +35,21 @@ public:
         DisplayName = "Bevel Sections"))
     int32 BevelSegments = 3;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Materials")
-    UMaterialInterface* Material;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Collision")
-    bool bGenerateCollision = true;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Collision")
-    bool bUseAsyncCooking = true;
 
 public:
-    bool IsValid() const;
     float GetHalfSize() const { return Size * 0.5f; }
     float GetInnerOffset() const { return GetHalfSize() - BevelRadius; }
     int32 GetVertexCount() const;
     int32 GetTriangleCount() const;
 
-private:
-    UPROPERTY(VisibleAnywhere, Category = "BevelCube|Components")
-    UProceduralMeshComponent* ProceduralMesh;
+protected:
+    // 实现父类的纯虚函数
+    virtual void GenerateMesh() override;
 
-    void InitializeComponents();
-    void ApplyMaterial();
-    void SetupCollision();
-    void RegenerateMesh();
+public:
+    // 实现父类的纯虚函数
+    virtual bool IsValid() const override;
     
     UFUNCTION(BlueprintCallable, Category = "BevelCube|Generation")
     void GenerateBeveledCube(float InSize, float InBevelSize, int32 InSections);

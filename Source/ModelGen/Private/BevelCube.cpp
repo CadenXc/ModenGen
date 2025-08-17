@@ -3,70 +3,29 @@
 #include "BevelCube.h"
 #include "BevelCubeBuilder.h"
 #include "ModelGenMeshData.h"
-#include "ProceduralMeshComponent.h"
-#include "Materials/MaterialInterface.h"
 
 ABevelCube::ABevelCube()
 {
     PrimaryActorTick.bCanEverTick = false;
-
-    ProceduralMesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProceduralMesh"));
-    RootComponent = ProceduralMesh;
-
-    InitializeComponents();
 }
 
-void ABevelCube::BeginPlay()
-{
-    Super::BeginPlay();
-    
-    RegenerateMesh();
-}
 
-void ABevelCube::OnConstruction(const FTransform& Transform)
-{
-    Super::OnConstruction(Transform);
-    
-    RegenerateMesh();
-}
 
-void ABevelCube::InitializeComponents()
-{
-    if (ProceduralMesh)
-    {
-        ProceduralMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-        ProceduralMesh->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
-        ProceduralMesh->bUseAsyncCooking = bUseAsyncCooking;
-        
-        if (Material)
-        {
-            ProceduralMesh->SetMaterial(0, Material);
-        }
-    }
-}
 
-void ABevelCube::RegenerateMesh()
+
+void ABevelCube::GenerateMesh()
 {
-    if (!ProceduralMesh || !IsValid())
+    if (!IsValid())
     {
         return;
     }
-
-    ProceduralMesh->ClearAllMeshSections();
 
     FBevelCubeBuilder Builder(*this);
     FModelGenMeshData MeshData;
 
     if (Builder.Generate(MeshData) && MeshData.IsValid())
     {
-        MeshData.ToProceduralMesh(ProceduralMesh, 0);
-        
-        if (Material)
-        {
-            ProceduralMesh->SetMaterial(0, Material);
-        }
-        
-        ProceduralMesh->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+        MeshData.ToProceduralMesh(GetProceduralMesh(), 0);
     }
 }
 
@@ -76,6 +35,7 @@ void ABevelCube::GenerateBeveledCube(float InSize, float InBevelSize, int32 InSe
     BevelRadius = InBevelSize;
     BevelSegments = InSections;
     
+    // 调用父类的方法重新生成网格
     RegenerateMesh();
 }
 
