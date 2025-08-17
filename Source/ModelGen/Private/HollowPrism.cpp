@@ -2,7 +2,7 @@
 
 #include "HollowPrism.h"
 #include "HollowPrismBuilder.h"
-#include "ModelGenMeshData.h"
+#include "ModelGenMeshBuilder.h"
 #include "ProceduralMeshComponent.h"
 #include "Materials/Material.h"
 #include "UObject/ConstructorHelpers.h"
@@ -34,77 +34,13 @@ void AHollowPrism::OnConstruction(const FTransform& Transform)
 void AHollowPrism::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
     Super::PostEditChangeProperty(PropertyChangedEvent);
-
-    const FName PropertyName = PropertyChangedEvent.GetPropertyName();
-    const FString PropertyNameStr = PropertyName.ToString();
-    
-    if (PropertyNameStr.StartsWith("InnerRadius") || PropertyNameStr.StartsWith("OuterRadius") || 
-        PropertyNameStr.StartsWith("Height") || PropertyNameStr.StartsWith("Sides") || 
-        PropertyNameStr.StartsWith("OuterSides") || PropertyNameStr.StartsWith("InnerSides") || 
-        PropertyNameStr.StartsWith("ArcAngle") || PropertyNameStr.StartsWith("BevelRadius") || 
-        PropertyNameStr.StartsWith("BevelSegments") || PropertyNameStr.StartsWith("bUseTriangleMethod") || 
-        PropertyNameStr.StartsWith("bFlipNormals") || PropertyNameStr.StartsWith("bDisableDebounce"))
-    {
-        RegenerateMesh();
-        return;
-    }
-    
-    static const TArray<FName> RelevantProperties = {
-        "Material", "bGenerateCollision", "bUseAsyncCooking"
-    };
-
-    if (RelevantProperties.Contains(PropertyName))
-    {
-        if (PropertyName == "Material")
-        {
-            ApplyMaterial();
-        }
-        else
-        {
-            RegenerateMesh();
-        }
-    }
+    RegenerateMesh();
 }
 
 void AHollowPrism::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent)
 {
     Super::PostEditChangeChainProperty(PropertyChangedEvent);
-
-    const FName PropertyName = PropertyChangedEvent.GetPropertyName();
-    const FString PropertyNameStr = PropertyName.ToString();
-    
-    if (PropertyNameStr.StartsWith("InnerRadius") || 
-        PropertyNameStr.StartsWith("OuterRadius") || 
-        PropertyNameStr.StartsWith("Height") || 
-        PropertyNameStr.StartsWith("Sides") || 
-        PropertyNameStr.StartsWith("OuterSides") || 
-        PropertyNameStr.StartsWith("InnerSides") || 
-        PropertyNameStr.StartsWith("ArcAngle") || 
-        PropertyNameStr.StartsWith("BevelRadius") || 
-        PropertyNameStr.StartsWith("BevelSegments") || 
-        PropertyNameStr.StartsWith("bUseTriangleMethod") || 
-        PropertyNameStr.StartsWith("bFlipNormals") || 
-        PropertyNameStr.StartsWith("bDisableDebounce"))
-    {
-        RegenerateMesh();
-        return;
-    }
-    
-    static const TArray<FName> RelevantProperties = {
-        "Material", "bGenerateCollision", "bUseAsyncCooking"
-    };
-
-    if (RelevantProperties.Contains(PropertyName))
-    {
-        if (PropertyName == "Material")
-        {
-            ApplyMaterial();
-        }
-        else
-        {
-            RegenerateMesh();
-        }
-    }
+    RegenerateMesh();
 }
 #endif
 
@@ -152,54 +88,26 @@ void AHollowPrism::SetupCollision()
 
 void AHollowPrism::RegenerateMesh()
 {
-    if (!ProceduralMesh)
+    if (!ProceduralMesh || !IsValid())
     {
         return;
     }
-
-    static float LastUpdateTime = 0.0f;
-    const float CurrentTime = FPlatformTime::Seconds();
-    const float MinUpdateInterval = 0.05f;
-    
-    if (!bDisableDebounce && CurrentTime - LastUpdateTime < MinUpdateInterval)
-    {
-        return;
-    }
-    
-    LastUpdateTime = CurrentTime;
-
-    static AHollowPrism* LastHollowPrism = nullptr;
-    static UMaterialInterface* LastMaterial = nullptr;
-    static bool bFirstGeneration = true;
-    
-    bool bParametersChanged = bFirstGeneration || LastHollowPrism != this;
-    bool bMaterialChanged = bFirstGeneration || LastMaterial != Material;
-    
-    if (!bFirstGeneration && !bParametersChanged && !bMaterialChanged)
-    {
-        return;
-    }
-    
-    LastHollowPrism = this;
-    LastMaterial = Material;
-    bFirstGeneration = false;
 
     ProceduralMesh->ClearAllMeshSections();
 
     FHollowPrismBuilder Builder(*this);
     FModelGenMeshData MeshData;
 
-    if (Builder.Generate(MeshData))
+    if (Builder.Generate(MeshData) && MeshData.IsValid())
     {
         MeshData.ToProceduralMesh(ProceduralMesh, 0);
-
-        ApplyMaterial();
-        SetupCollision();
         
-        if (bMaterialChanged && !bParametersChanged)
+        if (Material)
         {
-            ApplyMaterial();
+            ProceduralMesh->SetMaterial(0, Material);
         }
+        
+        ProceduralMesh->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
     }
 }
 
@@ -317,8 +225,7 @@ bool AHollowPrism::operator==(const AHollowPrism& Other) const
            BevelRadius == Other.BevelRadius &&
            BevelSegments == Other.BevelSegments &&
            bUseTriangleMethod == Other.bUseTriangleMethod &&
-           bFlipNormals == Other.bFlipNormals &&
-           bDisableDebounce == Other.bDisableDebounce;
+           bFlipNormals == Other.bFlipNormals;
 }
 
 bool AHollowPrism::operator!=(const AHollowPrism& Other) const

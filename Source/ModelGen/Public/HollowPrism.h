@@ -14,7 +14,6 @@
 
 class UProceduralMeshComponent;
 class FHollowPrismBuilder;
-struct FModelGenMeshData;
 
 UCLASS(BlueprintType, meta=(DisplayName = "Hollow Prism"))
 class MODELGEN_API AHollowPrism : public AActor
@@ -77,9 +76,7 @@ public:
         meta = (DisplayName = "Flip Normals"))
     bool bFlipNormals = false;
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Debug", 
-        meta = (DisplayName = "Disable Debounce"))
-    bool bDisableDebounce = false;
+
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Materials")
     UMaterialInterface* Material;
