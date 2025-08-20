@@ -27,44 +27,94 @@ void APolygonTorus::GenerateMesh()
 
 void APolygonTorus::SetMaterial(UMaterialInterface* NewMaterial)
 {
-    // 调用父类的方法设置材质
     Super::SetMaterial(NewMaterial);
 }
 
 bool APolygonTorus::IsValid() const
 {
-    const bool bValidMajorRadius = MajorRadius > 0.0f;
-    const bool bValidMinorRadius = MinorRadius > 0.0f && MinorRadius <= MajorRadius * 0.9f;
-    const bool bValidMajorSegments = MajorSegments >= 3 && MajorSegments <= 256;
-    const bool bValidMinorSegments = MinorSegments >= 3 && MinorSegments <= 256;
-    const bool bValidTorusAngle = TorusAngle >= 1.0f && TorusAngle <= 360.0f;
-    
-    return bValidMajorRadius && bValidMinorRadius && bValidMajorSegments && 
-           bValidMinorSegments && bValidTorusAngle;
+    return MajorRadius > 0.0f &&
+           MinorRadius > 0.0f && MinorRadius <= MajorRadius * 0.9f &&
+           MajorSegments >= 3 && MajorSegments <= 256 &&
+           MinorSegments >= 3 && MinorSegments <= 256 &&
+           TorusAngle >= 1.0f && TorusAngle <= 360.0f;
 }
 
 int32 APolygonTorus::CalculateVertexCountEstimate() const
 {
-    int32 BaseVertexCount = MajorSegments * MinorSegments;
-    
-    int32 CapVertexCount = 0;
-    if (TorusAngle < 360.0f - KINDA_SMALL_NUMBER)
-    {
-        CapVertexCount = MinorSegments * 2;
-    }
+    const int32 BaseVertexCount = MajorSegments * MinorSegments;
+    const int32 CapVertexCount = (TorusAngle < 360.0f - KINDA_SMALL_NUMBER) ? MinorSegments * 2 : 0;
     
     return BaseVertexCount + CapVertexCount;
 }
 
 int32 APolygonTorus::CalculateTriangleCountEstimate() const
 {
-    int32 BaseTriangleCount = MajorSegments * MinorSegments * 2;
-    
-    int32 CapTriangleCount = 0;
-    if (TorusAngle < 360.0f - KINDA_SMALL_NUMBER)
-    {
-        CapTriangleCount = MinorSegments * 2;
-    }
+    const int32 BaseTriangleCount = MajorSegments * MinorSegments * 2;
+    const int32 CapTriangleCount = (TorusAngle < 360.0f - KINDA_SMALL_NUMBER) ? MinorSegments * 2 : 0;
     
     return BaseTriangleCount + CapTriangleCount;
+}
+
+// 设置参数函数实现
+void APolygonTorus::SetMajorRadius(float NewMajorRadius)
+{
+    if (NewMajorRadius > 0.0f && NewMajorRadius != MajorRadius)
+    {
+        MajorRadius = NewMajorRadius;
+        RegenerateMesh();
+    }
+}
+
+void APolygonTorus::SetMinorRadius(float NewMinorRadius)
+{
+    if (NewMinorRadius > 0.0f && NewMinorRadius <= MajorRadius * 0.9f && NewMinorRadius != MinorRadius)
+    {
+        MinorRadius = NewMinorRadius;
+        RegenerateMesh();
+    }
+}
+
+void APolygonTorus::SetMajorSegments(int32 NewMajorSegments)
+{
+    if (NewMajorSegments >= 3 && NewMajorSegments <= 256 && NewMajorSegments != MajorSegments)
+    {
+        MajorSegments = NewMajorSegments;
+        RegenerateMesh();
+    }
+}
+
+void APolygonTorus::SetMinorSegments(int32 NewMinorSegments)
+{
+    if (NewMinorSegments >= 3 && NewMinorSegments <= 256 && NewMinorSegments != MinorSegments)
+    {
+        MinorSegments = NewMinorSegments;
+        RegenerateMesh();
+    }
+}
+
+void APolygonTorus::SetTorusAngle(float NewTorusAngle)
+{
+    if (NewTorusAngle >= 1.0f && NewTorusAngle <= 360.0f && NewTorusAngle != TorusAngle)
+    {
+        TorusAngle = NewTorusAngle;
+        RegenerateMesh();
+    }
+}
+
+void APolygonTorus::SetSmoothCrossSection(bool bNewSmoothCrossSection)
+{
+    if (bNewSmoothCrossSection != bSmoothCrossSection)
+    {
+        bSmoothCrossSection = bNewSmoothCrossSection;
+        RegenerateMesh();
+    }
+}
+
+void APolygonTorus::SetSmoothVerticalSection(bool bNewSmoothVerticalSection)
+{
+    if (bNewSmoothVerticalSection != bSmoothVerticalSection)
+    {
+        bSmoothVerticalSection = bNewSmoothVerticalSection;
+        RegenerateMesh();
+    }
 }

@@ -3,9 +3,6 @@
 /**
  * @file ModelGenMeshBuilder.h
  * @brief 通用网格构建器基类
- * 
- * 该文件定义了可被所有几何体生成器继承的通用构建器基类。
- * 提供了统一的mesh构建、顶点管理和验证功能。
  */
 
 #pragma once
@@ -13,10 +10,7 @@
 #include "CoreMinimal.h"
 #include "ModelGenMeshData.h"
 
-/**
- * 通用网格构建器基类
- * 提供所有几何体生成器的基础功能
- */
+// 通用网格构建器基类
 class MODELGEN_API FModelGenMeshBuilder
 {
 public:
@@ -54,12 +48,7 @@ protected:
     
     void ReserveMemory();
     
-    /** 基于顶点位置的稳定UV映射 - 通用实现 */
     FVector2D GenerateStableUV(const FVector& Position, const FVector& Normal) const;
-    
-    /** 基于顶点位置的稳定UV映射 - 子类可重写的虚函数 */
     virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const;
-    
-    /** 生成第二UV通道 - 子类可重写的虚函数 */
     virtual FVector2D GenerateSecondaryUVCustom(const FVector& Position, const FVector& Normal) const;
 };

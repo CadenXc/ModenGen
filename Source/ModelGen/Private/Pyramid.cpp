@@ -14,10 +14,6 @@ APyramid::APyramid()
     PrimaryActorTick.bCanEverTick = false;
 }
 
-
-
-
-
 void APyramid::GenerateMesh()
 {
     if (!IsValid())
@@ -28,7 +24,7 @@ void APyramid::GenerateMesh()
     FPyramidBuilder Builder(*this);
     FModelGenMeshData MeshData;
     
-    if (Builder.Generate(MeshData) && MeshData.IsValid())
+    if (Builder.Generate(MeshData))
     {
         MeshData.ToProceduralMesh(GetProceduralMesh(), 0);
     }
@@ -40,14 +36,13 @@ void APyramid::GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides
     Height = InHeight;
     Sides = InSides;
     
-    // 调用父类的方法重新生成网格
     RegenerateMesh();
 }
 
 bool APyramid::IsValid() const
 {
-    return BaseRadius > 0.0f && Height > 0.0f && 
-           Sides >= 3 && Sides <= 100 && 
+    return BaseRadius > 0.0f && Height > 0.0f &&
+           Sides >= 3 && Sides <= 100 &&
            BevelRadius >= 0.0f && BevelRadius < Height;
 }
 
@@ -58,24 +53,61 @@ float APyramid::GetBevelTopRadius() const
         return BaseRadius;
     }
     
-    float ScaleFactor = 1.0f - (BevelRadius / Height);
+    const float ScaleFactor = 1.0f - (BevelRadius / Height);
     return FMath::Max(0.0f, BaseRadius * ScaleFactor);
 }
 
 int32 APyramid::CalculateVertexCountEstimate() const
 {
-    int32 BaseVertexCount = Sides;
-    int32 BevelVertexCount = (BevelRadius > 0.0f) ? Sides * 2 : 0;
-    int32 PyramidVertexCount = Sides + 1;
+    const int32 BaseVertexCount = Sides;
+    const int32 BevelVertexCount = (BevelRadius > 0.0f) ? Sides * 2 : 0;
+    const int32 PyramidVertexCount = Sides + 1;
     
     return BaseVertexCount + BevelVertexCount + PyramidVertexCount;
 }
 
 int32 APyramid::CalculateTriangleCountEstimate() const
 {
-    int32 BaseTriangleCount = Sides - 2;
-    int32 BevelTriangleCount = (BevelRadius > 0.0f) ? Sides * 2 : 0;
-    int32 PyramidTriangleCount = Sides;
+    const int32 BaseTriangleCount = Sides - 2;
+    const int32 BevelTriangleCount = (BevelRadius > 0.0f) ? Sides * 2 : 0;
+    const int32 PyramidTriangleCount = Sides;
     
     return BaseTriangleCount + BevelTriangleCount + PyramidTriangleCount;
+}
+
+// 设置参数函数实现
+void APyramid::SetBaseRadius(float NewBaseRadius)
+{
+    if (NewBaseRadius > 0.0f && NewBaseRadius != BaseRadius)
+    {
+        BaseRadius = NewBaseRadius;
+        RegenerateMesh();
+    }
+}
+
+void APyramid::SetHeight(float NewHeight)
+{
+    if (NewHeight > 0.0f && NewHeight != Height)
+    {
+        Height = NewHeight;
+        RegenerateMesh();
+    }
+}
+
+void APyramid::SetSides(int32 NewSides)
+{
+    if (NewSides >= 3 && NewSides <= 100 && NewSides != Sides)
+    {
+        Sides = NewSides;
+        RegenerateMesh();
+    }
+}
+
+void APyramid::SetBevelRadius(float NewBevelRadius)
+{
+    if (NewBevelRadius >= 0.0f && NewBevelRadius < Height && NewBevelRadius != BevelRadius)
+    {
+        BevelRadius = NewBevelRadius;
+        RegenerateMesh();
+    }
 }

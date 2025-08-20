@@ -27,10 +27,8 @@ AProceduralMeshActor::AProceduralMeshActor()
     StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
     StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     
-    // 设置静态网格组件的初始变换，可以稍微偏移以避免完全重叠
-    StaticMeshComponent->SetRelativeLocation(FVector(0, 0, 0));
-    StaticMeshComponent->SetRelativeRotation(FRotator(0, 0, 0));
-    StaticMeshComponent->SetRelativeScale3D(FVector(1, 1, 1));
+    // 设置静态网格组件的初始变换
+    StaticMeshComponent->SetRelativeTransform(FTransform::Identity);
 
     InitializeComponents();
 }
@@ -100,17 +98,8 @@ void AProceduralMeshActor::PostEditChangeChainProperty(FPropertyChangedChainEven
 {
     Super::PostEditChangeChainProperty(PropertyChangedEvent);
     
-    // 当链式属性改变时重新生成网格
-    if (PropertyChangedEvent.PropertyChain.GetActiveMemberNode())
-    {
-        const FName PropertyName = PropertyChangedEvent.PropertyChain.GetActiveMemberNode()->GetValue()->GetFName();
-        if (PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, Material) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bGenerateCollision) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bUseAsyncCooking))
-        {
-            RegenerateMesh();
-        }
-    }
+    // 链式属性变化通常不需要特殊处理，因为PostEditChangeProperty已经处理了
+    // 如果需要特殊处理，可以在这里添加逻辑
 }
 #endif
 
@@ -452,8 +441,6 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh(
 
 void AProceduralMeshActor::ConvertToStaticMeshComponent()
 {
-    // 此函数现在会同时显示两个组件：程序化网格和静态网格
-    // 程序化网格负责碰撞，静态网格负责显示
     if (!ProceduralMeshComponent || !StaticMeshComponent)
     {
         return;
@@ -473,18 +460,8 @@ void AProceduralMeshActor::ConvertToStaticMeshComponent()
             StaticMeshComponent->SetMaterial(0, Material);
         }
         
-        // 设置碰撞
-        StaticMeshComponent->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
-        
-        // 保持程序化网格组件可见，但禁用碰撞避免重复
-        ProceduralMeshComponent->SetVisibility(true);
-        ProceduralMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-        
-        // 显示静态网格组件
-        StaticMeshComponent->SetVisibility(true);
-        
-        // 更新状态标志 - 现在表示同时显示两个组件
-        bUsingStaticMesh = true;
+        // 设置显示模式为静态网格
+        SetDisplayMode(EDisplayMode::StaticOnly);
     }
 }
 
@@ -492,24 +469,11 @@ void AProceduralMeshActor::ToggleDisplayMode()
 {
     if (bUsingStaticMesh)
     {
-        // 当前使用静态网格，切换到程序化网格
-        if (ProceduralMeshComponent && StaticMeshComponent)
-        {
-            // 隐藏静态网格组件
-            StaticMeshComponent->SetVisibility(false);
-            StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-            
-            // 显示程序化网格组件
-            ProceduralMeshComponent->SetVisibility(true);
-            ProceduralMeshComponent->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
-        }
-        bUsingStaticMesh = false;
+        SetDisplayMode(EDisplayMode::ProceduralOnly);
     }
     else
     {
-        // 当前使用程序化网格，切换到静态网格
-        ConvertToStaticMeshComponent();
-        bUsingStaticMesh = true;
+        SetDisplayMode(EDisplayMode::StaticOnly);
     }
 }
 
@@ -529,70 +493,53 @@ UStaticMesh* AProceduralMeshActor::ConvertAndGetStaticMesh()
     return ConvertProceduralMeshToStaticMesh(ProceduralMeshComponent);
 }
 
-void AProceduralMeshActor::ShowBothComponents()
+void AProceduralMeshActor::SetDisplayMode(EDisplayMode Mode)
 {
     if (!ProceduralMeshComponent || !StaticMeshComponent)
     {
         return;
     }
     
-    // 确保静态网格组件有内容
-    if (!StaticMeshComponent->GetStaticMesh())
+    switch (Mode)
     {
-        GenerateStaticMesh();
+        case EDisplayMode::ProceduralOnly:
+            // 只显示程序化网格组件
+            ProceduralMeshComponent->SetVisibility(true);
+            StaticMeshComponent->SetVisibility(false);
+            ProceduralMeshComponent->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+            StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            bUsingStaticMesh = false;
+            break;
+            
+        case EDisplayMode::StaticOnly:
+            // 确保静态网格组件有内容
+            if (!StaticMeshComponent->GetStaticMesh())
+            {
+                GenerateStaticMesh();
+            }
+            // 只显示静态网格组件
+            ProceduralMeshComponent->SetVisibility(false);
+            StaticMeshComponent->SetVisibility(true);
+            ProceduralMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            StaticMeshComponent->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+            bUsingStaticMesh = true;
+            break;
+            
+        case EDisplayMode::Both:
+            // 确保静态网格组件有内容
+            if (!StaticMeshComponent->GetStaticMesh())
+            {
+                GenerateStaticMesh();
+            }
+            // 显示两个组件
+            ProceduralMeshComponent->SetVisibility(true);
+            StaticMeshComponent->SetVisibility(true);
+            // 程序化网格组件负责碰撞
+            ProceduralMeshComponent->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+            StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            bUsingStaticMesh = false;
+            break;
     }
-    
-    // 显示两个组件
-    ProceduralMeshComponent->SetVisibility(true);
-    StaticMeshComponent->SetVisibility(true);
-    
-    // 程序化网格组件负责碰撞
-    ProceduralMeshComponent->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
-    StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    
-    bUsingStaticMesh = false; // 标记为同时显示模式
-}
-
-void AProceduralMeshActor::ShowProceduralMeshOnly()
-{
-    if (!ProceduralMeshComponent || !StaticMeshComponent)
-    {
-        return;
-    }
-    
-    // 只显示程序化网格组件
-    ProceduralMeshComponent->SetVisibility(true);
-    StaticMeshComponent->SetVisibility(false);
-    
-    // 程序化网格组件负责碰撞
-    ProceduralMeshComponent->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
-    StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    
-    bUsingStaticMesh = false;
-}
-
-void AProceduralMeshActor::ShowStaticMeshOnly()
-{
-    if (!ProceduralMeshComponent || !StaticMeshComponent)
-    {
-        return;
-    }
-    
-    // 确保静态网格组件有内容
-    if (!StaticMeshComponent->GetStaticMesh())
-    {
-        GenerateStaticMesh();
-    }
-    
-    // 只显示静态网格组件
-    ProceduralMeshComponent->SetVisibility(false);
-    StaticMeshComponent->SetVisibility(true);
-    
-    // 静态网格组件负责碰撞
-    ProceduralMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    StaticMeshComponent->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
-    
-    bUsingStaticMesh = true;
 }
 
 void AProceduralMeshActor::GenerateStaticMesh()

@@ -98,8 +98,7 @@ void FHollowPrismBuilder::GenerateInnerWalls()
         const float Angle = StartAngle + i * AngleStep;
         
         const FVector InnerPos = CalculateVertexPosition(HollowPrism.InnerRadius, Angle, HalfHeight - HollowPrism.BevelRadius);
-        FVector InnerNormal = FVector(-FMath::Cos(Angle), -FMath::Sin(Angle), 0.0f);
-        if (HollowPrism.bFlipNormals) InnerNormal = -InnerNormal;
+        const FVector InnerNormal = FVector(-FMath::Cos(Angle), -FMath::Sin(Angle), 0.0f);
         
         const int32 InnerTopVertex = GetOrAddVertexWithDualUV(InnerPos, InnerNormal);
         InnerTopVertices.Add(InnerTopVertex);
@@ -129,8 +128,7 @@ void FHollowPrismBuilder::GenerateOuterWalls()
         const float Angle = StartAngle + i * AngleStep;
         
         const FVector OuterPos = CalculateVertexPosition(HollowPrism.OuterRadius, Angle, HalfHeight - HollowPrism.BevelRadius);
-        FVector OuterNormal = FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.0f);
-        if (HollowPrism.bFlipNormals) OuterNormal = -OuterNormal;
+        const FVector OuterNormal = FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.0f);
         
         const int32 OuterTopVertex = GetOrAddVertexWithDualUV(OuterPos, OuterNormal);
         OuterTopVertices.Add(OuterTopVertex);
@@ -299,11 +297,7 @@ void FHollowPrismBuilder::GenerateCapVertices(TArray<int32>& OutInnerVertices,
     const float InnerAngleStep = CalculateAngleStep(HollowPrism.InnerSides);
     const float OuterAngleStep = CalculateAngleStep(HollowPrism.OuterSides);
     
-    FVector Normal(0.0f, 0.0f, bIsTopCap ? 1.0f : -1.0f);
-    if (HollowPrism.bFlipNormals)
-    {
-        Normal = -Normal;
-    }
+    const FVector Normal(0.0f, 0.0f, bIsTopCap ? 1.0f : -1.0f);
     
     const float InnerRadius = CalculateInnerRadius(true);
     const float OuterRadius = CalculateOuterRadius(true);
@@ -417,7 +411,7 @@ FVector FHollowPrismBuilder::CalculateBevelNormal(float Angle, float Alpha, bool
         Normal = -Normal;
     }
 
-    return HollowPrism.bFlipNormals ? -Normal : Normal;
+    return Normal;
 }
 
 void FHollowPrismBuilder::ConnectBevelRings(const TArray<int32>& PrevRing, 

@@ -22,40 +22,45 @@ class MODELGEN_API APyramid : public AProceduralMeshActor
 public:
     APyramid();
 
-
-
     //~ Begin Geometry Parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid|Geometry",
-        meta = (ClampMin = "0.01", UIMin = "0.01", DisplayName = "Base Radius"))
+        meta = (ClampMin = "0.01", DisplayName = "Base Radius"))
     float BaseRadius = 100.0f;
     
+    UFUNCTION(BlueprintCallable, Category = "Pyramid|Parameters")
+    void SetBaseRadius(float NewBaseRadius);
+    
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid|Geometry",
-        meta = (ClampMin = "0.01", UIMin = "0.01", DisplayName = "Height"))
+        meta = (ClampMin = "0.01", DisplayName = "Height"))
     float Height = 200.0f;
     
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid|Geometry",
-        meta = (ClampMin = "3", ClampMax = "100", UIMin = "3", UIMax = "100",
-        DisplayName = "Sides"))
-    int32 Sides = 4;
+    UFUNCTION(BlueprintCallable, Category = "Pyramid|Parameters")
+    void SetHeight(float NewHeight);
     
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid|Geometry",
-        meta = (ClampMin = "0.0", UIMin = "0.0", DisplayName = "Bevel Radius"))
+        meta = (ClampMin = "3", ClampMax = "100", DisplayName = "Sides"))
+    int32 Sides = 4;
+    
+    UFUNCTION(BlueprintCallable, Category = "Pyramid|Parameters")
+    void SetSides(int32 NewSides);
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid|Geometry",
+        meta = (ClampMin = "0.0", DisplayName = "Bevel Radius"))
     float BevelRadius = 0.0f;
 
-
+    UFUNCTION(BlueprintCallable, Category = "Pyramid|Parameters")
+    void SetBevelRadius(float NewBevelRadius);
 
 protected:
     // 实现父类的纯虚函数
     virtual void GenerateMesh() override;
 
 public:
-    // 实现父类的纯虚函数
     virtual bool IsValid() const override;
     
     UFUNCTION(BlueprintCallable, Category = "Pyramid|Generation")
     void GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides);
 
-public:
     float GetBevelTopRadius() const;
     int32 CalculateVertexCountEstimate() const;
     int32 CalculateTriangleCountEstimate() const;

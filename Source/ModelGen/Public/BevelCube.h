@@ -23,34 +23,39 @@ public:
     ABevelCube();
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters", 
-        meta = (ClampMin = "0.01", UIMin = "0.01", DisplayName = "Size"))
-    float Size = 100.0f;
+        meta = (ClampMin = "0.01", DisplayName = "Size"))
+    float CubeSize = 100.0f;
+    
+    UFUNCTION(BlueprintCallable, Category = "BevelCube|Parameters")
+    void SetCubeSize(float NewCubeSize);
     
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters", 
-        meta = (ClampMin = "0.0", UIMin = "0.0", DisplayName = "Bevel Size"))
+        meta = (ClampMin = "0.0", DisplayName = "Bevel Size"))
     float BevelRadius = 10.0f;
     
+    UFUNCTION(BlueprintCallable, Category = "BevelCube|Parameters")
+    void SetBevelRadius(float NewBevelRadius);
+    
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters", 
-        meta = (ClampMin = "1", ClampMax = "10", UIMin = "1", UIMax = "10", 
-        DisplayName = "Bevel Sections"))
+        meta = (ClampMin = "1", ClampMax = "10", DisplayName = "Bevel Sections"))
     int32 BevelSegments = 3;
 
-
+    UFUNCTION(BlueprintCallable, Category = "BevelCube|Parameters")
+    void SetBevelSegments(int32 NewBevelSegments);
 
 public:
-    float GetHalfSize() const { return Size * 0.5f; }
-    float GetInnerOffset() const { return GetHalfSize() - BevelRadius; }
+    // 内联计算函数
+    float GetHalfSize() const { return CubeSize * 0.5f; }
+    float GetInnerOffset() const { return CubeSize * 0.5f - BevelRadius; }
     int32 GetVertexCount() const;
     int32 GetTriangleCount() const;
 
 protected:
-    // 实现父类的纯虚函数
     virtual void GenerateMesh() override;
 
 public:
-    // 实现父类的纯虚函数
     virtual bool IsValid() const override;
     
     UFUNCTION(BlueprintCallable, Category = "BevelCube|Generation")
-    void GenerateBeveledCube(float InSize, float InBevelSize, int32 InSections);
+    void GenerateBeveledCube(float InCubeSize, float InBevelRadius, int32 InBevelSegments);
 };

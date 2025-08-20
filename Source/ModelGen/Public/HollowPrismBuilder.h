@@ -3,9 +3,6 @@
 /**
  * @file HollowPrismBuilder.h
  * @brief 空心棱柱网格构建器
- * 
- * 该类负责生成空心棱柱的几何数据，继承自FModelGenMeshBuilder。
- * 提供了完整的空心棱柱生成功能，包括侧面、顶底面和倒角处理。
  */
 
 #pragma once
@@ -31,27 +28,21 @@ public:
 private:
     const AHollowPrism& HollowPrism;
 
-    /** 生成基础几何体 */
     void GenerateBaseGeometry();
     
-    /** 生成侧面墙壁 */
     void GenerateSideWalls();
     void GenerateInnerWalls();
     void GenerateOuterWalls();
     
-    /** 生成顶底面 */
     void GenerateTopCapWithTriangles();
     void GenerateBottomCapWithTriangles();
     
-    /** 生成倒角几何 */
     void GenerateTopBevelGeometry();
     void GenerateBottomBevelGeometry();
     
-    /** 生成端盖 */
     void GenerateEndCaps();
     void GenerateEndCap(float Angle, const FVector& Normal, bool IsStart);
     
-    /** 端盖相关方法 */
     void GenerateEndCapVertices(float Angle, const FVector& Normal, bool IsStart,
                                TArray<int32>& OutOrderedVertices);
     void GenerateEndCapBevelVertices(float Angle, const FVector& Normal, bool IsStart,
@@ -63,7 +54,6 @@ private:
     void CalculateEndCapZRange(float TopBevelHeight, float BottomBevelHeight, 
                               float& OutStartZ, float& OutEndZ) const;
     
-    /** 顶底面生成方法 */
     void GenerateCapTriangles(const TArray<int32>& InnerVertices, 
                               const TArray<int32>& OuterVertices, 
                               bool bIsTopCap);
@@ -71,7 +61,6 @@ private:
                             TArray<int32>& OutOuterVertices, 
                             bool bIsTopCap);
     
-    /** 倒角生成方法 */
     void GenerateBevelGeometry(bool bIsTop, bool bIsInner);
     void GenerateBevelRing(const TArray<int32>& PrevRing, 
                            TArray<int32>& OutCurrentRing,
@@ -82,20 +71,16 @@ private:
                            const TArray<int32>& CurrentRing, 
                            bool bIsInner, bool bIsTop);
     
-    /** 通用计算辅助方法 */
     float CalculateStartAngle() const;
     float CalculateAngleStep(int32 Sides) const;
     float CalculateInnerRadius(bool bIncludeBevel) const;
     float CalculateOuterRadius(bool bIncludeBevel) const;
     FVector CalculateVertexPosition(float Radius, float Angle, float Z) const;
     
-    /** 基于顶点位置的稳定UV映射 - 重写父类实现 */
     virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const override;
     
-    /** 生成第二UV通道 - 传统UV系统 */
     FVector2D GenerateSecondaryUV(const FVector& Position, const FVector& Normal) const;
     
-    /** 使用双UV通道添加顶点 */
     int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal);
     
 };

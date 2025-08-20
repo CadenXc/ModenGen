@@ -9,23 +9,19 @@ FModelGenMeshBuilder::FModelGenMeshBuilder()
 
 int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
-    // 创建一个复合键，包含位置、法线和UV
-    // 使用字符串作为键，确保所有属性都匹配
-    FString VertexKey = FString::Printf(TEXT("%.6f,%.6f,%.6f|%.6f,%.6f,%.6f|%.6f,%.6f"),
+    // 使用更高效的复合键生成
+    FString VertexKey = FString::Printf(TEXT("%.4f,%.4f,%.4f|%.3f,%.3f,%.3f|%.4f,%.4f"),
         Pos.X, Pos.Y, Pos.Z,
         Normal.X, Normal.Y, Normal.Z,
         UV.X, UV.Y);
 
-    // 尝试查找已存在的顶点
     if (int32* FoundIndex = UniqueVerticesMap.Find(VertexKey))
     {
         return *FoundIndex;
     }
 
-    // 添加新顶点并记录其索引
     const int32 NewIndex = AddVertex(Pos, Normal, UV);
     UniqueVerticesMap.Add(VertexKey, NewIndex);
-
     IndexToPosMap.Add(NewIndex, Pos);
     return NewIndex;
 }
@@ -33,22 +29,19 @@ int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& No
 int32 FModelGenMeshBuilder::GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal, 
                                                      const FVector2D& UV, const FVector2D& UV1)
 {
-    // 创建一个复合键，包含位置、法线和两个UV通道
-    FString VertexKey = FString::Printf(TEXT("%.6f,%.6f,%.6f|%.6f,%.6f,%.6f|%.6f,%.6f|%.6f,%.6f"),
+    // 使用更高效的复合键生成
+    FString VertexKey = FString::Printf(TEXT("%.4f,%.4f,%.4f|%.3f,%.3f,%.3f|%.4f,%.4f|%.4f,%.4f"),
         Pos.X, Pos.Y, Pos.Z,
         Normal.X, Normal.Y, Normal.Z,
         UV.X, UV.Y, UV1.X, UV1.Y);
 
-    // 尝试查找已存在的顶点
     if (int32* FoundIndex = UniqueVerticesMap.Find(VertexKey))
     {
         return *FoundIndex;
     }
 
-    // 添加新顶点并记录其索引
     const int32 NewIndex = MeshData.AddVertexWithDualUV(Pos, Normal, UV, UV1);
     UniqueVerticesMap.Add(VertexKey, NewIndex);
-
     IndexToPosMap.Add(NewIndex, Pos);
     return NewIndex;
 }
@@ -59,7 +52,6 @@ FVector FModelGenMeshBuilder::GetPosByIndex(int32 Index) const
     {
         return *FoundPos;
     }
-
     return FVector::ZeroVector;
 }
 
@@ -102,7 +94,6 @@ void FModelGenMeshBuilder::ReserveMemory()
     MeshData.Reserve(EstimatedVertexCount, EstimatedTriangleCount);
 }
 
-// 通用稳定UV映射实现
 FVector2D FModelGenMeshBuilder::GenerateStableUV(const FVector& Position, const FVector& Normal) const
 {
     // 首先尝试调用子类的自定义实现
@@ -111,48 +102,31 @@ FVector2D FModelGenMeshBuilder::GenerateStableUV(const FVector& Position, const 
     // 如果子类没有重写，返回默认实现
     if (CustomUV.X == 0.0f && CustomUV.Y == 0.0f)
     {
-        // 默认实现：基于位置和法线的简单映射
-        float X = Position.X;
-        float Y = Position.Y;
-        float Z = Position.Z;
-        
-        // 根据法线方向选择UV映射策略
-        if (FMath::Abs(Normal.Z) > 0.9f)
+        // 简化的默认UV映射：基于法线方向选择坐标
+        const float Threshold = 0.9f;
+        if (FMath::Abs(Normal.Z) > Threshold)
         {
-            // 水平面：使用X和Y坐标
-            float U = (X + 1.0f) * 0.5f;  // 0 到 1
-            float V = (Y + 1.0f) * 0.5f;  // 0 到 1
-            return FVector2D(U, V);
+            return FVector2D((Position.X + 1.0f) * 0.5f, (Position.Y + 1.0f) * 0.5f);
         }
-        else if (FMath::Abs(Normal.X) > 0.9f)
+        else if (FMath::Abs(Normal.X) > Threshold)
         {
-            // 垂直X面：使用Y和Z坐标
-            float U = (Y + 1.0f) * 0.5f;  // 0 到 1
-            float V = (Z + 1.0f) * 0.5f;  // 0 到 1
-            return FVector2D(U, V);
+            return FVector2D((Position.Y + 1.0f) * 0.5f, (Position.Z + 1.0f) * 0.5f);
         }
         else
         {
-            // 垂直Y面：使用X和Z坐标
-            float U = (X + 1.0f) * 0.5f;  // 0 到 1
-            float V = (Z + 1.0f) * 0.5f;  // 0 到 1
-            return FVector2D(U, V);
+            return FVector2D((Position.X + 1.0f) * 0.5f, (Position.Z + 1.0f) * 0.5f);
         }
     }
     
     return CustomUV;
 }
 
-// 默认自定义实现
 FVector2D FModelGenMeshBuilder::GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const
 {
-    // 默认返回零向量，表示使用通用实现
     return FVector2D(0.0f, 0.0f);
 }
 
-// 默认第二UV通道实现
 FVector2D FModelGenMeshBuilder::GenerateSecondaryUVCustom(const FVector& Position, const FVector& Normal) const
 {
-    // 默认返回零向量，表示使用通用实现
     return FVector2D(0.0f, 0.0f);
 }

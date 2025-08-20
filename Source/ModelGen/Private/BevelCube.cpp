@@ -11,53 +11,69 @@ ABevelCube::ABevelCube()
 
 void ABevelCube::GenerateMesh()
 {
-    if (!IsValid())
-    {
-        return;
-    }
+    if (!IsValid()) return;
 
     FBevelCubeBuilder Builder(*this);
     FModelGenMeshData MeshData;
 
-    if (Builder.Generate(MeshData) && MeshData.IsValid())
+    if (Builder.Generate(MeshData))
     {
         MeshData.ToProceduralMesh(GetProceduralMesh(), 0);
     }
 }
 
-void ABevelCube::GenerateBeveledCube(float InSize, float InBevelSize, int32 InSections)
+void ABevelCube::GenerateBeveledCube(float InCubeSize, float InBevelRadius, int32 InBevelSegments)
 {
-    Size = InSize;
-    BevelRadius = InBevelSize;
-    BevelSegments = InSections;
+    CubeSize = InCubeSize;
+    BevelRadius = InBevelRadius;
+    BevelSegments = InBevelSegments;
     
-    // 调用父类的方法重新生成网格
     RegenerateMesh();
 }
 
 bool ABevelCube::IsValid() const
 {
-    const bool bValidSize = Size > 0.0f;
-    const bool bValidBevelSize = BevelRadius >= 0.0f && BevelRadius < GetHalfSize();
-    const bool bValidSections = BevelSegments >= 1 && BevelSegments <= 10;
-    
-    return bValidSize && bValidBevelSize && bValidSections;
+    return CubeSize > 0.0f && 
+           BevelRadius >= 0.0f && BevelRadius < GetHalfSize() && 
+           BevelSegments >= 1 && BevelSegments <= 10;
 }
 
 int32 ABevelCube::GetVertexCount() const
 {
-    const int32 BaseVertexCount = 24;
-    const int32 EdgeBevelVertexCount = 12 * (BevelSegments + 1) * 2;
-    const int32 CornerBevelVertexCount = 8 * (BevelSegments + 1) * (BevelSegments + 1) / 2;
-    
-    return BaseVertexCount + EdgeBevelVertexCount + CornerBevelVertexCount;
+    // 简化的顶点数量预估：基础立方体 + 边缘倒角 + 角落倒角
+    return 24 + 24 * (BevelSegments + 1) + 4 * (BevelSegments + 1) * (BevelSegments + 1);
 }
 
 int32 ABevelCube::GetTriangleCount() const
 {
-    const int32 BaseTriangleCount = 12;
-    const int32 EdgeBevelTriangleCount = 12 * BevelSegments * 2;
-    const int32 CornerBevelTriangleCount = 8 * BevelSegments * BevelSegments * 2;
-    
-    return BaseTriangleCount + EdgeBevelTriangleCount + CornerBevelTriangleCount;
+    // 简化的三角形数量预估：基础立方体 + 边缘倒角 + 角落倒角
+    return 12 + 24 * BevelSegments + 8 * BevelSegments * BevelSegments;
+}
+
+// 设置参数函数实现
+void ABevelCube::SetCubeSize(float NewCubeSize)
+{
+    if (NewCubeSize > 0.0f && NewCubeSize != CubeSize)
+    {
+        CubeSize = NewCubeSize;
+        RegenerateMesh();
+    }
+}
+
+void ABevelCube::SetBevelRadius(float NewBevelRadius)
+{
+    if (NewBevelRadius >= 0.0f && NewBevelRadius < GetHalfSize() && NewBevelRadius != BevelRadius)
+    {
+        BevelRadius = NewBevelRadius;
+        RegenerateMesh();
+    }
+}
+
+void ABevelCube::SetBevelSegments(int32 NewBevelSegments)
+{
+    if (NewBevelSegments >= 1 && NewBevelSegments <= 10 && NewBevelSegments != BevelSegments)
+    {
+        BevelSegments = NewBevelSegments;
+        RegenerateMesh();
+    }
 }

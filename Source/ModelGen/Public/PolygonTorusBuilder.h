@@ -3,8 +3,6 @@
 /**
  * @file PolygonTorusBuilder.h
  * @brief 圆环生成器
- * 
- * 该文件定义了圆环生成器类，负责根据参数生成圆环几何体。
  */
 
 #pragma once
@@ -14,14 +12,9 @@
 // Forward declarations
 class APolygonTorus;
 
-/**
- * 圆环生成器
- * 负责根据参数生成圆环几何体
- */
 class MODELGEN_API FPolygonTorusBuilder : public FModelGenMeshBuilder
 {
 public:
-    /** 构造函数 */
     FPolygonTorusBuilder(const APolygonTorus& InPolygonTorus);
 
     //~ Begin FModelGenMeshBuilder Interface
@@ -32,43 +25,20 @@ public:
     //~ End FModelGenMeshBuilder Interface
 
 private:
-    /** 生成参数 */
     const APolygonTorus& PolygonTorus;
 
-    /** 生成顶点 */
     void GenerateVertices();
-    
-    /** 生成三角形 */
     void GenerateTriangles();
-    
-    /** 生成端盖 */
     void GenerateEndCaps();
-    
-    /** 生成端盖 */
     void GenerateAdvancedEndCaps();
-    
-    /** 应用平滑光照 */
     void ApplySmoothing();
-    
-    /** 应用横面平滑光照 */
     void ApplyHorizontalSmoothing();
-    
-    /** 应用竖面平滑光照 */
     void ApplyVerticalSmoothing();
-    
-    /** 验证和修正参数 */
     void ValidateAndClampParameters();
-    
-    /** 记录网格统计信息 */
     void LogMeshStatistics();
     
-    /** 基于顶点位置的稳定UV映射 - 重写父类实现 */
     virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const override;
-    
-    /** 生成第二UV通道 - 传统UV系统 */
     FVector2D GenerateSecondaryUV(const FVector& Position, const FVector& Normal) const;
-    
-    /** 使用双UV通道添加顶点 */
     int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal);
     
     

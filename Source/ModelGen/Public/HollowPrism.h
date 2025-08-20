@@ -22,57 +22,64 @@ class MODELGEN_API AHollowPrism : public AProceduralMeshActor
 public:
     AHollowPrism();
 
-
-
     //~ Begin Geometry Parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Geometry", 
-        meta = (ClampMin = "0.01", UIMin = "0.01", DisplayName = "Inner Radius"))
+        meta = (ClampMin = "0.01", DisplayName = "Inner Radius"))
     float InnerRadius = 50.0f;
 
+    UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
+    void SetInnerRadius(float NewInnerRadius);
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Geometry", 
-        meta = (ClampMin = "0.01", UIMin = "0.01", DisplayName = "Outer Radius"))
+        meta = (ClampMin = "0.01", DisplayName = "Outer Radius"))
     float OuterRadius = 100.0f;
 
+    UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
+    void SetOuterRadius(float NewOuterRadius);
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Geometry", 
-        meta = (ClampMin = "0.01", UIMin = "0.01", DisplayName = "Height"))
+        meta = (ClampMin = "0.01", DisplayName = "Height"))
     float Height = 200.0f;
 
-
+    UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
+    void SetHeight(float NewHeight);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Geometry", 
-        meta = (ClampMin = "3", UIMin = "3", ClampMax = "100", UIMax = "50", DisplayName = "Outer Sides"))
+        meta = (ClampMin = "3", ClampMax = "100", DisplayName = "Outer Sides"))
     int32 OuterSides = 4;
 
+    UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
+    void SetOuterSides(int32 NewOuterSides);
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Geometry", 
-        meta = (ClampMin = "3", UIMin = "3", ClampMax = "100", UIMax = "50", DisplayName = "Inner Sides"))
+        meta = (ClampMin = "3", ClampMax = "100", DisplayName = "Inner Sides"))
     int32 InnerSides = 3;
 
+    UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
+    void SetInnerSides(int32 NewInnerSides);
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Geometry", 
-        meta = (ClampMin = "0.0", UIMin = "0.0", ClampMax = "360.0", UIMax = "360.0", DisplayName = "Arc Angle"))
+        meta = (ClampMin = "0.0", ClampMax = "360.0", DisplayName = "Arc Angle"))
     float ArcAngle = 360.0f;
 
+    UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
+    void SetArcAngle(float NewArcAngle);
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Bevel", 
-        meta = (ClampMin = "0.0", UIMin = "0.0", DisplayName = "Bevel Radius"))
+        meta = (ClampMin = "0.0", DisplayName = "Bevel Radius"))
     float BevelRadius = 5.0f;
 
+    UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
+    void SetBevelRadius(float NewBevelRadius);
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Bevel", 
-        meta = (ClampMin = "1", UIMin = "1", ClampMax = "20", UIMax = "10", DisplayName = "Bevel Sections"))
+        meta = (ClampMin = "1", ClampMax = "20", DisplayName = "Bevel Sections"))
     int32 BevelSegments = 4;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Options", 
-        meta = (DisplayName = "Use Triangle Method"))
-    bool bUseTriangleMethod = false;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Debug", 
-        meta = (DisplayName = "Flip Normals"))
-    bool bFlipNormals = false;
-    
-
-
-
+    UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
+    void SetBevelSegments(int32 NewBevelSegments);
 
 protected:
-    // 实现父类的纯虚函数
     virtual void GenerateMesh() override;
 
 private:

@@ -13,6 +13,15 @@
 
 #include "ProceduralMeshActor.generated.h"
 
+// 显示模式枚举
+UENUM(BlueprintType)
+enum class EDisplayMode : uint8
+{
+    ProceduralOnly,    // 只显示程序化网格
+    StaticOnly,        // 只显示静态网格
+    Both               // 同时显示两个组件
+};
+
 class UProceduralMeshComponent;
 class UStaticMesh;
 class UMaterialInterface;
@@ -110,17 +119,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
     UStaticMesh* ConvertAndGetStaticMesh();
     
-    // 同时显示两个组件（程序化网格和静态网格）
+    // 设置显示模式
     UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
-    void ShowBothComponents();
-    
-    // 只显示程序化网格组件
-    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
-    void ShowProceduralMeshOnly();
-    
-    // 只显示静态网格组件
-    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
-    void ShowStaticMeshOnly();
+    void SetDisplayMode(EDisplayMode Mode);
     
     // 手动生成静态网格（蓝图可调用）
     UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|StaticMesh")
