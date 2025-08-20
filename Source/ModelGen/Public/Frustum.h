@@ -45,15 +45,15 @@ public:
     void SetHeight(float NewHeight);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Tessellation", 
-        meta = (ClampMin = "3", DisplayName = "Top Sides"))
-    int32 TopSides = 16;
+        meta = (ClampMin = "3", ClampMax = "16", DisplayName = "Top Sides"))
+    int32 TopSides = 8;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetTopSides(int32 NewTopSides);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Tessellation", 
-        meta = (ClampMin = "3", DisplayName = "Bottom Sides"))
-    int32 BottomSides = 16;
+        meta = (ClampMin = "3", ClampMax = "16", DisplayName = "Bottom Sides"))
+    int32 BottomSides = 12;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetBottomSides(int32 NewBottomSides);
