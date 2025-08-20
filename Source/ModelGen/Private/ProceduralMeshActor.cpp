@@ -23,12 +23,12 @@ AProceduralMeshActor::AProceduralMeshActor()
     // 将静态网格组件附加到根组件
     StaticMeshComponent->SetupAttachment(RootComponent);
     
-    // 根据设置决定是否显示静态网格组件
-    StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
-    StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    
     // 设置静态网格组件的初始变换
     StaticMeshComponent->SetRelativeTransform(FTransform::Identity);
+    
+    // 设置静态网格组件的初始可见性（根据设置决定）
+    StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
+    StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
     InitializeComponents();
 }
@@ -64,6 +64,15 @@ void AProceduralMeshActor::PostEditChangeProperty(FPropertyChangedEvent& Propert
             if (StaticMeshComponent)
             {
                 StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
+                
+                // 如果启用了显示但静态网格组件没有内容，则自动生成
+                if (bShowStaticMeshInEditor && !StaticMeshComponent->GetStaticMesh() && bAutoGenerateStaticMesh)
+                {
+                    if (ProceduralMeshComponent && ProceduralMeshComponent->GetNumSections() > 0)
+                    {
+                        GenerateStaticMesh();
+                    }
+                }
             }
             return;
         }
@@ -73,7 +82,10 @@ void AProceduralMeshActor::PostEditChangeProperty(FPropertyChangedEvent& Propert
             // 如果启用了自动生成，则重新生成静态网格
             if (bAutoGenerateStaticMesh && StaticMeshComponent)
             {
-                RefreshStaticMesh();
+                if (ProceduralMeshComponent && ProceduralMeshComponent->GetNumSections() > 0)
+                {
+                    GenerateStaticMesh();
+                }
             }
             return;
         }
@@ -84,12 +96,6 @@ void AProceduralMeshActor::PostEditChangeProperty(FPropertyChangedEvent& Propert
             PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bUseAsyncCooking))
         {
             RegenerateMesh();
-            
-            // 如果启用了自动生成静态网格，则同时更新静态网格
-            if (bAutoGenerateStaticMesh && StaticMeshComponent)
-            {
-                RefreshStaticMesh();
-            }
         }
     }
 }
@@ -115,6 +121,20 @@ void AProceduralMeshActor::InitializeComponents()
         {
             ProceduralMeshComponent->SetMaterial(0, Material);
         }
+    }
+    
+    // 如果启用了自动生成静态网格，在初始化完成后尝试生成
+    if (bAutoGenerateStaticMesh && StaticMeshComponent && ProceduralMeshComponent)
+    {
+        // 延迟一帧生成，确保所有组件都已完全初始化
+        FTimerHandle TimerHandle;
+        GetWorld()->GetTimerManager().SetTimerForNextTick([this]()
+        {
+            if (ProceduralMeshComponent && ProceduralMeshComponent->GetNumSections() > 0)
+            {
+                GenerateStaticMesh();
+            }
+        });
     }
 }
 
@@ -153,7 +173,28 @@ void AProceduralMeshActor::RegenerateMesh()
     // 如果启用了自动生成静态网格，则生成静态网格
     if (bAutoGenerateStaticMesh && StaticMeshComponent && ProceduralMeshComponent->GetNumSections() > 0)
     {
-        RefreshStaticMesh();
+        // 立即生成静态网格并设置到组件
+        UStaticMesh* NewStaticMesh = ConvertProceduralMeshToStaticMesh(ProceduralMeshComponent);
+        if (NewStaticMesh)
+        {
+            StaticMeshComponent->SetStaticMesh(NewStaticMesh);
+            if (Material)
+            {
+                StaticMeshComponent->SetMaterial(0, Material);
+            }
+            
+            // 根据设置决定是否显示静态网格
+            if (bShowStaticMeshInEditor)
+            {
+                StaticMeshComponent->SetVisibility(true);
+            }
+            
+            UE_LOG(LogTemp, Log, TEXT("自动生成静态网格成功: %s"), *NewStaticMesh->GetName());
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("自动生成静态网格失败"));
+        }
     }
 }
 
@@ -533,7 +574,7 @@ void AProceduralMeshActor::SetDisplayMode(EDisplayMode Mode)
             }
             // 显示两个组件
             ProceduralMeshComponent->SetVisibility(true);
-            StaticMeshComponent->SetVisibility(true);
+            StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
             // 程序化网格组件负责碰撞
             ProceduralMeshComponent->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
             StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -562,20 +603,32 @@ void AProceduralMeshActor::GenerateStaticMesh()
     UStaticMesh* NewStaticMesh = ConvertProceduralMeshToStaticMesh(ProceduralMeshComponent);
     if (NewStaticMesh)
     {
+        // 设置静态网格到组件
         StaticMeshComponent->SetStaticMesh(NewStaticMesh);
+        
+        // 设置材质
         if (Material)
         {
             StaticMeshComponent->SetMaterial(0, Material);
+        }
+        else
+        {
+            // 如果没有指定材质，尝试从程序化网格组件获取材质
+            if (ProceduralMeshComponent->GetNumSections() > 0)
+            {
+                UMaterialInterface* ProcMaterial = ProceduralMeshComponent->GetMaterial(0);
+                if (ProcMaterial)
+                {
+                    StaticMeshComponent->SetMaterial(0, ProcMaterial);
+                }
+            }
         }
         
         // 设置静态网格组件的碰撞
         StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
         
         // 根据设置决定是否显示静态网格
-        if (bShowStaticMeshInEditor)
-        {
-            StaticMeshComponent->SetVisibility(true);
-        }
+        StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
         
         UE_LOG(LogTemp, Log, TEXT("静态网格生成成功: %s"), *NewStaticMesh->GetName());
     }
@@ -597,4 +650,65 @@ void AProceduralMeshActor::RefreshStaticMesh()
     {
         GenerateStaticMesh();
     }
+}
+
+// 强制刷新静态网格（即使没有现有内容）
+void AProceduralMeshActor::ForceRefreshStaticMesh()
+{
+    if (!ProceduralMeshComponent || !StaticMeshComponent)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("ForceRefreshStaticMesh: 组件无效"));
+        return;
+    }
+    
+    if (ProceduralMeshComponent->GetNumSections() == 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("ForceRefreshStaticMesh: 程序化网格没有数据"));
+        return;
+    }
+    
+    UE_LOG(LogTemp, Log, TEXT("强制刷新静态网格..."));
+    GenerateStaticMesh();
+}
+
+// 测试方法：在编辑器中测试静态网格生成
+void AProceduralMeshActor::TestStaticMeshGeneration()
+{
+    UE_LOG(LogTemp, Log, TEXT("=== 测试静态网格生成 ==="));
+    
+    if (!ProceduralMeshComponent)
+    {
+        UE_LOG(LogTemp, Error, TEXT("程序化网格组件无效"));
+        return;
+    }
+    
+    if (!StaticMeshComponent)
+    {
+        UE_LOG(LogTemp, Error, TEXT("静态网格组件无效"));
+        return;
+    }
+    
+    UE_LOG(LogTemp, Log, TEXT("程序化网格段数: %d"), ProceduralMeshComponent->GetNumSections());
+    
+    if (ProceduralMeshComponent->GetNumSections() > 0)
+    {
+        UE_LOG(LogTemp, Log, TEXT("开始测试生成静态网格..."));
+        GenerateStaticMesh();
+        
+        if (StaticMeshComponent->GetStaticMesh())
+        {
+            UE_LOG(LogTemp, Log, TEXT("静态网格生成成功: %s"), *StaticMeshComponent->GetStaticMesh()->GetName());
+            UE_LOG(LogTemp, Log, TEXT("静态网格组件可见性: %s"), StaticMeshComponent->IsVisible() ? TEXT("可见") : TEXT("不可见"));
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("静态网格生成失败"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("程序化网格没有数据，无法生成静态网格"));
+    }
+    
+    UE_LOG(LogTemp, Log, TEXT("=== 测试完成 ==="));
 }

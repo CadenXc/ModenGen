@@ -130,4 +130,12 @@ public:
     // 刷新静态网格（当程序化网格改变后调用）
     UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|StaticMesh")
     void RefreshStaticMesh();
+    
+    // 强制刷新静态网格（即使没有现有内容）
+    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|StaticMesh")
+    void ForceRefreshStaticMesh();
+    
+    // 测试方法：在编辑器中测试静态网格生成
+    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Debug")
+    void TestStaticMeshGeneration();
 };
