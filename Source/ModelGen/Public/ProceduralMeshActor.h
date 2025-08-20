@@ -49,6 +49,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Component")
     UStaticMeshComponent* StaticMeshComponent;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|StaticMesh", 
+              meta = (ToolTip = "是否在属性改变时自动生成静态网格"))
+    bool bAutoGenerateStaticMesh = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|StaticMesh",
+              meta = (ToolTip = "是否在编辑器中显示静态网格组件"))
+    bool bShowStaticMeshInEditor = true;
+
 protected:
     //~ Begin Common Methods
     virtual void InitializeComponents();
@@ -113,4 +121,12 @@ public:
     // 只显示静态网格组件
     UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
     void ShowStaticMeshOnly();
+    
+    // 手动生成静态网格（蓝图可调用）
+    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|StaticMesh")
+    void GenerateStaticMesh();
+    
+    // 刷新静态网格（当程序化网格改变后调用）
+    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|StaticMesh")
+    void RefreshStaticMesh();
 };

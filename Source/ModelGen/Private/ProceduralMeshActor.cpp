@@ -23,8 +23,8 @@ AProceduralMeshActor::AProceduralMeshActor()
     // 将静态网格组件附加到根组件
     StaticMeshComponent->SetupAttachment(RootComponent);
     
-    // 初始时两个组件都可见，但静态网格组件没有内容
-    StaticMeshComponent->SetVisibility(true);
+    // 根据设置决定是否显示静态网格组件
+    StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
     StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     
     // 设置静态网格组件的初始变换，可以稍微偏移以避免完全重叠
@@ -58,11 +58,40 @@ void AProceduralMeshActor::PostEditChangeProperty(FPropertyChangedEvent& Propert
     if (PropertyChangedEvent.Property)
     {
         const FName PropertyName = PropertyChangedEvent.Property->GetFName();
+        
+        // 处理静态网格相关的属性
+        if (PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bShowStaticMeshInEditor))
+        {
+            // 更新静态网格组件的可见性
+            if (StaticMeshComponent)
+            {
+                StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
+            }
+            return;
+        }
+        
+        if (PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bAutoGenerateStaticMesh))
+        {
+            // 如果启用了自动生成，则重新生成静态网格
+            if (bAutoGenerateStaticMesh && StaticMeshComponent)
+            {
+                RefreshStaticMesh();
+            }
+            return;
+        }
+        
+        // 处理其他需要重新生成网格的属性
         if (PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, Material) ||
             PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bGenerateCollision) ||
             PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bUseAsyncCooking))
         {
             RegenerateMesh();
+            
+            // 如果启用了自动生成静态网格，则同时更新静态网格
+            if (bAutoGenerateStaticMesh && StaticMeshComponent)
+            {
+                RefreshStaticMesh();
+            }
         }
     }
 }
@@ -132,36 +161,10 @@ void AProceduralMeshActor::RegenerateMesh()
     ApplyMaterial();
     SetupCollision();
     
-    // 等待一帧后生成静态网格，确保程序化网格数据已经准备好
-    if (StaticMeshComponent && ProceduralMeshComponent->GetNumSections() > 0)
+    // 如果启用了自动生成静态网格，则生成静态网格
+    if (bAutoGenerateStaticMesh && StaticMeshComponent && ProceduralMeshComponent->GetNumSections() > 0)
     {
-        // 直接调用转换函数生成静态网格
-        UStaticMesh* NewStaticMesh = ConvertProceduralMeshToStaticMesh(ProceduralMeshComponent);
-        if (NewStaticMesh)
-        {
-            StaticMeshComponent->SetStaticMesh(NewStaticMesh);
-            if (Material)
-            {
-                StaticMeshComponent->SetMaterial(0, Material);
-            }
-            
-            // 设置静态网格组件的碰撞
-            StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-            
-            // 确保两个组件都可见
-            ProceduralMeshComponent->SetVisibility(true);
-            StaticMeshComponent->SetVisibility(true);
-            
-            // 程序化网格负责碰撞
-            ProceduralMeshComponent->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
-            
-            // 调试输出
-            UE_LOG(LogTemp, Log, TEXT("静态网格生成成功: %s"), *NewStaticMesh->GetName());
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning, TEXT("静态网格生成失败"));
-        }
+        RefreshStaticMesh();
     }
 }
 
@@ -536,15 +539,7 @@ void AProceduralMeshActor::ShowBothComponents()
     // 确保静态网格组件有内容
     if (!StaticMeshComponent->GetStaticMesh())
     {
-        UStaticMesh* NewStaticMesh = ConvertProceduralMeshToStaticMesh(ProceduralMeshComponent);
-        if (NewStaticMesh)
-        {
-            StaticMeshComponent->SetStaticMesh(NewStaticMesh);
-            if (Material)
-            {
-                StaticMeshComponent->SetMaterial(0, Material);
-            }
-        }
+        GenerateStaticMesh();
     }
     
     // 显示两个组件
@@ -586,15 +581,7 @@ void AProceduralMeshActor::ShowStaticMeshOnly()
     // 确保静态网格组件有内容
     if (!StaticMeshComponent->GetStaticMesh())
     {
-        UStaticMesh* NewStaticMesh = ConvertProceduralMeshToStaticMesh(ProceduralMeshComponent);
-        if (NewStaticMesh)
-        {
-            StaticMeshComponent->SetStaticMesh(NewStaticMesh);
-            if (Material)
-            {
-                StaticMeshComponent->SetMaterial(0, Material);
-            }
-        }
+        GenerateStaticMesh();
     }
     
     // 只显示静态网格组件
@@ -606,4 +593,61 @@ void AProceduralMeshActor::ShowStaticMeshOnly()
     StaticMeshComponent->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
     
     bUsingStaticMesh = true;
+}
+
+void AProceduralMeshActor::GenerateStaticMesh()
+{
+    if (!ProceduralMeshComponent || !StaticMeshComponent)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("GenerateStaticMesh: 组件无效"));
+        return;
+    }
+    
+    if (ProceduralMeshComponent->GetNumSections() == 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("GenerateStaticMesh: 程序化网格没有数据"));
+        return;
+    }
+    
+    UE_LOG(LogTemp, Log, TEXT("开始手动生成静态网格..."));
+    
+    // 生成静态网格
+    UStaticMesh* NewStaticMesh = ConvertProceduralMeshToStaticMesh(ProceduralMeshComponent);
+    if (NewStaticMesh)
+    {
+        StaticMeshComponent->SetStaticMesh(NewStaticMesh);
+        if (Material)
+        {
+            StaticMeshComponent->SetMaterial(0, Material);
+        }
+        
+        // 设置静态网格组件的碰撞
+        StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        
+        // 根据设置决定是否显示静态网格
+        if (bShowStaticMeshInEditor)
+        {
+            StaticMeshComponent->SetVisibility(true);
+        }
+        
+        UE_LOG(LogTemp, Log, TEXT("静态网格生成成功: %s"), *NewStaticMesh->GetName());
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("静态网格生成失败"));
+    }
+}
+
+void AProceduralMeshActor::RefreshStaticMesh()
+{
+    if (!ProceduralMeshComponent || !StaticMeshComponent)
+    {
+        return;
+    }
+    
+    // 如果静态网格组件已经有内容，则刷新它
+    if (StaticMeshComponent->GetStaticMesh())
+    {
+        GenerateStaticMesh();
+    }
 }

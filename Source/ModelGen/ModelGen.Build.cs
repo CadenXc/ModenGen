@@ -8,7 +8,17 @@ public class ModelGen : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" , "ProceduralMeshComponent"});
+		PublicDependencyModuleNames.AddRange(new string[] { 
+			"Core",
+			"CoreUObject",
+			"Engine",
+			"InputCore" ,
+			"ProceduralMeshComponent",
+			"MeshDescription",
+			"StaticMeshDescription", 
+			"MeshConversion",
+			"AssetRegistry",
+		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
