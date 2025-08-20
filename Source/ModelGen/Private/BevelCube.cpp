@@ -9,10 +9,6 @@ ABevelCube::ABevelCube()
     PrimaryActorTick.bCanEverTick = false;
 }
 
-
-
-
-
 void ABevelCube::GenerateMesh()
 {
     if (!IsValid())

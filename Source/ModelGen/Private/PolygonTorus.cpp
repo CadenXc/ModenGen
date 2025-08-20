@@ -9,18 +9,6 @@ APolygonTorus::APolygonTorus()
     PrimaryActorTick.bCanEverTick = false;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
 void APolygonTorus::GenerateMesh()
 {
     if (!IsValid())

@@ -9,12 +9,6 @@ AFrustum::AFrustum()
     PrimaryActorTick.bCanEverTick = false;
 }
 
-
-
-
-
-
-
 void AFrustum::GenerateMesh()
 {
     if (!IsValid())

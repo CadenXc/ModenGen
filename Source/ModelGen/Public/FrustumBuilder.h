@@ -35,7 +35,7 @@ private:
     TArray<int32> SideTopRing;
     TArray<int32> EndCapConnectionPoints;
 
-    TArray<int32> GenerateVertexRing(float Radius, float Z, int32 Sides, float UVV);
+    TArray<int32> GenerateVertexRing(float Radius, float Z, int32 Sides);
     void GenerateCapGeometry(float Z, int32 Sides, float Radius, bool bIsTop);
     void GenerateBevelGeometry(bool bIsTop);
     float CalculateBentRadius(float BaseRadius, float HeightRatio);
@@ -60,11 +60,5 @@ private:
     void Clear();
     
     virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const override;
-    
-    /** 生成第二UV通道 - 传统UV系统 */
-    FVector2D GenerateSecondaryUV(const FVector& Position, const FVector& Normal) const;
-    
-    /** 使用双UV通道添加顶点 */
-    int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal);
 
 };
