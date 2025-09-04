@@ -1,587 +1,712 @@
-// Copyright (c) 2024. All rights reserved.
+
 
 #include "ProceduralMeshActor.h"
 
 #include "MeshDescription.h"
+
 #include "StaticMeshAttributes.h"
+
 #include "MeshDescriptionBuilder.h"
+
 #include "AssetRegistry/AssetRegistryModule.h"
+
 #include "Engine/StaticMesh.h"
+
 #include "Components/StaticMeshComponent.h"
+
 #include "Materials/MaterialInterface.h"
+
 #include "ProceduralMeshComponent.h"
+
 #include "ProceduralMeshConversion.h"
+
 #include "Materials/Material.h"
 
+#include "PhysicsEngine/BodySetup.h"
+
+#include "StaticMeshResources.h"
+
+#include "Rendering/StaticMeshVertexBuffer.h"
+
+#include "Rendering/PositionVertexBuffer.h"
+
+#include "Rendering/ColorVertexBuffer.h"
+
+#include "StaticMeshOperations.h"
+// 将UProceduralMeshComponent转换为内存中的UStaticMesh
+
+UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
+
+{
+  // 1. 验证输入参数
+
+  if (!ProceduralMeshComponent)
+
+  {
+    UE_LOG(LogTemp, Warning,
+           TEXT("ConvertProceduralMeshToStaticMesh: PMC为空。"));
+
+    return nullptr;
+  }
+
+  const int32 NumSections = ProceduralMeshComponent->GetNumSections();
+
+  if (NumSections == 0)
+
+  {
+    UE_LOG(LogTemp, Warning,
+           TEXT("ConvertProceduralMeshToStaticMesh: PMC没有网格段。"));
+
+    return nullptr;
+  }
+
+  // 2. 创建一个临时的、只存在于内存中的UStaticMesh对象
+
+  UStaticMesh* StaticMesh = NewObject<UStaticMesh>(
+      GetTransientPackage(), NAME_None, RF_Public | RF_Standalone);
+
+  if (!StaticMesh)
+
+  {
+    UE_LOG(LogTemp, Error, TEXT("无法创建临时的静态网格对象。"));
+
+    return nullptr;
+  }
+  // 3. 创建并设置 FMeshDescription
+
+  FMeshDescription MeshDescription;
+
+  FStaticMeshAttributes Attributes(MeshDescription);
+
+  Attributes.Register();  // 这会注册包括材质槽名称在内的所有必要属性
+  // 获取对多边形组材质槽名称属性的引用，以便后续设置
+
+  // 这是将几何体与材质关联的关键
+
+  TPolygonGroupAttributesRef<FName> PolygonGroupMaterialSlotNames =
+
+      Attributes.GetPolygonGroupMaterialSlotNames();
+
+  FMeshDescriptionBuilder MeshDescBuilder;
+
+  MeshDescBuilder.SetMeshDescription(&MeshDescription);
+
+  MeshDescBuilder.EnablePolyGroups();
+
+  MeshDescBuilder.SetNumUVLayers(1);
+  // 4. 从PMC数据填充 FMeshDescription
+
+  TMap<FVector, FVertexID> VertexMap;
+
+  for (int32 SectionIdx = 0; SectionIdx < NumSections; ++SectionIdx)
+
+  {
+    FProcMeshSection* SectionData =
+        ProceduralMeshComponent->GetProcMeshSection(SectionIdx);
+    if (!SectionData || SectionData->ProcVertexBuffer.Num() < 3 ||
+        SectionData->ProcIndexBuffer.Num() < 3)
+
+    {
+      UE_LOG(LogTemp, Warning,
+             TEXT("ConvertProceduralMeshToStaticMesh - 跳过段 %d: 数据不完整"),
+             SectionIdx);
+
+      continue;
+    }
+    // --- 开始材质设置修正 ---
+    // a. 获取本段的材质
+
+    UMaterialInterface* SectionMaterial = nullptr;
+
+    if (SectionIdx < StaticSectionMaterials.Num() &&
+        StaticSectionMaterials[SectionIdx] &&
+        ::IsValid(StaticSectionMaterials[SectionIdx]))
+
+    {
+      SectionMaterial = StaticSectionMaterials[SectionIdx];
+
+    }
+
+    else if (StaticMeshMaterial && ::IsValid(StaticMeshMaterial))
+
+    {
+      SectionMaterial = StaticMeshMaterial;
+
+    }
+
+    else
+
+    {
+      SectionMaterial = ProceduralMeshComponent->GetMaterial(SectionIdx);
+
+      if (!SectionMaterial || !::IsValid(SectionMaterial))
+
+      {
+        SectionMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
+      }
+    }
+
+    // b. 为每个材质段创建一个唯一的槽名称
+
+    const FName MaterialSlotName =
+        FName(*FString::Printf(TEXT("MaterialSlot_%d"), SectionIdx));
+    // c. 将材质和槽名称添加到StaticMesh的材质列表中
+
+    // 这会在最终的UStaticMesh上创建对应的材质槽
+
+         StaticMesh->StaticMaterials.Add(
+         FStaticMaterial(SectionMaterial, MaterialSlotName));
+    // d. 在MeshDescription中为这个材质段创建一个新的多边形组
+
+    const FPolygonGroupID PolygonGroup = MeshDescBuilder.AppendPolygonGroup();
+
+    // e. 将多边形组与我们刚刚创建的材质槽名称关联起来
+
+    // 这是最关键的一步！
+
+    PolygonGroupMaterialSlotNames.Set(PolygonGroup, MaterialSlotName);
+
+    // --- 结束材质设置修正 ---
+    TArray<FVertexInstanceID> VertexInstanceIDs;
+
+    for (const FProcMeshVertex& ProcVertex : SectionData->ProcVertexBuffer)
+
+    {
+      FVertexID VertexID;
+
+      if (FVertexID* FoundID = VertexMap.Find(ProcVertex.Position))
+
+      {
+        VertexID = *FoundID;
+
+      }
+
+      else
+
+      {
+        VertexID = MeshDescBuilder.AppendVertex(ProcVertex.Position);
+
+        VertexMap.Add(ProcVertex.Position, VertexID);
+      }
+      FVertexInstanceID InstanceID = MeshDescBuilder.AppendInstance(VertexID);
+
+      MeshDescBuilder.SetInstanceNormal(InstanceID, ProcVertex.Normal);
+
+      MeshDescBuilder.SetInstanceUV(InstanceID, ProcVertex.UV0, 0);
+
+      MeshDescBuilder.SetInstanceColor(InstanceID, FVector4(ProcVertex.Color));
+      VertexInstanceIDs.Add(InstanceID);
+    }
+    for (int32 i = 0; i < SectionData->ProcIndexBuffer.Num(); i += 3)
+
+    {
+      if (i + 2 >= SectionData->ProcIndexBuffer.Num())
+
+      {
+        break;
+      }
+
+      int32 Index1 = SectionData->ProcIndexBuffer[i + 0];
+
+      int32 Index2 = SectionData->ProcIndexBuffer[i + 1];
+
+      int32 Index3 = SectionData->ProcIndexBuffer[i + 2];
+      if (Index1 >= VertexInstanceIDs.Num() ||
+          Index2 >= VertexInstanceIDs.Num() ||
+          Index3 >= VertexInstanceIDs.Num())
+
+      {
+        UE_LOG(
+            LogTemp, Error,
+            TEXT("ConvertProceduralMeshToStaticMesh - 段 %d: 三角形索引越界"),
+            SectionIdx);
+
+        continue;
+      }
+      FVertexInstanceID V1 = VertexInstanceIDs[Index1];
+
+      FVertexInstanceID V2 = VertexInstanceIDs[Index2];
+
+      FVertexInstanceID V3 = VertexInstanceIDs[Index3];
+
+      // 将三角形添加到指定了材质信息的PolygonGroup中
+
+      MeshDescBuilder.AppendTriangle(V1, V2, V3, PolygonGroup);
+    }
+  }
+  if (MeshDescription.Vertices().Num() == 0)
+
+  {
+    UE_LOG(LogTemp, Warning,
+           TEXT("无法从PMC创建静态网格，因为没有有效的顶点数据。"));
+
+    return nullptr;
+  }
+
+  // 7. 使用 FMeshDescription 构建 Static Mesh
+
+  TArray<const FMeshDescription*> MeshDescPtrs;
+
+  MeshDescPtrs.Emplace(&MeshDescription);
+  UStaticMesh::FBuildMeshDescriptionsParams BuildParams;
+
+  BuildParams.bBuildSimpleCollision = bGenerateCollision;
+
+  StaticMesh->BuildFromMeshDescriptions(MeshDescPtrs, BuildParams);
+  // ... (后续的碰撞体设置和PostEditChange保持不变)
+
+  if (bGenerateCollision && ProceduralMeshComponent->ProcMeshBodySetup)
+
+  {
+    StaticMesh->CreateBodySetup();
+
+         UBodySetup* NewBodySetup = StaticMesh->BodySetup;
+
+    if (NewBodySetup)
+
+    {
+      NewBodySetup->AggGeom.ConvexElems =
+
+          ProceduralMeshComponent->ProcMeshBodySetup->AggGeom.ConvexElems;
+
+      NewBodySetup->bGenerateMirroredCollision = false;
+
+      NewBodySetup->bDoubleSidedGeometry = true;
+
+      NewBodySetup->CollisionTraceFlag = CTF_UseDefault;
+
+      NewBodySetup->CreatePhysicsMeshes();
+    }
+  }
+
+  // StaticMesh->PostEditChange();
+  return StaticMesh;
+}
+
+void AProceduralMeshActor::GenerateStaticMesh()
+
+{
+  if (!ProceduralMeshComponent || !StaticMeshComponent ||
+      ProceduralMeshComponent->GetNumSections() == 0)
+
+  {
+    return;
+  }
+  // 1. 清理并生成新的静态网格
+
+  CleanupCurrentStaticMesh();
+
+  UStaticMesh* NewStaticMesh = ConvertProceduralMeshToStaticMesh();
+
+  if (!NewStaticMesh)
+
+  {
+    return;
+  }
+
+  // 2. 将新网格设置到组件上
+
+  StaticMeshComponent->SetStaticMesh(NewStaticMesh);
+  // 3. 确定要使用的材质，并应用到组件上
+
+  for (int32 i = 0; i < NewStaticMesh->StaticMaterials.Num(); i++)
+
+  {
+    UMaterialInterface* MaterialToUse =
+        NewStaticMesh->StaticMaterials[i].MaterialInterface;
+
+    if (MaterialToUse)
+
+    {
+      StaticMeshComponent->SetMaterial(i, MaterialToUse);
+    }
+  }
+  StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+  StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
+  // 4. 强制更新渲染状态以解决同步问题
+
+  StaticMeshComponent->MarkRenderStateDirty();
+
+  StaticMeshComponent->RecreateRenderState_Concurrent();
+}
+void AProceduralMeshActor::RefreshStaticMesh()
+
+{
+  if (!ProceduralMeshComponent || !StaticMeshComponent)
+
+  {
+    return;
+  }
+
+  GenerateStaticMesh();  // 统一调用这个函数来处理所有逻辑
+}
+void AProceduralMeshActor::ApplyMaterialToStaticMesh()
+
+{
+  // 这个函数将不再需要，因为材质设置逻辑已经整合到GenerateStaticMesh中
+}
+void AProceduralMeshActor::ConvertToStaticMeshComponent()
+
+{
+  // 这个函数也用GenerateStaticMesh替换
+
+  GenerateStaticMesh();
+}
+// 保留其他原始函数
+
 AProceduralMeshActor::AProceduralMeshActor()
-{
-    PrimaryActorTick.bCanEverTick = false;
 
-    ProceduralMeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProceduralMesh"));
-    StaticMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StaticMesh"));
-    
+{
+  PrimaryActorTick.bCanEverTick = false;
+
+  ProceduralMeshComponent =
+      CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProceduralMesh"));
+
+  StaticMeshComponent =
+      CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StaticMesh"));
+
+  if (ProceduralMeshComponent && StaticMeshComponent)
+
+  {
     RootComponent = ProceduralMeshComponent;
+
     StaticMeshComponent->SetupAttachment(RootComponent);
+
     StaticMeshComponent->SetRelativeTransform(FTransform::Identity);
+
     StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
+
     StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    
+
     ProceduralMeshComponent->SetVisibility(bShowProceduralMeshInEditor);
+  }
 
-    InitializeComponents();
+  InitializeComponents();
 }
-
 void AProceduralMeshActor::BeginPlay()
-{
-    Super::BeginPlay();
-    
-    RegenerateMesh();
-}
 
-void AProceduralMeshActor::OnConstruction(const FTransform& Transform)
 {
-    Super::OnConstruction(Transform);
-    
-    RegenerateMesh();
+  Super::BeginPlay();
+
+  RegenerateMesh();
+}
+void AProceduralMeshActor::OnConstruction(const FTransform& Transform)
+
+{
+  Super::OnConstruction(Transform);
+
+  RegenerateMesh();
 }
 
 #if WITH_EDITOR
-void AProceduralMeshActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
-{
-    Super::PostEditChangeProperty(PropertyChangedEvent);
-    
-    if (PropertyChangedEvent.Property)
-    {
-        const FName PropertyName = PropertyChangedEvent.Property->GetFName();
-        
-        if (PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bShowStaticMeshInEditor))
-        {
-            if (StaticMeshComponent)
-            {
-                StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
-                
-                if (bShowStaticMeshInEditor && !StaticMeshComponent->GetStaticMesh() && bAutoGenerateStaticMesh)
-                {
-                    if (ProceduralMeshComponent && ProceduralMeshComponent->GetNumSections() > 0)
-                    {
-                        GenerateStaticMesh();
-                    }
-                }
-            }
-            return;
-        }
-        
-        if (PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bShowProceduralMeshInEditor))
-        {
-            if (ProceduralMeshComponent)
-            {
-                ProceduralMeshComponent->SetVisibility(bShowProceduralMeshInEditor);
-            }
-            return;
-        }
-        
-        if (PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bAutoGenerateStaticMesh))
-        {
-            if (bAutoGenerateStaticMesh && StaticMeshComponent && ProceduralMeshComponent && ProceduralMeshComponent->GetNumSections() > 0)
-            {
-                GenerateStaticMesh();
-            }
-            return;
-        }
-        
-        if (PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, ProceduralMeshMaterial) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, StaticMeshMaterial) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bGenerateCollision) ||
-            PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bUseAsyncCooking))
-        {
-            RegenerateMesh();
-        }
-    }
-}
 
+void AProceduralMeshActor::PostEditChangeProperty(
+    FPropertyChangedEvent& PropertyChangedEvent)
+
+{
+  Super::PostEditChangeProperty(PropertyChangedEvent);
+
+  if (PropertyChangedEvent.Property)
+
+  {
+    const FName PropertyName = PropertyChangedEvent.Property->GetFName();
+
+    if (PropertyName ==
+        GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bShowStaticMeshInEditor))
+
+    {
+      if (StaticMeshComponent)
+
+      {
+        StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
+
+        if (bShowStaticMeshInEditor && !StaticMeshComponent->GetStaticMesh() &&
+            bAutoGenerateStaticMesh)
+
+        {
+          if (ProceduralMeshComponent &&
+              ProceduralMeshComponent->GetNumSections() > 0)
+
+          {
+            GenerateStaticMesh();
+          }
+        }
+      }
+
+      return;
+    }
+
+    if (PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor,
+                                                bShowProceduralMeshInEditor))
+
+    {
+      if (ProceduralMeshComponent)
+
+      {
+        ProceduralMeshComponent->SetVisibility(bShowProceduralMeshInEditor);
+      }
+
+      return;
+    }
+
+    if (PropertyName ==
+        GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bAutoGenerateStaticMesh))
+
+    {
+      if (bAutoGenerateStaticMesh && StaticMeshComponent &&
+          ProceduralMeshComponent &&
+          ProceduralMeshComponent->GetNumSections() > 0)
+
+      {
+        GenerateStaticMesh();
+      }
+
+      return;
+    }
+
+    if (PropertyName == GET_MEMBER_NAME_CHECKED(AProceduralMeshActor,
+                                                ProceduralMeshMaterial) ||
+
+        PropertyName ==
+            GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, StaticMeshMaterial) ||
+
+        PropertyName ==
+            GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bGenerateCollision) ||
+
+        PropertyName ==
+            GET_MEMBER_NAME_CHECKED(AProceduralMeshActor, bUseAsyncCooking))
+
+    {
+      RegenerateMesh();
+    }
+  }
+}
 
 #endif
 
 void AProceduralMeshActor::InitializeComponents()
+
 {
-    if (ProceduralMeshComponent)
+  if (ProceduralMeshComponent)
+
+  {
+    ProceduralMeshComponent->SetCollisionEnabled(
+        ECollisionEnabled::QueryAndPhysics);
+
+    ProceduralMeshComponent->SetCollisionObjectType(
+        ECollisionChannel::ECC_WorldStatic);
+
+    ProceduralMeshComponent->bUseAsyncCooking = bUseAsyncCooking;
+
+    if (ProceduralMeshMaterial)
+
     {
-        ProceduralMeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-        ProceduralMeshComponent->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
-        ProceduralMeshComponent->bUseAsyncCooking = bUseAsyncCooking;
-        
-        if (ProceduralMeshMaterial)
-        {
-            ProceduralMeshComponent->SetMaterial(0, ProceduralMeshMaterial);
-        }
+      ProceduralMeshComponent->SetMaterial(0, ProceduralMeshMaterial);
     }
-    
-    if (bAutoGenerateStaticMesh && StaticMeshComponent && ProceduralMeshComponent)
-    {
-        GetWorld()->GetTimerManager().SetTimerForNextTick([this]()
+  }
+
+  if (bAutoGenerateStaticMesh && StaticMeshComponent && ProceduralMeshComponent)
+
+  {
+    GetWorld()->GetTimerManager().SetTimerForNextTick(
+        [this]()
+
         {
-            if (ProceduralMeshComponent && ProceduralMeshComponent->GetNumSections() > 0)
-            {
-                GenerateStaticMesh();
-            }
+          if (ProceduralMeshComponent &&
+              ProceduralMeshComponent->GetNumSections() > 0)
+
+          {
+            GenerateStaticMesh();
+          }
         });
-    }
+  }
 }
 
 void AProceduralMeshActor::ApplyMaterial()
+
 {
-    if (ProceduralMeshComponent && ProceduralMeshMaterial)
-    {
-        ProceduralMeshComponent->SetMaterial(0, ProceduralMeshMaterial);
-    }
+  if (ProceduralMeshComponent && ProceduralMeshMaterial)
+
+  {
+    ProceduralMeshComponent->SetMaterial(0, ProceduralMeshMaterial);
+  }
 }
 
 void AProceduralMeshActor::SetupCollision()
+
 {
-    if (ProceduralMeshComponent)
-    {
-        ProceduralMeshComponent->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
-    }
+  if (ProceduralMeshComponent)
+
+  {
+    ProceduralMeshComponent->SetCollisionEnabled(
+        bGenerateCollision ? ECollisionEnabled::QueryAndPhysics
+                           : ECollisionEnabled::NoCollision);
+  }
 }
 
 void AProceduralMeshActor::RegenerateMesh()
-{
-    if (!ProceduralMeshComponent || !IsValid())
-    {
-        return;
-    }
 
-    ProceduralMeshComponent->ClearAllMeshSections();
-    GenerateMesh();
-    ApplyMaterial();
-    SetupCollision();
-    
-    if (bAutoGenerateStaticMesh && StaticMeshComponent && ProceduralMeshComponent->GetNumSections() > 0)
-    {
-        UStaticMesh* NewStaticMesh = ConvertProceduralMeshToStaticMesh();
-        if (NewStaticMesh)
-        {
-            StaticMeshComponent->SetStaticMesh(NewStaticMesh);
-            
-            // 强制重新构建静态网格以确保材质正确应用
-            NewStaticMesh->Build();
-            
-            // 设置材质
-            UMaterialInterface* MaterialToUse = nullptr;
-            if (StaticMeshMaterial && ::IsValid(StaticMeshMaterial))
-            {
-                MaterialToUse = StaticMeshMaterial;
-            }
-            else if (ProceduralMeshComponent->GetNumSections() > 0)
-            {
-                UMaterialInterface* ProcMaterial = ProceduralMeshComponent->GetMaterial(0);
-                if (ProcMaterial && ::IsValid(ProcMaterial))
-                {
-                    MaterialToUse = ProcMaterial;
-                }
-            }
-            
-            if (MaterialToUse)
-            {
-                // 确保材质正确应用到所有材质槽
-                for (int32 i = 0; i < NewStaticMesh->StaticMaterials.Num(); i++)
-                {
-                    StaticMeshComponent->SetMaterial(i, MaterialToUse);
-                }
-                
-                // 强制更新渲染状态
-                StaticMeshComponent->MarkRenderStateDirty();
-                StaticMeshComponent->RecreateRenderState_Concurrent();
-            }
-            
-            StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
-        }
-    }
+{
+  if (!ProceduralMeshComponent || !IsValid())
+
+  {
+    return;
+  }
+
+  ProceduralMeshComponent->ClearAllMeshSections();
+
+  GenerateMesh();
+
+  ApplyMaterial();
+
+  SetupCollision();
+
+  if (bAutoGenerateStaticMesh && StaticMeshComponent &&
+      ProceduralMeshComponent->GetNumSections() > 0)
+
+  {
+    GenerateStaticMesh();  // 统一调用
+  }
 }
 
 void AProceduralMeshActor::ClearMesh()
-{
-    if (ProceduralMeshComponent)
-    {
-        ProceduralMeshComponent->ClearAllMeshSections();
-    }
 
-    if (StaticMeshComponent) 
-    {
-	    CleanupCurrentStaticMesh();
-        StaticMeshComponent->SetStaticMesh(nullptr);
-    }
+{
+  if (ProceduralMeshComponent)
+
+  {
+    ProceduralMeshComponent->ClearAllMeshSections();
+  }
+
+  if (StaticMeshComponent)
+
+  {
+    CleanupCurrentStaticMesh();
+
+    StaticMeshComponent->SetStaticMesh(nullptr);
+  }
 }
 
-void AProceduralMeshActor::SetProceduralMeshMaterial(UMaterialInterface* NewMaterial)
+void AProceduralMeshActor::SetProceduralMeshMaterial(
+    UMaterialInterface* NewMaterial)
+
 {
-    ProceduralMeshMaterial = NewMaterial;
-    ApplyMaterial();
+  ProceduralMeshMaterial = NewMaterial;
+
+  ApplyMaterial();
 }
 
-void AProceduralMeshActor::SetStaticMeshMaterial(UMaterialInterface* NewMaterial)
+void AProceduralMeshActor::SetStaticMeshMaterial(
+    UMaterialInterface* NewMaterial)
+
 {
-    StaticMeshMaterial = NewMaterial;
-    
-    // 如果StaticMeshComponent已经存在，也要更新其材质
-    if (StaticMeshComponent && StaticMeshComponent->GetStaticMesh())
-    {
-        ApplyMaterialToStaticMesh();
-    }
+  StaticMeshMaterial = NewMaterial;
+
+  if (StaticMeshComponent && StaticMeshComponent->GetStaticMesh())
+
+  {
+    GenerateStaticMesh();  // 重新生成来应用材质
+  }
 }
 
-void AProceduralMeshActor::SetProceduralSectionMaterial(int32 SectionIndex, UMaterialInterface* NewMaterial)
+void AProceduralMeshActor::SetProceduralSectionMaterial(
+    int32 SectionIndex,
+    UMaterialInterface* NewMaterial)
+
 {
-    if (SectionIndex < 0)
-    {
-        return;
-    }
-    
-    // 确保ProceduralSectionMaterials数组足够大
-    if (SectionIndex >= ProceduralSectionMaterials.Num())
-    {
-        ProceduralSectionMaterials.SetNum(SectionIndex + 1);
-    }
-    
-    ProceduralSectionMaterials[SectionIndex] = NewMaterial;
-    
-    // 应用到ProceduralMeshComponent
-    if (ProceduralMeshComponent && SectionIndex < ProceduralMeshComponent->GetNumSections())
-    {
-        ProceduralMeshComponent->SetMaterial(SectionIndex, NewMaterial);
-    }
+  if (SectionIndex < 0)
+
+  {
+    return;
+  }
+
+  if (SectionIndex >= ProceduralSectionMaterials.Num())
+
+  {
+    ProceduralSectionMaterials.SetNum(SectionIndex + 1);
+  }
+
+  ProceduralSectionMaterials[SectionIndex] = NewMaterial;
+
+  if (ProceduralMeshComponent &&
+      SectionIndex < ProceduralMeshComponent->GetNumSections())
+
+  {
+    ProceduralMeshComponent->SetMaterial(SectionIndex, NewMaterial);
+  }
 }
 
-void AProceduralMeshActor::SetStaticSectionMaterial(int32 SectionIndex, UMaterialInterface* NewMaterial)
+void AProceduralMeshActor::SetStaticSectionMaterial(
+    int32 SectionIndex,
+    UMaterialInterface* NewMaterial)
+
 {
-    if (SectionIndex < 0)
-    {
-        return;
-    }
-    
-    // 确保StaticSectionMaterials数组足够大
-    if (SectionIndex >= StaticSectionMaterials.Num())
-    {
-        StaticSectionMaterials.SetNum(SectionIndex + 1);
-    }
-    
-    StaticSectionMaterials[SectionIndex] = NewMaterial;
-    
-    // 如果StaticMeshComponent已经存在，也要更新其材质
-    if (StaticMeshComponent && StaticMeshComponent->GetStaticMesh())
-    {
-        ApplyMaterialToStaticMesh();
-    }
+  if (SectionIndex < 0)
+
+  {
+    return;
+  }
+
+  if (SectionIndex >= StaticSectionMaterials.Num())
+
+  {
+    StaticSectionMaterials.SetNum(SectionIndex + 1);
+  }
+
+  StaticSectionMaterials[SectionIndex] = NewMaterial;
+
+  if (StaticMeshComponent && StaticMeshComponent->GetStaticMesh())
+
+  {
+    GenerateStaticMesh();  // 重新生成来应用材质
+  }
 }
 
 void AProceduralMeshActor::SetCollisionEnabled(bool bEnable)
+
 {
-    bGenerateCollision = bEnable;
-    SetupCollision();
-}
+  bGenerateCollision = bEnable;
 
-UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh() 
-{
-    // 输入参数验证
-  if (!ProceduralMeshComponent) {
-    UE_LOG(LogTemp, Error, TEXT("ConvertProceduralMeshToStaticMesh: 程序化网格组件指针为空"));
-    return nullptr;
-  }
-  
-    if (ProceduralMeshComponent->GetNumSections() == 0) {
-    UE_LOG(LogTemp, Warning, TEXT("ConvertProceduralMeshToStaticMesh: 程序化网格组件没有网格段"));
-    return nullptr;
-  }
-
-  UProceduralMeshComponent* ProcMeshComp = ProceduralMeshComponent;
-  FString ActorName = ProceduralMeshComponent->GetOwner()->GetName();
-  FString LevelName = ProceduralMeshComponent->GetWorld()->GetMapName();
-    FString AssetName = FString(TEXT("SM_")) + LevelName + FString(TEXT("_") + ActorName);
-  FString PathName = FString(TEXT("/Game/WebEZMeshes/"));
-  FString PackageName = PathName + AssetName;
-
-
-    // 使用UE4内置的BuildMeshDescription函数
-    FMeshDescription MeshDescription = BuildMeshDescription(ProcMeshComp);
-    
-    // 检查是否有有效的几何体数据
-    if (MeshDescription.Polygons().Num() == 0) {
-        UE_LOG(LogTemp, Error, TEXT("没有有效的几何体数据"));
-        return nullptr;
-    }
-
-    // 创建包和静态网格对象
-  UPackage* Package = CreatePackage(*PackageName);
-  if (!Package) {
-    UE_LOG(LogTemp, Error, TEXT("无法创建包: %s"), *PackageName);
-    return nullptr;
-  }
-  
-    UStaticMesh* StaticMesh = NewObject<UStaticMesh>(Package, *AssetName, RF_Public | RF_Standalone);
-  if (!StaticMesh) {
-    UE_LOG(LogTemp, Error, TEXT("无法创建静态网格对象"));
-    return nullptr;
-  }
-  
-    // 初始化StaticMesh
-    StaticMesh->InitResources();
-    StaticMesh->LightingGuid = FGuid::NewGuid();
-
-    // 添加源模型到新的StaticMesh
-    FStaticMeshSourceModel& SrcModel = StaticMesh->AddSourceModel();
-    SrcModel.BuildSettings.bRecomputeNormals = false;
-    SrcModel.BuildSettings.bRecomputeTangents = false;
-    SrcModel.BuildSettings.bRemoveDegenerates = false;
-    SrcModel.BuildSettings.bUseHighPrecisionTangentBasis = false;
-    SrcModel.BuildSettings.bUseFullPrecisionUVs = false;
-    SrcModel.BuildSettings.bGenerateLightmapUVs = true;
-    SrcModel.BuildSettings.SrcLightmapIndex = 0;
-    SrcModel.BuildSettings.DstLightmapIndex = 1;
-    
-    StaticMesh->CreateMeshDescription(0, MoveTemp(MeshDescription));
-    StaticMesh->CommitMeshDescription(0);
-
-    // 处理材质 - 优先级：StaticSectionMaterials > StaticMeshMaterial > ProceduralMesh材质 > 默认材质
-    TSet<UMaterialInterface*> UniqueMaterials;
-    const int32 NumSections = ProcMeshComp->GetNumSections();
-    for (int32 SectionIdx = 0; SectionIdx < NumSections; SectionIdx++) {
-        UMaterialInterface* SectionMaterial = nullptr;
-        
-        // 优先级1：使用StaticSectionMaterials数组中的材质
-        if (SectionIdx < StaticSectionMaterials.Num() && StaticSectionMaterials[SectionIdx] && ::IsValid(StaticSectionMaterials[SectionIdx])) {
-            SectionMaterial = StaticSectionMaterials[SectionIdx];
-        }
-        // 优先级2：使用指定的StaticMeshMaterial
-        else if (StaticMeshMaterial && ::IsValid(StaticMeshMaterial)) {
-            SectionMaterial = StaticMeshMaterial;
-        }
-        // 优先级3：使用ProceduralMesh的材质
-        else {
-            SectionMaterial = ProcMeshComp->GetMaterial(SectionIdx);
-            if (!SectionMaterial || !::IsValid(SectionMaterial)) {
-                SectionMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
-            }
-        }
-        
-        UniqueMaterials.Add(SectionMaterial);
-    }
-    
-    // 复制材质到新网格
-    for (auto* SectionMaterial : UniqueMaterials) {
-        StaticMesh->StaticMaterials.Add(FStaticMaterial(SectionMaterial));
-    }
-
-    // 设置导入版本
-    StaticMesh->ImportVersion = EImportStaticMeshVersion::LastVersion;
-
-    // 构建网格 - 关键：使用false参数
-    StaticMesh->Build(false);
-    StaticMesh->PostEditChange();
-
-    // 通知资源注册表
-      FAssetRegistryModule::AssetCreated(StaticMesh);
-
-  
-  return StaticMesh;
-}
-
-void AProceduralMeshActor::ConvertToStaticMeshComponent()
-{
-    if (!ProceduralMeshComponent || !StaticMeshComponent)
-    {
-        return;
-    }
-
-    // 清理组件中之前的静态网格
-    CleanupCurrentStaticMesh();
-
-    // 使用现有的转换方法创建静态网格
-    UStaticMesh* NewStaticMesh = ConvertProceduralMeshToStaticMesh();
-    
-    if (NewStaticMesh)
-    {
-        // 设置静态网格组件
-        StaticMeshComponent->SetStaticMesh(NewStaticMesh);
-        
-        // 强制重新构建静态网格以确保材质正确应用
-        NewStaticMesh->Build();
-        
-        // 复制材质
-        UMaterialInterface* MaterialToUse = nullptr;
-        if (StaticMeshMaterial && ::IsValid(StaticMeshMaterial))
-        {
-            MaterialToUse = StaticMeshMaterial;
-        }
-        else if (ProceduralMeshComponent->GetNumSections() > 0)
-        {
-            UMaterialInterface* ProcMaterial = ProceduralMeshComponent->GetMaterial(0);
-            if (ProcMaterial && ::IsValid(ProcMaterial))
-            {
-                MaterialToUse = ProcMaterial;
-            }
-        }
-        
-        if (MaterialToUse)
-        {
-            // 确保材质正确应用到所有材质槽
-            for (int32 i = 0; i < NewStaticMesh->StaticMaterials.Num(); i++)
-            {
-                StaticMeshComponent->SetMaterial(i, MaterialToUse);
-            }
-            
-            // 强制更新渲染状态
-            StaticMeshComponent->MarkRenderStateDirty();
-            StaticMeshComponent->RecreateRenderState_Concurrent();
-        }
-        
-        // 设置显示模式为静态网格
-        ProceduralMeshComponent->SetVisibility(false);
-        StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
-        ProceduralMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-        StaticMeshComponent->SetCollisionEnabled(bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
-    }
-}
-
-void AProceduralMeshActor::GenerateStaticMesh()
-{
-    if (!ProceduralMeshComponent || !StaticMeshComponent || ProceduralMeshComponent->GetNumSections() == 0)
-    {
-        return;
-    }
-    
-    // 清理组件中之前的静态网格
-    CleanupCurrentStaticMesh();
-    
-    UStaticMesh* NewStaticMesh = ConvertProceduralMeshToStaticMesh();
-    if (NewStaticMesh)
-    {
-        StaticMeshComponent->SetStaticMesh(NewStaticMesh);
-        
-        // 强制重新构建静态网格以确保材质正确应用
-        NewStaticMesh->Build();
-        
-        // 设置材质
-        UMaterialInterface* MaterialToUse = nullptr;
-        if (StaticMeshMaterial && ::IsValid(StaticMeshMaterial))
-        {
-            MaterialToUse = StaticMeshMaterial;
-        }
-        else if (ProceduralMeshComponent->GetNumSections() > 0)
-        {
-            UMaterialInterface* ProcMaterial = ProceduralMeshComponent->GetMaterial(0);
-            if (ProcMaterial && ::IsValid(ProcMaterial))
-            {
-                MaterialToUse = ProcMaterial;
-            }
-        }
-        
-        if (MaterialToUse)
-        {
-            // 确保材质正确应用到所有材质槽
-            for (int32 i = 0; i < NewStaticMesh->StaticMaterials.Num(); i++)
-            {
-                StaticMeshComponent->SetMaterial(i, MaterialToUse);
-            }
-            
-            // 强制更新渲染状态
-            StaticMeshComponent->MarkRenderStateDirty();
-            StaticMeshComponent->RecreateRenderState_Concurrent();
-        }
-        
-        StaticMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-        StaticMeshComponent->SetVisibility(bShowStaticMeshInEditor);
-    }
-}
-
-void AProceduralMeshActor::RefreshStaticMesh()
-{
-    if (!ProceduralMeshComponent || !StaticMeshComponent)
-    {
-        return;
-    }
-    
-    // 如果静态网格组件已经有内容，则刷新它
-    if (StaticMeshComponent->GetStaticMesh())
-    {
-        GenerateStaticMesh();
-    }
+  SetupCollision();
 }
 
 void AProceduralMeshActor::SetProceduralMeshVisibility(bool bVisible)
+
 {
-    if (ProceduralMeshComponent)
-    {
-        ProceduralMeshComponent->SetVisibility(bVisible);
-    }
+  if (ProceduralMeshComponent)
+
+  {
+    ProceduralMeshComponent->SetVisibility(bVisible);
+  }
 }
 
 void AProceduralMeshActor::SetStaticMeshVisibility(bool bVisible)
+
 {
-    if (StaticMeshComponent)
-    {
-        StaticMeshComponent->SetVisibility(bVisible);
-    }
+  if (StaticMeshComponent)
+
+  {
+    StaticMeshComponent->SetVisibility(bVisible);
+  }
 }
 
 void AProceduralMeshActor::CleanupCurrentStaticMesh()
-{
-    if (StaticMeshComponent && StaticMeshComponent->GetStaticMesh())
-    {
-        UStaticMesh* OldStaticMesh = StaticMeshComponent->GetStaticMesh();
-        UPackage* Package = OldStaticMesh->GetPackage();
-        if (Package)
-        {
-            Package->RemoveFromRoot();
-            Package->ConditionalBeginDestroy();
-        }
-        OldStaticMesh->ConditionalBeginDestroy();
-        StaticMeshComponent->SetStaticMesh(nullptr);
-    }
-}
 
-void AProceduralMeshActor::ApplyMaterialToStaticMesh()
 {
-    if (!StaticMeshComponent || !StaticMeshComponent->GetStaticMesh())
-    {
-        return;
-    }
-    
-    UStaticMesh* StaticMesh = StaticMeshComponent->GetStaticMesh();
-    
-    // 确定要使用的材质
-    UMaterialInterface* MaterialToUse = nullptr;
-    if (StaticMeshMaterial && ::IsValid(StaticMeshMaterial))
-    {
-        MaterialToUse = StaticMeshMaterial;
-    }
-    else if (ProceduralMeshComponent && ProceduralMeshComponent->GetNumSections() > 0)
-    {
-        UMaterialInterface* ProcMaterial = ProceduralMeshComponent->GetMaterial(0);
-        if (ProcMaterial && ::IsValid(ProcMaterial))
-        {
-            MaterialToUse = ProcMaterial;
-        }
-    }
-    
-    if (MaterialToUse)
-    {
-        // 确保材质正确应用到所有材质槽
-        int32 NumMaterialSlots = StaticMesh->StaticMaterials.Num();
-        for (int32 i = 0; i < NumMaterialSlots; i++)
-        {
-            StaticMeshComponent->SetMaterial(i, MaterialToUse);
-        }
-        
-        // 强制更新渲染状态
-        StaticMeshComponent->MarkRenderStateDirty();
-        StaticMeshComponent->RecreateRenderState_Concurrent();
-    }
+  if (StaticMeshComponent && StaticMeshComponent->GetStaticMesh())
+
+  {
+    UStaticMesh* OldStaticMesh = StaticMeshComponent->GetStaticMesh();
+
+    StaticMeshComponent->SetStaticMesh(nullptr);
+  }
 }
 
 void AProceduralMeshActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+
 {
-    Super::EndPlay(EndPlayReason);
-    
-    // 清理组件中的静态网格
-    CleanupCurrentStaticMesh();
+  Super::EndPlay(EndPlayReason);
+
+  CleanupCurrentStaticMesh();
 }

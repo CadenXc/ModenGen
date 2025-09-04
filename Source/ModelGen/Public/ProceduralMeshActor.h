@@ -80,7 +80,7 @@ protected:
     virtual void SetupCollision();
     virtual void RegenerateMesh();
     
-    virtual void GenerateMesh() { }
+    virtual void GenerateMesh() {}
 
     virtual bool IsValid() const { return true; }
 
