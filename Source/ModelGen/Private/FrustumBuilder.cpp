@@ -336,14 +336,6 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bo
         const FVector NextPos(CurrentRadius * FMath::Cos(NextAngle), CurrentRadius * FMath::Sin(NextAngle), Z);
 
         FVector AdjustedNormal = Normal;
-        if (Frustum.BevelRadius > KINDA_SMALL_NUMBER)
-        {
-            const float EdgeDistance = (Radius - CurrentRadius) / Frustum.BevelRadius;
-            const float NormalBlend = FMath::Clamp(EdgeDistance, 0.0f, 1.0f);
-            
-            FVector SideNormal = FVector(FMath::Cos(CurrentAngle), FMath::Sin(CurrentAngle), 0.0f);
-            AdjustedNormal = FMath::Lerp(Normal, SideNormal, NormalBlend).GetSafeNormal();
-        }
 
         const int32 V1 = GetOrAddVertex(CurrentPos, AdjustedNormal, GenerateStableUVCustom(CurrentPos, AdjustedNormal));
         const int32 V2 = GetOrAddVertex(NextPos, AdjustedNormal, GenerateStableUVCustom(NextPos, AdjustedNormal));

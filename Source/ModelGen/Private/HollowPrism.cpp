@@ -30,10 +30,6 @@ void AHollowPrism::RegenerateMeshBlueprint()
     Super::RegenerateMesh();
 }
 
-void AHollowPrism::SetMaterial(UMaterialInterface* NewMaterial)
-{
-    Super::SetMaterial(NewMaterial);
-}
 
 bool AHollowPrism::IsValid() const
 {

@@ -50,10 +50,6 @@ void AFrustum::RegenerateMeshBlueprint()
     RegenerateMesh();
 }
 
-void AFrustum::SetMaterial(UMaterialInterface* NewMaterial)
-{
-    Super::SetMaterial(NewMaterial);
-}
 
 bool AFrustum::IsValid() const
 {

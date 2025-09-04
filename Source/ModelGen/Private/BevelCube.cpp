@@ -22,15 +22,6 @@ void ABevelCube::GenerateMesh()
     }
 }
 
-void ABevelCube::GenerateBeveledCube(float InCubeSize, float InBevelRadius, int32 InBevelSegments)
-{
-    CubeSize = InCubeSize;
-    BevelRadius = InBevelRadius;
-    BevelSegments = InBevelSegments;
-    
-    RegenerateMesh();
-}
-
 bool ABevelCube::IsValid() const
 {
     return CubeSize > 0.0f && 

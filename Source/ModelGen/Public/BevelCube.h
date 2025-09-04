@@ -43,6 +43,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "BevelCube|Parameters")
     void SetBevelSegments(int32 NewBevelSegments);
 
+    UFUNCTION(BlueprintCallable)
+    virtual void GenerateMesh() override;
+
 public:
     // 内联计算函数
     float GetHalfSize() const { return CubeSize * 0.5f; }
@@ -50,12 +53,7 @@ public:
     int32 GetVertexCount() const;
     int32 GetTriangleCount() const;
 
-protected:
-    virtual void GenerateMesh() override;
-
 public:
     virtual bool IsValid() const override;
     
-    UFUNCTION(BlueprintCallable, Category = "BevelCube|Generation")
-    void GenerateBeveledCube(float InCubeSize, float InBevelRadius, int32 InBevelSegments);
 };

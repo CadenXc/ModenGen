@@ -25,10 +25,6 @@ void APolygonTorus::GenerateMesh()
     }
 }
 
-void APolygonTorus::SetMaterial(UMaterialInterface* NewMaterial)
-{
-    Super::SetMaterial(NewMaterial);
-}
 
 bool APolygonTorus::IsValid() const
 {

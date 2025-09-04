@@ -13,20 +13,10 @@
 
 #include "ProceduralMeshActor.generated.h"
 
-// 显示模式枚举
-UENUM(BlueprintType)
-enum class EDisplayMode : uint8
-{
-    ProceduralOnly,    // 只显示程序化网格
-    StaticOnly,        // 只显示静态网格
-    Both               // 同时显示两个组件
-};
-
 class UProceduralMeshComponent;
-class UStaticMesh;
 class UMaterialInterface;
 
-UCLASS(Abstract, BlueprintType, meta=(DisplayName = "Procedural Mesh Actor"))
+UCLASS(BlueprintType, meta=(DisplayName = "Procedural Mesh Actor"))
 class MODELGEN_API AProceduralMeshActor : public AActor
 {
     GENERATED_BODY()
@@ -36,21 +26,31 @@ public:
 
     virtual void BeginPlay() override;
     virtual void OnConstruction(const FTransform& Transform) override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 #if WITH_EDITOR
     virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-    virtual void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
 #endif
 
     //~ Begin Common Properties
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Materials")
-    UMaterialInterface* Material;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Materials", meta = (ToolTip = "ProceduralMeshComponent使用的材质"))
+    UMaterialInterface* ProceduralMeshMaterial;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Materials", meta = (ToolTip = "StaticMeshComponent使用的材质"))
+    UMaterialInterface* StaticMeshMaterial;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Materials", meta = (ToolTip = "为ProceduralMesh的每个网格段设置不同的材质"))
+    TArray<UMaterialInterface*> ProceduralSectionMaterials;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Materials", meta = (ToolTip = "为StaticMesh的每个网格段设置不同的材质"))
+    TArray<UMaterialInterface*> StaticSectionMaterials;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Collision")
     bool bGenerateCollision = true;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Collision")
     bool bUseAsyncCooking = true;
+
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Component")
     UProceduralMeshComponent* ProceduralMeshComponent;
@@ -63,6 +63,15 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|StaticMesh")
     bool bShowStaticMeshInEditor = true;
+    // 设置静态网格组件可见性
+    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Component")
+    void SetStaticMeshVisibility(bool bVisible);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|StaticMesh")
+    bool bShowProceduralMeshInEditor = true;
+    // 设置程序化网格组件可见性
+    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Component")
+    void SetProceduralMeshVisibility(bool bVisible);
 
 protected:
     //~ Begin Common Methods
@@ -71,20 +80,14 @@ protected:
     virtual void SetupCollision();
     virtual void RegenerateMesh();
     
-    // 纯虚函数，子类必须实现
-    virtual void GenerateMesh() PURE_VIRTUAL(AProceduralMeshActor::GenerateMesh,);
+    virtual void GenerateMesh() { }
 
-private:
-    // 跟踪当前是否使用静态网格
-    bool bUsingStaticMesh = false;
-
-public:
-    // 纯虚函数，子类必须实现
-    virtual bool IsValid() const PURE_VIRTUAL(AProceduralMeshActor::IsValid, return false;);
+    virtual bool IsValid() const { return true; }
 
 public:
     // 通用的网格信息获取方法
     UProceduralMeshComponent* GetProceduralMesh() const { return ProceduralMeshComponent; }
+    UStaticMeshComponent* GetStaticMeshComponent() const { return StaticMeshComponent; }
     bool ShouldGenerateCollision() const { return bGenerateCollision; }
     bool ShouldUseAsyncCooking() const { return bUseAsyncCooking; }
     
@@ -93,33 +96,25 @@ public:
     void ClearMesh();
     
     UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
-    void SetMaterial(UMaterialInterface* NewMaterial);
+    void SetProceduralMeshMaterial(UMaterialInterface* NewMaterial);
+    
+    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
+    void SetStaticMeshMaterial(UMaterialInterface* NewMaterial);
+    
+    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
+    void SetProceduralSectionMaterial(int32 SectionIndex, UMaterialInterface* NewMaterial);
+    
+    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
+    void SetStaticSectionMaterial(int32 SectionIndex, UMaterialInterface* NewMaterial);
     
     UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
     void SetCollisionEnabled(bool bEnable);
 
 
-	UStaticMesh* ConvertProceduralMeshToStaticMesh(
-        UProceduralMeshComponent* ProcMesh);
+	UStaticMesh* ConvertProceduralMeshToStaticMesh();
     
     // 转换程序化网格为静态网格组件
     void ConvertToStaticMeshComponent();
-    
-    // 切换显示模式（程序化网格 <-> 静态网格）
-    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
-    void ToggleDisplayMode();
-    
-    // 获取当前显示模式
-    UFUNCTION(BlueprintPure, Category = "ProceduralMesh|Operations")
-    bool IsUsingStaticMesh() const;
-    
-    // 转换程序化网格为静态网格并返回（蓝图可调用）
-    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
-    UStaticMesh* ConvertAndGetStaticMesh();
-    
-    // 设置显示模式
-    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
-    void SetDisplayMode(EDisplayMode Mode);
     
     // 手动生成静态网格（蓝图可调用）
     UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|StaticMesh")
@@ -128,20 +123,11 @@ public:
     // 刷新静态网格（当程序化网格改变后调用）
     UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|StaticMesh")
     void RefreshStaticMesh();
+
+protected:
+    // 清理当前静态网格组件的资源
+    void CleanupCurrentStaticMesh();
     
-    // 强制刷新静态网格（即使没有现有内容）
-    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|StaticMesh")
-    void ForceRefreshStaticMesh();
-    
-    // 测试方法：在编辑器中测试静态网格生成
-    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Debug")
-    void TestStaticMeshGeneration();
-    
-    // 设置程序化网格组件可见性
-    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Component")
-    void SetProceduralMeshVisibility(bool bVisible);
-    
-    // 设置静态网格组件可见性
-    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Component")
-    void SetStaticMeshVisibility(bool bVisible);
+    // 将材质应用到StaticMeshComponent
+    void ApplyMaterialToStaticMesh();
 };

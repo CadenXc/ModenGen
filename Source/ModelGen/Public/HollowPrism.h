@@ -86,7 +86,6 @@ private:
     UFUNCTION(BlueprintCallable, Category = "HollowPrism|Generation")
     void RegenerateMeshBlueprint();
     
-    void SetMaterial(UMaterialInterface* NewMaterial);
 
 public:
     bool IsValid() const;

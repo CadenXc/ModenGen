@@ -116,7 +116,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Frustum|Generation")
     void RegenerateMeshBlueprint();
     
-    void SetMaterial(UMaterialInterface* NewMaterial);
 
     float GetHalfHeight() const { return Height * 0.5f; }
     int32 CalculateVertexCountEstimate() const;
