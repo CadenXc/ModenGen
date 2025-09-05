@@ -28,8 +28,6 @@ public:
 private:
     const AHollowPrism& HollowPrism;
 
-    void GenerateBaseGeometry();
-    
     void GenerateSideWalls();
     void GenerateInnerWalls();
     void GenerateOuterWalls();

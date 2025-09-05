@@ -14,6 +14,7 @@ void FModelGenMeshData::Clear()
     VertexColors.Reset();
     Tangents.Reset();
     MaterialIndices.Reset();
+    TriangleKeySet.Reset();
     
     VertexCount = 0;
     TriangleCount = 0;
@@ -93,6 +94,27 @@ int32 FModelGenMeshData::AddVertexWithDualUV(const FVector& Position, const FVec
 
 void FModelGenMeshData::AddTriangle(int32 V1, int32 V2, int32 V3, int32 MaterialIndex)
 {
+    // 退化三角形过滤
+    if (V1 == V2 || V2 == V3 || V1 == V3)
+    {
+        return;
+    }
+
+    // 规范化三角形键（排序后编码为64位）
+    int32 A = V1, B = V2, C = V3;
+    if (A > B) Swap(A, B);
+    if (B > C) Swap(B, C);
+    if (A > B) Swap(A, B);
+    const uint64 Key = (static_cast<uint64>(A) << 42) | (static_cast<uint64>(B) << 21) | static_cast<uint64>(C);
+
+    // 去重：若已存在则跳过
+    if (TriangleKeySet.Contains(Key))
+    {
+        return;
+    }
+
+    TriangleKeySet.Add(Key);
+
     Triangles.Add(V1);
     Triangles.Add(V2);
     Triangles.Add(V3);

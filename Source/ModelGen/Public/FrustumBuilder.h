@@ -44,7 +44,6 @@ private:
     float CalculateAngleStep(int32 Sides);
     void CalculateAngles();
 
-    void GenerateBaseGeometry();
     void CreateSideGeometry();
     void GenerateTopGeometry();
     void GenerateBottomGeometry();

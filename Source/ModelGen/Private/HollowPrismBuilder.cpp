@@ -21,7 +21,7 @@ bool FHollowPrismBuilder::Generate(FModelGenMeshData& OutMeshData)
     Clear();
     ReserveMemory();
 
-    GenerateBaseGeometry();
+    // 仅生成一次，避免重复添加三角形
     GenerateSideWalls();
     GenerateTopCapWithTriangles();
     GenerateBottomCapWithTriangles();
@@ -61,24 +61,6 @@ int32 FHollowPrismBuilder::CalculateTriangleCountEstimate() const
     return HollowPrism.CalculateTriangleCountEstimate();
 }
 
-void FHollowPrismBuilder::GenerateBaseGeometry()
-{
-    GenerateSideWalls();
-    GenerateTopCapWithTriangles();
-    GenerateBottomCapWithTriangles();
-    
-    if (HollowPrism.BevelRadius > 0.0f)
-    {
-        GenerateTopBevelGeometry();
-        GenerateBottomBevelGeometry();
-    }
-    
-    if (!HollowPrism.IsFullCircle())
-    {
-        GenerateEndCaps();
-    }
-}
-
 void FHollowPrismBuilder::GenerateSideWalls()
 {
     GenerateInnerWalls();
@@ -90,6 +72,7 @@ void FHollowPrismBuilder::GenerateInnerWalls()
     const float HalfHeight = HollowPrism.GetHalfHeight();
     const float StartAngle = CalculateStartAngle();
     const float AngleStep = CalculateAngleStep(HollowPrism.InnerSides);
+    const bool bFull = HollowPrism.IsFullCircle();
     
     TArray<int32> InnerTopVertices, InnerBottomVertices;
     
@@ -107,6 +90,15 @@ void FHollowPrismBuilder::GenerateInnerWalls()
         const int32 InnerBottomVertex = GetOrAddVertexWithDualUV(InnerBottomPos, InnerNormal);
         InnerBottomVertices.Add(InnerBottomVertex);
     }
+    // 满圆时让最后一个顶点复用第一个，避免缝隙
+    if (bFull && InnerTopVertices.Num() > 0)
+    {
+        InnerTopVertices.Last() = InnerTopVertices[0];
+    }
+    if (bFull && InnerBottomVertices.Num() > 0)
+    {
+        InnerBottomVertices.Last() = InnerBottomVertices[0];
+    }
     
     for (int32 i = 0; i < HollowPrism.InnerSides; ++i)
     {
@@ -120,6 +112,7 @@ void FHollowPrismBuilder::GenerateOuterWalls()
     const float HalfHeight = HollowPrism.GetHalfHeight();
     const float StartAngle = CalculateStartAngle();
     const float AngleStep = CalculateAngleStep(HollowPrism.OuterSides);
+    const bool bFull = HollowPrism.IsFullCircle();
     
     TArray<int32> OuterTopVertices, OuterBottomVertices;
     
@@ -136,6 +129,15 @@ void FHollowPrismBuilder::GenerateOuterWalls()
         const FVector OuterBottomPos = CalculateVertexPosition(HollowPrism.OuterRadius, Angle, -HalfHeight + HollowPrism.BevelRadius);
         const int32 OuterBottomVertex = GetOrAddVertexWithDualUV(OuterBottomPos, OuterNormal);
         OuterBottomVertices.Add(OuterBottomVertex);
+    }
+    // 满圆时闭合
+    if (bFull && OuterTopVertices.Num() > 0)
+    {
+        OuterTopVertices.Last() = OuterTopVertices[0];
+    }
+    if (bFull && OuterBottomVertices.Num() > 0)
+    {
+        OuterBottomVertices.Last() = OuterBottomVertices[0];
     }
     
     for (int32 i = 0; i < HollowPrism.OuterSides; ++i)
@@ -296,6 +298,7 @@ void FHollowPrismBuilder::GenerateCapVertices(TArray<int32>& OutInnerVertices,
     
     const float InnerAngleStep = CalculateAngleStep(HollowPrism.InnerSides);
     const float OuterAngleStep = CalculateAngleStep(HollowPrism.OuterSides);
+    const bool bFull = HollowPrism.IsFullCircle();
     
     const FVector Normal(0.0f, 0.0f, bIsTopCap ? 1.0f : -1.0f);
     
@@ -316,6 +319,10 @@ void FHollowPrismBuilder::GenerateCapVertices(TArray<int32>& OutInnerVertices,
         const int32 InnerVertex = GetOrAddVertexWithDualUV(InnerPos, Normal);
         OutInnerVertices.Add(InnerVertex);
     }
+    if (bFull && OutInnerVertices.Num() > 0)
+    {
+        OutInnerVertices.Last() = OutInnerVertices[0];
+    }
     
     for (int32 i = 0; i <= HollowPrism.OuterSides; ++i)
     {
@@ -324,6 +331,10 @@ void FHollowPrismBuilder::GenerateCapVertices(TArray<int32>& OutInnerVertices,
         const FVector OuterPos = CalculateVertexPosition(OuterRadius, Angle, bIsTopCap ? HalfHeight : -HalfHeight);
         const int32 OuterVertex = GetOrAddVertexWithDualUV(OuterPos, Normal);
         OutOuterVertices.Add(OuterVertex);
+    }
+    if (bFull && OutOuterVertices.Num() > 0)
+    {
+        OutOuterVertices.Last() = OutOuterVertices[0];
     }
 }
 
@@ -390,6 +401,10 @@ void FHollowPrismBuilder::GenerateBevelRing(const TArray<int32>& PrevRing,
         const FVector Normal = CalculateBevelNormal(angle, alpha, bIsInner, bIsTop);
 
         OutCurrentRing.Add(GetOrAddVertexWithDualUV(Position, Normal));
+    }
+    if (HollowPrism.IsFullCircle() && OutCurrentRing.Num() > 0)
+    {
+        OutCurrentRing.Last() = OutCurrentRing[0];
     }
 }
 

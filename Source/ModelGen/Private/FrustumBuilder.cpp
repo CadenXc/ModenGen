@@ -28,25 +28,25 @@ bool FFrustumBuilder::Generate(FModelGenMeshData& OutMeshData)
     Clear();
     ReserveMemory();
 
-    GenerateBaseGeometry();
-    CreateSideGeometry();
+    UE_LOG(LogTemp, Warning, TEXT("FFrustumBuilder::Generate - 开始生成Frustum网格"));
+    UE_LOG(LogTemp, Warning, TEXT("FFrustumBuilder::Generate - 参数: TopRadius=%.2f, BottomRadius=%.2f, Height=%.2f, TopSides=%d, BottomSides=%d"), 
+           Frustum.TopRadius, Frustum.BottomRadius, Frustum.Height, Frustum.TopSides, Frustum.BottomSides);
+
+	CreateSideGeometry();
     GenerateTopGeometry();
+	GenerateTopBevelGeometry();
+	GenerateBottomBevelGeometry();
+	GenerateEndCaps();
     GenerateBottomGeometry();
 
-    if (Frustum.BevelRadius > 0.0f)
-    {
-        GenerateTopBevelGeometry();
-        GenerateBottomBevelGeometry();
-    }
-
-    if (Frustum.ArcAngle < 360.0f - KINDA_SMALL_NUMBER)
-    {
-        GenerateEndCaps();
-    }
+    UE_LOG(LogTemp, Warning, TEXT("FFrustumBuilder::Generate - 网格生成完成: 顶点数=%d, 三角形数=%d"), 
+           MeshData.Vertices.Num(), MeshData.Triangles.Num() / 3);
 
     if (!ValidateGeneratedData())
     {
         UE_LOG(LogTemp, Error, TEXT("FFrustumBuilder::Generate - Generated data validation failed"));
+        UE_LOG(LogTemp, Error, TEXT("FFrustumBuilder::Generate - 详细数据: Vertices=%d, Triangles=%d, Normals=%d, UVs=%d, Tangents=%d"), 
+               MeshData.Vertices.Num(), MeshData.Triangles.Num(), MeshData.Normals.Num(), MeshData.UVs.Num(), MeshData.Tangents.Num());
         return false;
     }
 
@@ -67,16 +67,6 @@ int32 FFrustumBuilder::CalculateVertexCountEstimate() const
 int32 FFrustumBuilder::CalculateTriangleCountEstimate() const
 {
     return Frustum.CalculateTriangleCountEstimate();
-}
-
-void FFrustumBuilder::GenerateBaseGeometry()
-{
-	CreateSideGeometry();
-    GenerateTopGeometry();
-	GenerateTopBevelGeometry();
-	GenerateBottomBevelGeometry();
-    GenerateBottomGeometry();
-	GenerateEndCaps();
 }
 
 void FFrustumBuilder::CreateSideGeometry()
@@ -294,7 +284,7 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 S
     TArray<int32> VertexRing;
     const float AngleStep = CalculateAngleStep(Sides);
 
-    const int32 VertexCount = (Frustum.ArcAngle < 360.0f - KINDA_SMALL_NUMBER) ? Sides + 1 : Sides;
+    const int32 VertexCount = (Frustum.ArcAngle < 360.0f - KINDA_SMALL_NUMBER) ? Sides + 1 : Sides + 1; // 末尾会与首点合并
 
     for (int32 i = 0; i < VertexCount; ++i)
     {
@@ -311,6 +301,11 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 S
 
         const int32 VertexIndex = GetOrAddVertex(Pos, Normal, GenerateStableUVCustom(Pos, Normal));
         VertexRing.Add(VertexIndex);
+    }
+    // 满圆时闭合最后一个点到第一个
+    if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && VertexRing.Num() > 0)
+    {
+        VertexRing.Last() = VertexRing[0];
     }
 
     return VertexRing;
@@ -427,6 +422,11 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop)
             }
             
             CurrentRing.Add(GetOrAddVertex(Position, Normal, GenerateStableUVCustom(Position, Normal)));
+        }
+        // 满圆时闭合：最后一个点复用第一个，避免起终点不重合
+        if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && CurrentRing.Num() > 0)
+        {
+            CurrentRing.Last() = CurrentRing[0];
         }
 
         if (i > 0 && PrevRing.Num() > 0)
@@ -656,10 +656,6 @@ FVector2D FFrustumBuilder::GenerateStableUVCustom(const FVector& Position, const
         return FVector2D(U, V);
     }
 }
-
-
-
-
 
 void FFrustumBuilder::CalculateAngles()
 {

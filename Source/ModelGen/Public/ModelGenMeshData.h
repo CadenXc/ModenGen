@@ -98,4 +98,6 @@ public:
 
     FVector CalculateTangent(const FVector& Normal) const;
 private:
+    // 用于三角形去重的键集合（基于规范化后的顶点索引）
+    TSet<uint64> TriangleKeySet;
 };
