@@ -107,13 +107,6 @@ public:
     virtual bool IsValid() const override;
     
     UFUNCTION(BlueprintCallable, Category = "Frustum|Generation")
-    void GenerateFrustum(float InTopRadius, float InBottomRadius, float InHeight, int32 InSides);
-    
-    UFUNCTION(BlueprintCallable, Category = "Frustum|Generation")
-    void GenerateFrustumWithDifferentSides(float InTopRadius, float InBottomRadius, float InHeight, 
-                                          int32 InTopSides, int32 InBottomSides);
-    
-    UFUNCTION(BlueprintCallable, Category = "Frustum|Generation")
     void RegenerateMeshBlueprint();
     
 

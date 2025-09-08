@@ -22,29 +22,6 @@ void AFrustum::GenerateMesh()
     }
 }
 
-void AFrustum::GenerateFrustum(float InTopRadius, float InBottomRadius, float InHeight, int32 InSides)
-{
-    TopRadius = InTopRadius;
-    BottomRadius = InBottomRadius;
-    Height = InHeight;
-    TopSides = InSides;
-    BottomSides = InSides;
-    
-    RegenerateMesh();
-}
-
-void AFrustum::GenerateFrustumWithDifferentSides(float InTopRadius, float InBottomRadius, float InHeight, 
-                                                 int32 InTopSides, int32 InBottomSides)
-{
-    TopRadius = InTopRadius;
-    BottomRadius = InBottomRadius;
-    Height = InHeight;
-    TopSides = InTopSides;
-    BottomSides = InBottomSides;
-    
-    RegenerateMesh();
-}
-
 void AFrustum::RegenerateMeshBlueprint()
 {
     RegenerateMesh();
