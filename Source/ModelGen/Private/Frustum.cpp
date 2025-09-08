@@ -22,12 +22,6 @@ void AFrustum::GenerateMesh()
     }
 }
 
-void AFrustum::RegenerateMeshBlueprint()
-{
-    RegenerateMesh();
-}
-
-
 bool AFrustum::IsValid() const
 {
     return TopRadius > 0.0f && BottomRadius > 0.0f && Height > 0.0f &&
@@ -89,7 +83,11 @@ void AFrustum::SetTopRadius(float NewTopRadius)
     if (NewTopRadius > 0.0f && NewTopRadius != TopRadius)
     {
         TopRadius = NewTopRadius;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -98,7 +96,11 @@ void AFrustum::SetBottomRadius(float NewBottomRadius)
     if (NewBottomRadius > 0.0f && NewBottomRadius != BottomRadius)
     {
         BottomRadius = NewBottomRadius;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -107,7 +109,11 @@ void AFrustum::SetHeight(float NewHeight)
     if (NewHeight > 0.0f && NewHeight != Height)
     {
         Height = NewHeight;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -116,7 +122,11 @@ void AFrustum::SetTopSides(int32 NewTopSides)
     if (NewTopSides >= 3 && NewTopSides != TopSides)
     {
         TopSides = NewTopSides;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -125,7 +135,11 @@ void AFrustum::SetBottomSides(int32 NewBottomSides)
     if (NewBottomSides >= 3 && NewBottomSides != BottomSides)
     {
         BottomSides = NewBottomSides;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -134,7 +148,11 @@ void AFrustum::SetHeightSegments(int32 NewHeightSegments)
     if (NewHeightSegments >= 1 && NewHeightSegments != HeightSegments)
     {
         HeightSegments = NewHeightSegments;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -143,7 +161,11 @@ void AFrustum::SetBevelRadius(float NewBevelRadius)
     if (NewBevelRadius >= 0.0f && NewBevelRadius != BevelRadius)
     {
         BevelRadius = NewBevelRadius;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -152,7 +174,11 @@ void AFrustum::SetBevelSegments(int32 NewBevelSegments)
     if (NewBevelSegments >= 1 && NewBevelSegments != BevelSegments)
     {
         BevelSegments = NewBevelSegments;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -161,7 +187,11 @@ void AFrustum::SetBendAmount(float NewBendAmount)
     if (NewBendAmount >= -1.0f && NewBendAmount <= 1.0f && NewBendAmount != BendAmount)
     {
         BendAmount = NewBendAmount;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -170,7 +200,11 @@ void AFrustum::SetMinBendRadius(float NewMinBendRadius)
     if (NewMinBendRadius >= 0.0f && NewMinBendRadius != MinBendRadius)
     {
         MinBendRadius = NewMinBendRadius;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -179,6 +213,10 @@ void AFrustum::SetArcAngle(float NewArcAngle)
     if (NewArcAngle > 0.0f && NewArcAngle <= 360.0f && NewArcAngle != ArcAngle)
     {
         ArcAngle = NewArcAngle;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }

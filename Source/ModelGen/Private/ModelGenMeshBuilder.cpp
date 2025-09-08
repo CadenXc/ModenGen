@@ -15,13 +15,16 @@ int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& No
         Normal.X, Normal.Y, Normal.Z,
         UV.X, UV.Y);
 
+    // 尝试查找已存在的顶点
     if (int32* FoundIndex = UniqueVerticesMap.Find(VertexKey))
     {
         return *FoundIndex;
     }
 
+    // 添加新顶点并记录其索引
     const int32 NewIndex = AddVertex(Pos, Normal, UV);
     UniqueVerticesMap.Add(VertexKey, NewIndex);
+
     IndexToPosMap.Add(NewIndex, Pos);
     return NewIndex;
 }
@@ -35,13 +38,16 @@ int32 FModelGenMeshBuilder::GetOrAddVertexWithDualUV(const FVector& Pos, const F
         Normal.X, Normal.Y, Normal.Z,
         UV.X, UV.Y, UV1.X, UV1.Y);
 
+    // 尝试查找已存在的顶点
     if (int32* FoundIndex = UniqueVerticesMap.Find(VertexKey))
     {
         return *FoundIndex;
     }
 
+    // 添加新顶点并记录其索引
     const int32 NewIndex = MeshData.AddVertexWithDualUV(Pos, Normal, UV, UV1);
     UniqueVerticesMap.Add(VertexKey, NewIndex);
+
     IndexToPosMap.Add(NewIndex, Pos);
     return NewIndex;
 }
@@ -52,6 +58,7 @@ FVector FModelGenMeshBuilder::GetPosByIndex(int32 Index) const
     {
         return *FoundPos;
     }
+
     return FVector::ZeroVector;
 }
 
@@ -94,6 +101,7 @@ void FModelGenMeshBuilder::ReserveMemory()
     MeshData.Reserve(EstimatedVertexCount, EstimatedTriangleCount);
 }
 
+// 通用稳定UV映射实现
 FVector2D FModelGenMeshBuilder::GenerateStableUV(const FVector& Position, const FVector& Normal) const
 {
     // 首先尝试调用子类的自定义实现
@@ -121,12 +129,16 @@ FVector2D FModelGenMeshBuilder::GenerateStableUV(const FVector& Position, const 
     return CustomUV;
 }
 
+// 默认自定义实现
 FVector2D FModelGenMeshBuilder::GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const
 {
+    // 默认返回零向量，表示使用通用实现
     return FVector2D(0.0f, 0.0f);
 }
 
+// 默认第二UV通道实现
 FVector2D FModelGenMeshBuilder::GenerateSecondaryUVCustom(const FVector& Position, const FVector& Normal) const
 {
+    // 默认返回零向量，表示使用通用实现
     return FVector2D(0.0f, 0.0f);
 }

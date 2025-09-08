@@ -12,6 +12,7 @@
 
 #include "CoreMinimal.h"
 #include "ProceduralMeshComponent.h"
+
 #include "ModelGenMeshData.generated.h"
 
 /**

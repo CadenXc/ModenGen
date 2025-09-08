@@ -27,9 +27,12 @@ void AHollowPrism::GenerateMesh()
 
 void AHollowPrism::RegenerateMeshBlueprint()
 {
-    Super::RegenerateMesh();
+    if (ProceduralMeshComponent)
+    {
+        ProceduralMeshComponent->ClearAllMeshSections();
+        GenerateMesh();
+    }
 }
-
 
 bool AHollowPrism::IsValid() const
 {
@@ -121,7 +124,11 @@ void AHollowPrism::SetInnerRadius(float NewInnerRadius)
     if (NewInnerRadius > 0.0f && NewInnerRadius < OuterRadius && NewInnerRadius != InnerRadius)
     {
         InnerRadius = NewInnerRadius;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -130,7 +137,11 @@ void AHollowPrism::SetOuterRadius(float NewOuterRadius)
     if (NewOuterRadius > 0.0f && NewOuterRadius > InnerRadius && NewOuterRadius != OuterRadius)
     {
         OuterRadius = NewOuterRadius;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -139,7 +150,11 @@ void AHollowPrism::SetHeight(float NewHeight)
     if (NewHeight > 0.0f && NewHeight != Height)
     {
         Height = NewHeight;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -148,7 +163,11 @@ void AHollowPrism::SetOuterSides(int32 NewOuterSides)
     if (NewOuterSides >= 3 && NewOuterSides <= 100 && NewOuterSides != OuterSides)
     {
         OuterSides = NewOuterSides;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -157,7 +176,11 @@ void AHollowPrism::SetInnerSides(int32 NewInnerSides)
     if (NewInnerSides >= 3 && NewInnerSides <= 100 && NewInnerSides != InnerSides)
     {
         InnerSides = NewInnerSides;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -166,7 +189,11 @@ void AHollowPrism::SetArcAngle(float NewArcAngle)
     if (NewArcAngle > 0.0f && NewArcAngle <= 360.0f && NewArcAngle != ArcAngle)
     {
         ArcAngle = NewArcAngle;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -175,7 +202,11 @@ void AHollowPrism::SetBevelRadius(float NewBevelRadius)
     if (NewBevelRadius >= 0.0f && NewBevelRadius != BevelRadius)
     {
         BevelRadius = NewBevelRadius;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -184,6 +215,10 @@ void AHollowPrism::SetBevelSegments(int32 NewBevelSegments)
     if (NewBevelSegments >= 1 && NewBevelSegments <= 20 && NewBevelSegments != BevelSegments)
     {
         BevelSegments = NewBevelSegments;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }

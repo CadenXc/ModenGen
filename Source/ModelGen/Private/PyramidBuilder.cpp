@@ -8,7 +8,12 @@ FPyramidBuilder::FPyramidBuilder(const APyramid& InPyramid)
     : Pyramid(InPyramid)
 {
     Clear();
-    PrecomputeConstants();
+    BaseRadius = Pyramid.BaseRadius;
+    Height = Pyramid.Height;
+    Sides = Pyramid.Sides;
+    BevelRadius = Pyramid.BevelRadius;
+    BevelTopRadius = Pyramid.GetBevelTopRadius();
+
     PrecomputeVertices();
     PrecomputeUVs();
 }
@@ -53,12 +58,7 @@ int32 FPyramidBuilder::CalculateTriangleCountEstimate() const
 
 void FPyramidBuilder::GenerateBaseFace()
 {
-    GenerateBasePolygon();
-}
-
-void FPyramidBuilder::GenerateBasePolygon()
-{
-    GeneratePolygonFaceOptimized(BaseVertices, FVector(0, 0, -1), BaseUVs, false);
+    GeneratePolygonFaceOptimized(BaseVertices, FVector(0, 0, -1), BaseUVs);
 }
 
 void FPyramidBuilder::GenerateBevelSection()
@@ -68,20 +68,10 @@ void FPyramidBuilder::GenerateBevelSection()
         return;
     }
     
-    GenerateBevelSideStrip();
-}
-
-void FPyramidBuilder::GenerateBevelSideStrip()
-{
-    GenerateSideStripOptimized(BevelBottomVertices, BevelTopVertices, BevelUVs, true);
+    GenerateSideStripOptimized(BevelBottomVertices, BevelTopVertices, BevelUVs);
 }
 
 void FPyramidBuilder::GeneratePyramidSides()
-{
-    GeneratePyramidSideTriangles();
-}
-
-void FPyramidBuilder::GeneratePyramidSideTriangles()
 {
     for (int32 i = 0; i < Sides; ++i)
     {
@@ -134,41 +124,6 @@ void FPyramidBuilder::GeneratePolygonFace(const TArray<FVector>& PolygonVerts, c
     }
 }
 
-void FPyramidBuilder::GenerateSideStrip(const TArray<FVector>& BottomVerts, const TArray<FVector>& TopVerts, bool bReverseNormal, float UVOffsetY, float UVScaleY)
-{
-    if (BottomVerts.Num() != TopVerts.Num())
-    {
-        return;
-    }
-    
-    for (int32 i = 0; i < BottomVerts.Num(); ++i)
-    {
-        const int32 NextI = (i + 1) % BottomVerts.Num();
-        
-        FVector Edge1 = BottomVerts[NextI] - BottomVerts[i];
-        FVector Edge2 = TopVerts[i] - BottomVerts[i];
-        FVector SideNormal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
-        
-        if (bReverseNormal) SideNormal = -SideNormal;
-        
-        int32 V1 = GetOrAddVertex(BottomVerts[i], SideNormal, FVector2D(static_cast<float>(i) / BottomVerts.Num(), UVOffsetY));
-        int32 V2 = GetOrAddVertex(BottomVerts[NextI], SideNormal, FVector2D(static_cast<float>(NextI) / BottomVerts.Num(), UVOffsetY));
-        int32 V3 = GetOrAddVertex(TopVerts[NextI], SideNormal, FVector2D(static_cast<float>(NextI) / TopVerts.Num(), UVOffsetY + UVScaleY));
-        int32 V4 = GetOrAddVertex(TopVerts[i], SideNormal, FVector2D(static_cast<float>(i) / TopVerts.Num(), UVOffsetY + UVScaleY));
-        
-        if (bReverseNormal)
-        {
-            AddTriangle(V1, V3, V2);
-            AddTriangle(V1, V4, V3);
-        }
-        else
-        {
-            AddTriangle(V1, V2, V3);
-            AddTriangle(V1, V3, V4);
-        }
-    }
-}
-
 TArray<FVector> FPyramidBuilder::GenerateCircleVertices(float Radius, float Z, int32 NumSides) const
 {
     TArray<FVector> Vertices;
@@ -188,15 +143,6 @@ TArray<FVector> FPyramidBuilder::GenerateCircleVertices(float Radius, float Z, i
 TArray<FVector> FPyramidBuilder::GenerateBevelVertices(float BottomRadius, float TopRadius, float Z, int32 NumSides) const
 {
     return GenerateCircleVertices(TopRadius, Z, NumSides);
-}
-
-void FPyramidBuilder::PrecomputeConstants()
-{
-    BaseRadius = Pyramid.BaseRadius;
-    Height = Pyramid.Height;
-    Sides = Pyramid.Sides;
-    BevelRadius = Pyramid.BevelRadius;
-    BevelTopRadius = Pyramid.GetBevelTopRadius();
 }
 
 void FPyramidBuilder::PrecomputeTrigonometricValues()
@@ -363,10 +309,7 @@ TArray<FVector2D> FPyramidBuilder::GenerateSideStripUVs(int32 NumSides, float UV
     return UVs;
 }
 
-void FPyramidBuilder::GeneratePolygonFaceOptimized(const TArray<FVector>& Vertices, 
-                                                  const FVector& Normal, 
-                                                  const TArray<FVector2D>& UVs,
-                                                  bool bReverseOrder)
+void FPyramidBuilder::GeneratePolygonFaceOptimized(const TArray<FVector>& Vertices, const FVector& Normal, const TArray<FVector2D>& UVs)
 {
     if (Vertices.Num() < 3 || UVs.Num() != Vertices.Num())
     {
@@ -388,23 +331,41 @@ void FPyramidBuilder::GeneratePolygonFaceOptimized(const TArray<FVector>& Vertic
         int32 V1 = VertexIndices[i];
         int32 V2 = VertexIndices[i + 1];
         
-        if (bReverseOrder)
-        {
-            AddTriangle(V0, V2, V1);
-        }
-        else
-        {
-            AddTriangle(V0, V1, V2);
-        }
+		AddTriangle(V0, V1, V2);
     }
 }
 
-void FPyramidBuilder::GenerateSideStripOptimized(const TArray<FVector>& BottomVerts, 
-                                                const TArray<FVector>& TopVerts, 
-                                                const TArray<FVector2D>& UVs,
-                                                bool bReverseNormal)
+void FPyramidBuilder::GenerateSideStripOptimized(const TArray<FVector>& BottomVerts, const TArray<FVector>& TopVerts, const TArray<FVector2D>& UVs)
 {
     if (BottomVerts.Num() != TopVerts.Num() || UVs.Num() != BottomVerts.Num())
+    {
+        return;
+    }
+    
+    for (int32 i = 0; i < BottomVerts.Num(); ++i)
+    {
+        const int32 NextI = (i + 1) % BottomVerts.Num();
+        
+        FVector Edge1 = BottomVerts[NextI] - BottomVerts[i];
+        FVector Edge2 = TopVerts[i] - BottomVerts[i];
+        FVector SideNormal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
+
+        // 暂时使用
+		SideNormal = -SideNormal;
+        
+        int32 V0 = GetOrAddVertexWithDualUV(BottomVerts[i], SideNormal);
+        int32 V1 = GetOrAddVertexWithDualUV(BottomVerts[NextI], SideNormal);
+        int32 V2 = GetOrAddVertexWithDualUV(TopVerts[NextI], SideNormal);
+        int32 V3 = GetOrAddVertexWithDualUV(TopVerts[i], SideNormal);
+        
+		AddTriangle(V0, V1, V2);
+		AddTriangle(V0, V2, V3);
+    }
+}
+
+void FPyramidBuilder::GenerateSideStrip(const TArray<FVector>& BottomVerts, const TArray<FVector>& TopVerts, bool bReverseNormal, float UVOffsetY, float UVScaleY)
+{
+    if (BottomVerts.Num() != TopVerts.Num())
     {
         return;
     }
@@ -419,10 +380,10 @@ void FPyramidBuilder::GenerateSideStripOptimized(const TArray<FVector>& BottomVe
         
         if (bReverseNormal) SideNormal = -SideNormal;
         
-        int32 V1 = GetOrAddVertexWithDualUV(BottomVerts[i], SideNormal);
-        int32 V2 = GetOrAddVertexWithDualUV(BottomVerts[NextI], SideNormal);
-        int32 V3 = GetOrAddVertexWithDualUV(TopVerts[NextI], SideNormal);
-        int32 V4 = GetOrAddVertexWithDualUV(TopVerts[i], SideNormal);
+        int32 V1 = GetOrAddVertex(BottomVerts[i], SideNormal, FVector2D(static_cast<float>(i) / BottomVerts.Num(), UVOffsetY));
+        int32 V2 = GetOrAddVertex(BottomVerts[NextI], SideNormal, FVector2D(static_cast<float>(NextI) / BottomVerts.Num(), UVOffsetY));
+        int32 V3 = GetOrAddVertex(TopVerts[NextI], SideNormal, FVector2D(static_cast<float>(NextI) / TopVerts.Num(), UVOffsetY + UVScaleY));
+        int32 V4 = GetOrAddVertex(TopVerts[i], SideNormal, FVector2D(static_cast<float>(i) / TopVerts.Num(), UVOffsetY + UVScaleY));
         
         if (bReverseNormal)
         {
@@ -436,6 +397,8 @@ void FPyramidBuilder::GenerateSideStripOptimized(const TArray<FVector>& BottomVe
         }
     }
 }
+
+
 
 bool FPyramidBuilder::ValidatePrecomputedData() const
 {

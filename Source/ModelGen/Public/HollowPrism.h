@@ -86,7 +86,6 @@ private:
     UFUNCTION(BlueprintCallable, Category = "HollowPrism|Generation")
     void RegenerateMeshBlueprint();
     
-
 public:
     bool IsValid() const;
     float GetWallThickness() const;

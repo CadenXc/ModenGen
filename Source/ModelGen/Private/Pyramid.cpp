@@ -36,7 +36,11 @@ void APyramid::GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides
     Height = InHeight;
     Sides = InSides;
     
-    RegenerateMesh();
+    if (ProceduralMeshComponent)
+    {
+        ProceduralMeshComponent->ClearAllMeshSections();
+        GenerateMesh();
+    }
 }
 
 bool APyramid::IsValid() const
@@ -81,7 +85,11 @@ void APyramid::SetBaseRadius(float NewBaseRadius)
     if (NewBaseRadius > 0.0f && NewBaseRadius != BaseRadius)
     {
         BaseRadius = NewBaseRadius;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -90,7 +98,11 @@ void APyramid::SetHeight(float NewHeight)
     if (NewHeight > 0.0f && NewHeight != Height)
     {
         Height = NewHeight;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -99,7 +111,11 @@ void APyramid::SetSides(int32 NewSides)
     if (NewSides >= 3 && NewSides <= 100 && NewSides != Sides)
     {
         Sides = NewSides;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -108,6 +124,10 @@ void APyramid::SetBevelRadius(float NewBevelRadius)
     if (NewBevelRadius >= 0.0f && NewBevelRadius < Height && NewBevelRadius != BevelRadius)
     {
         BevelRadius = NewBevelRadius;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }

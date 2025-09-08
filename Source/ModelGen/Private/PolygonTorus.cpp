@@ -25,7 +25,6 @@ void APolygonTorus::GenerateMesh()
     }
 }
 
-
 bool APolygonTorus::IsValid() const
 {
     return MajorRadius > 0.0f &&
@@ -57,7 +56,11 @@ void APolygonTorus::SetMajorRadius(float NewMajorRadius)
     if (NewMajorRadius > 0.0f && NewMajorRadius != MajorRadius)
     {
         MajorRadius = NewMajorRadius;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -66,7 +69,11 @@ void APolygonTorus::SetMinorRadius(float NewMinorRadius)
     if (NewMinorRadius > 0.0f && NewMinorRadius <= MajorRadius * 0.9f && NewMinorRadius != MinorRadius)
     {
         MinorRadius = NewMinorRadius;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -75,7 +82,11 @@ void APolygonTorus::SetMajorSegments(int32 NewMajorSegments)
     if (NewMajorSegments >= 3 && NewMajorSegments <= 256 && NewMajorSegments != MajorSegments)
     {
         MajorSegments = NewMajorSegments;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -84,7 +95,11 @@ void APolygonTorus::SetMinorSegments(int32 NewMinorSegments)
     if (NewMinorSegments >= 3 && NewMinorSegments <= 256 && NewMinorSegments != MinorSegments)
     {
         MinorSegments = NewMinorSegments;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -93,7 +108,11 @@ void APolygonTorus::SetTorusAngle(float NewTorusAngle)
     if (NewTorusAngle >= 1.0f && NewTorusAngle <= 360.0f && NewTorusAngle != TorusAngle)
     {
         TorusAngle = NewTorusAngle;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -102,7 +121,11 @@ void APolygonTorus::SetSmoothCrossSection(bool bNewSmoothCrossSection)
     if (bNewSmoothCrossSection != bSmoothCrossSection)
     {
         bSmoothCrossSection = bNewSmoothCrossSection;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }
 
@@ -111,6 +134,10 @@ void APolygonTorus::SetSmoothVerticalSection(bool bNewSmoothVerticalSection)
     if (bNewSmoothVerticalSection != bSmoothVerticalSection)
     {
         bSmoothVerticalSection = bNewSmoothVerticalSection;
-        RegenerateMesh();
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+            GenerateMesh();
+        }
     }
 }

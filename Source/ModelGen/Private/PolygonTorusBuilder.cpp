@@ -1,8 +1,8 @@
 // Copyright (c) 2024. All rights reserved.
 
 #include "PolygonTorusBuilder.h"
-#include "ModelGenMeshData.h"
 #include "PolygonTorus.h"
+#include "ModelGenMeshData.h"
 
 FPolygonTorusBuilder::FPolygonTorusBuilder(const APolygonTorus& InPolygonTorus)
     : PolygonTorus(InPolygonTorus) {

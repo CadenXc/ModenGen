@@ -106,10 +106,6 @@ protected:
 public:
     virtual bool IsValid() const override;
     
-    UFUNCTION(BlueprintCallable, Category = "Frustum|Generation")
-    void RegenerateMeshBlueprint();
-    
-
     float GetHalfHeight() const { return Height * 0.5f; }
     int32 CalculateVertexCountEstimate() const;
     int32 CalculateTriangleCountEstimate() const;

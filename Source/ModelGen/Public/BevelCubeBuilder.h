@@ -3,6 +3,9 @@
 /**
  * @file BevelCubeBuilder.h
  * @brief 圆角立方体网格构建器
+ * 
+ * 该类负责生成圆角立方体的几何数据，继承自FModelGenMeshBuilder。
+ * 提供了完整的圆角立方体生成功能，包括主要面、边缘倒角和角落倒角。
  */
 
 #pragma once
@@ -67,7 +70,8 @@ private:
     void GenerateEdgeBevels();
     void GenerateCornerBevels();
     void GenerateEdgeStrip(int32 Core1Idx, int32 Core2Idx, 
-                          const FVector& Normal1, const FVector& Normal2);
+                          const FVector& Normal1, const FVector& Normal2,
+                          float UVOffsetX, float UVWidth);
     void GenerateCornerTriangles(const TArray<TArray<int32>>& CornerVerticesGrid, 
                                 int32 Lat, int32 Lon, bool bSpecialOrder);
     
@@ -78,10 +82,11 @@ private:
     TArray<FVector> GenerateCornerVertices(const FVector& CorePoint, const FVector& AxisX, 
                                           const FVector& AxisY, const FVector& AxisZ, int32 Lat, int32 Lon) const;
     
-    void GenerateCornerBevel(int32 CornerIndex);
+    void GenerateCornerBevel(int32 CornerIndex, float UVOffsetX, float UVWidth);
     void GenerateCornerVerticesGrid(int32 CornerIndex, const FVector& CorePoint, 
                                    const FVector& AxisX, const FVector& AxisY, const FVector& AxisZ,
-                                   TArray<TArray<int32>>& CornerVerticesGrid);
+                                   TArray<TArray<int32>>& CornerVerticesGrid,
+                                   float UVOffsetX, float UVWidth);
     void GenerateCornerTrianglesGrid(const TArray<TArray<int32>>& CornerVerticesGrid, bool bSpecialOrder);
     bool IsSpecialCorner(int32 CornerIndex) const;
     
@@ -91,8 +96,13 @@ private:
     int32 GetCornerGridSize(int32 Lat) const;
     bool ValidatePrecomputedData() const;
     
+    /** 基于顶点位置的稳定UV映射 - 重写父类实现 */
     virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const override;
+    
+    /** 生成第二UV通道 - 传统UV系统 */
     FVector2D GenerateSecondaryUV(const FVector& Position, const FVector& Normal) const;
+    
+    /** 使用双UV通道添加顶点 */
     int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal);
     
 };
