@@ -30,17 +30,17 @@ private:
     int32 Sides;
     float BevelRadius;
     float BevelTopRadius;
-    
+
     TArray<FVector> BaseVertices;
     TArray<FVector> BevelBottomVertices;
     TArray<FVector> BevelTopVertices;
     TArray<FVector> PyramidBaseVertices;
     FVector PyramidTopPoint;
-    
+
     TArray<FVector2D> BaseUVs;
-    TArray<FVector2D> SideUVs;
+    TArray<FVector2D> PyramidSideUVs;
     TArray<FVector2D> BevelUVs;
-    
+
     TArray<float> AngleValues;
     TArray<float> CosValues;
     TArray<float> SinValues;
@@ -50,35 +50,28 @@ private:
     void PrecomputeUVs();
     void PrecomputeTrigonometricValues();
     void PrecomputeUVScaleValues();
-    
+
     void InitializeBaseVertices();
     void InitializeBevelVertices();
     void InitializePyramidVertices();
-    
+
     void GenerateBaseFace();
     void GenerateBevelSection();
     void GeneratePyramidSides();
-    
-    void GeneratePolygonFace(const TArray<FVector>& PolygonVerts, const FVector& Normal, bool bReverseOrder = false, float UVOffsetZ = 0.0f);
-    void GenerateSideStrip(const TArray<FVector>& BottomVerts, const TArray<FVector>& TopVerts, bool bReverseNormal = false, float UVOffsetY = 0.0f, float UVScaleY = 1.0f);
-    
-    TArray<FVector> GenerateCircleVertices(float Radius, float Z, int32 NumSides) const;
-    TArray<FVector> GenerateBevelVertices(float BottomRadius, float TopRadius, float Z, int32 NumSides) const;
-    
+
     void GeneratePolygonFaceOptimized(const TArray<FVector>& Vertices,
-                                      const FVector& Normal,
-                                      const TArray<FVector2D>& UVs);
-    
+        const FVector& Normal);
+
     void GenerateSideStripOptimized(const TArray<FVector>& BottomVerts,
-                                    const TArray<FVector>& TopVerts,
-                                    const TArray<FVector2D>& UVs);
-    
-    TArray<FVector2D> GenerateCircularUVs(int32 NumSides, float UVOffsetZ = 0.0f) const;
-    TArray<FVector2D> GenerateSideStripUVs(int32 NumSides, float UVOffsetY = 0.0f, float UVScaleY = 1.0f) const;
-    
-    virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const override;
-    FVector2D GenerateSecondaryUV(const FVector& Position, const FVector& Normal) const;
+        const TArray<FVector>& TopVerts,
+        const TArray<FVector2D>& BottomUVs,
+        const TArray<FVector2D>& TopUVs);
+
+    FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const;
+
+    // 新增：用于直接传入UV
+    int32 GetOrAddVertexWithUV(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
+
+    // 保留原始 GetOrAddVertexWithDualUV，用于金字塔侧面和底面
     int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal);
-    
-    bool ValidatePrecomputedData() const;
 };
