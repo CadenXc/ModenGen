@@ -191,7 +191,7 @@ void FModelGenMeshData::ToProceduralMesh(UProceduralMeshComponent* MeshComponent
         // 在UE4中，我们需要使用CreateMeshSection_LinearColor的重载版本来支持多UV通道
         // 由于UE4的ProceduralMeshComponent限制，我们暂时只使用主UV通道
         // 第二UV通道可以通过材质编辑器中的UV1节点访问
-        MeshComponent->CreateMeshSection_LinearColor(SectionIndex, Vertices, Triangles, Normals, UVs, VertexColors, Tangents, true);
+        MeshComponent->CreateMeshSection_LinearColor(SectionIndex, Vertices, Triangles, Normals, UVs, VertexColors, Tangents, false);
         
         // 注意：在UE4中，第二UV通道需要通过材质编辑器中的UV1节点来访问
         // 这里我们确保UV1s数组被正确填充，以便后续可能的扩展
@@ -199,7 +199,7 @@ void FModelGenMeshData::ToProceduralMesh(UProceduralMeshComponent* MeshComponent
     else
     {
         // 使用单UV通道创建网格
-        MeshComponent->CreateMeshSection_LinearColor(SectionIndex, Vertices, Triangles, Normals, UVs, VertexColors, Tangents, true);
+        MeshComponent->CreateMeshSection_LinearColor(SectionIndex, Vertices, Triangles, Normals, UVs, VertexColors, Tangents, false);
     }
 }
 
