@@ -21,7 +21,6 @@ public:
 
     //~ Begin FModelGenMeshBuilder Interface
     virtual bool Generate(FModelGenMeshData& OutMeshData) override;
-    virtual bool ValidateParameters() const override;
     virtual int32 CalculateVertexCountEstimate() const override;
     virtual int32 CalculateTriangleCountEstimate() const override;
 

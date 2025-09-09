@@ -18,7 +18,6 @@ public:
     explicit FPyramidBuilder(const APyramid& InPyramid);
 
     virtual bool Generate(FModelGenMeshData& OutMeshData) override;
-    virtual bool ValidateParameters() const override;
     virtual int32 CalculateVertexCountEstimate() const override;
     virtual int32 CalculateTriangleCountEstimate() const override;
 

@@ -20,7 +20,7 @@ FPyramidBuilder::FPyramidBuilder(const APyramid& InPyramid)
 
 bool FPyramidBuilder::Generate(FModelGenMeshData& OutMeshData)
 {
-    if (!ValidateParameters())
+    if (!Pyramid.IsValid())
     {
         return false;
     }
@@ -41,11 +41,6 @@ bool FPyramidBuilder::Generate(FModelGenMeshData& OutMeshData)
     return true;
 }
 
-bool FPyramidBuilder::ValidateParameters() const
-{
-    return Pyramid.IsValid();
-}
-
 int32 FPyramidBuilder::CalculateVertexCountEstimate() const
 {
     return Pyramid.CalculateVertexCountEstimate();
@@ -55,7 +50,6 @@ int32 FPyramidBuilder::CalculateTriangleCountEstimate() const
 {
     return Pyramid.CalculateTriangleCountEstimate();
 }
-
 void FPyramidBuilder::GenerateBaseFace()
 {
     GeneratePolygonFaceOptimized(BaseVertices, FVector(0, 0, -1));

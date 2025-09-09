@@ -13,7 +13,7 @@ FHollowPrismBuilder::FHollowPrismBuilder(const AHollowPrism& InHollowPrism)
 
 bool FHollowPrismBuilder::Generate(FModelGenMeshData& OutMeshData)
 {
-    if (!ValidateParameters())
+    if (!HollowPrism.IsValid())
     {
         return false;
     }
@@ -44,11 +44,6 @@ bool FHollowPrismBuilder::Generate(FModelGenMeshData& OutMeshData)
 
     OutMeshData = MeshData;
     return true;
-}
-
-bool FHollowPrismBuilder::ValidateParameters() const
-{
-    return HollowPrism.IsValid();
 }
 
 int32 FHollowPrismBuilder::CalculateVertexCountEstimate() const

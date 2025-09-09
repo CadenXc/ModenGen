@@ -19,7 +19,7 @@ void FFrustumBuilder::Clear()
 
 bool FFrustumBuilder::Generate(FModelGenMeshData& OutMeshData)
 {
-  if (!::IsValid(&Frustum))
+    if (!Frustum.IsValid())
     {
         UE_LOG(LogTemp, Error, TEXT("FFrustumBuilder::Generate - Parameters validation failed"));
         return false;

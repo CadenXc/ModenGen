@@ -25,7 +25,6 @@ class MODELGEN_API FModelGenMeshBuilder
  
      virtual bool Generate(FModelGenMeshData& OutMeshData) = 0;
      
-     virtual bool ValidateParameters() const { return true; }
      virtual int32 CalculateVertexCountEstimate() const = 0;
      virtual int32 CalculateTriangleCountEstimate() const = 0;
  

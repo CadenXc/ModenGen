@@ -18,7 +18,7 @@ FBevelCubeBuilder::FBevelCubeBuilder(const ABevelCube& InBevelCube)
 
 bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
 {
-    if (!ValidateParameters())
+    if (!BevelCube.IsValid())
     {
         return false;
     }
@@ -37,11 +37,6 @@ bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
 
     OutMeshData = MeshData;
     return true;
-}
-
-bool FBevelCubeBuilder::ValidateParameters() const
-{
-    return BevelCube.IsValid();
 }
 
 int32 FBevelCubeBuilder::CalculateVertexCountEstimate() const

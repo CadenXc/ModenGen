@@ -11,7 +11,7 @@ FPolygonTorusBuilder::FPolygonTorusBuilder(const APolygonTorus& InPolygonTorus)
 }
 
 bool FPolygonTorusBuilder::Generate(FModelGenMeshData& OutMeshData) {
-  if (!ValidateParameters()) {
+  if (!PolygonTorus.IsValid()) {
     return false;
   }
 
@@ -33,10 +33,6 @@ bool FPolygonTorusBuilder::Generate(FModelGenMeshData& OutMeshData) {
 
   OutMeshData = MeshData;
   return true;
-}
-
-bool FPolygonTorusBuilder::ValidateParameters() const {
-  return PolygonTorus.IsValid();
 }
 
 int32 FPolygonTorusBuilder::CalculateVertexCountEstimate() const {
