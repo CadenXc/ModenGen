@@ -72,13 +72,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetBevelRadius(float NewBevelRadius);
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Bevel", 
-        meta = (ClampMin = "1", DisplayName = "Bevel Sections"))
-    int32 BevelSegments = 4;
-
-    UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
-    void SetBevelSegments(int32 NewBevelSegments);
-
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Bending", 
         meta = (ClampMin = "-1.0", ClampMax = "1.0", DisplayName = "Bend Amount"))
     float BendAmount = 0.0f;
@@ -109,7 +102,4 @@ public:
     float GetHalfHeight() const { return Height * 0.5f; }
     int32 CalculateVertexCountEstimate() const;
     int32 CalculateTriangleCountEstimate() const;
-
-    bool operator==(const AFrustum& Other) const;
-    bool operator!=(const AFrustum& Other) const;
 };

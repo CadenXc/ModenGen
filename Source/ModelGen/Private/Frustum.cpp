@@ -26,7 +26,7 @@ bool AFrustum::IsValid() const
 {
     return TopRadius > 0.0f && BottomRadius > 0.0f && Height > 0.0f &&
            TopSides >= 3 && BottomSides >= 3 && HeightSegments >= 1 &&
-           BevelRadius >= 0.0f && BevelSegments >= 1 &&
+           BevelRadius >= 0.0f && 
            MinBendRadius >= 0.0f && ArcAngle > 0.0f && ArcAngle <= 360.0f;
 }
 
@@ -41,7 +41,7 @@ int32 AFrustum::CalculateVertexCountEstimate() const
     int32 BevelVertices = 0;
     if (BevelRadius > 0.0f)
     {
-        BevelVertices = (TopSides + BottomSides + HeightSegments * MaxSides) * BevelSegments;
+        BevelVertices = (TopSides + BottomSides + HeightSegments * MaxSides);
     }
 
     return BaseVertices + SideVertices + BevelVertices;
@@ -58,23 +58,10 @@ int32 AFrustum::CalculateTriangleCountEstimate() const
     int32 BevelTriangles = 0;
     if (BevelRadius > 0.0f)
     {
-        BevelTriangles = (TopSides + BottomSides + HeightSegments * MaxSides) * BevelSegments * 2;
+        BevelTriangles = (TopSides + BottomSides + HeightSegments * MaxSides) * 2;
     }
 
     return BaseTriangles + SideTriangles + BevelTriangles;
-}
-
-bool AFrustum::operator==(const AFrustum& Other) const
-{
-    return TopRadius == Other.TopRadius && BottomRadius == Other.BottomRadius && Height == Other.Height &&
-           TopSides == Other.TopSides && BottomSides == Other.BottomSides && HeightSegments == Other.HeightSegments &&
-           BevelRadius == Other.BevelRadius && BevelSegments == Other.BevelSegments && BendAmount == Other.BendAmount &&
-           MinBendRadius == Other.MinBendRadius && ArcAngle == Other.ArcAngle;
-}
-
-bool AFrustum::operator!=(const AFrustum& Other) const
-{
-    return !(*this == Other);
 }
 
 // 设置参数函数实现
@@ -161,19 +148,6 @@ void AFrustum::SetBevelRadius(float NewBevelRadius)
     if (NewBevelRadius >= 0.0f && NewBevelRadius != BevelRadius)
     {
         BevelRadius = NewBevelRadius;
-        if (ProceduralMeshComponent)
-        {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
-        }
-    }
-}
-
-void AFrustum::SetBevelSegments(int32 NewBevelSegments)
-{
-    if (NewBevelSegments >= 1 && NewBevelSegments != BevelSegments)
-    {
-        BevelSegments = NewBevelSegments;
         if (ProceduralMeshComponent)
         {
             ProceduralMeshComponent->ClearAllMeshSections();
