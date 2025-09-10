@@ -106,6 +106,11 @@ void AFrustum::SetHeight(float NewHeight)
 
 void AFrustum::SetTopSides(int32 NewTopSides)
 {
+	if (NewTopSides > BottomSides)
+	{
+		return;
+	}
+    
     if (NewTopSides >= 3 && NewTopSides != TopSides)
     {
         TopSides = NewTopSides;
@@ -122,6 +127,10 @@ void AFrustum::SetBottomSides(int32 NewBottomSides)
     if (NewBottomSides >= 3 && NewBottomSides != BottomSides)
     {
         BottomSides = NewBottomSides;
+        if (BottomSides < TopSides)
+        {
+            TopSides = BottomSides;
+        }
         if (ProceduralMeshComponent)
         {
             ProceduralMeshComponent->ClearAllMeshSections();

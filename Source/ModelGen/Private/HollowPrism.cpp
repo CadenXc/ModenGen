@@ -121,6 +121,10 @@ bool AHollowPrism::operator!=(const AHollowPrism& Other) const
 // 设置参数函数实现
 void AHollowPrism::SetInnerRadius(float NewInnerRadius)
 {
+    if (NewInnerRadius >= OuterRadius)
+    {
+        return;
+	}
     if (NewInnerRadius > 0.0f && NewInnerRadius < OuterRadius && NewInnerRadius != InnerRadius)
     {
         InnerRadius = NewInnerRadius;
@@ -137,6 +141,10 @@ void AHollowPrism::SetOuterRadius(float NewOuterRadius)
     if (NewOuterRadius > 0.0f && NewOuterRadius > InnerRadius && NewOuterRadius != OuterRadius)
     {
         OuterRadius = NewOuterRadius;
+        if (OuterRadius < InnerRadius)
+        {
+            InnerRadius = OuterRadius - 0.1f;
+        }
         if (ProceduralMeshComponent)
         {
             ProceduralMeshComponent->ClearAllMeshSections();
@@ -163,6 +171,11 @@ void AHollowPrism::SetOuterSides(int32 NewOuterSides)
     if (NewOuterSides >= 3 && NewOuterSides <= 100 && NewOuterSides != OuterSides)
     {
         OuterSides = NewOuterSides;
+        if (OuterSides < InnerSides)
+        {
+            InnerSides = OuterSides;
+        }
+
         if (ProceduralMeshComponent)
         {
             ProceduralMeshComponent->ClearAllMeshSections();
@@ -173,6 +186,11 @@ void AHollowPrism::SetOuterSides(int32 NewOuterSides)
 
 void AHollowPrism::SetInnerSides(int32 NewInnerSides)
 {
+	if (NewInnerSides > OuterSides)
+	{
+		return;
+	}
+
     if (NewInnerSides >= 3 && NewInnerSides <= 100 && NewInnerSides != InnerSides)
     {
         InnerSides = NewInnerSides;

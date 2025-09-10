@@ -5,650 +5,592 @@
 #include "ModelGenMeshData.h"
 
 FFrustumBuilder::FFrustumBuilder(const AFrustum& InFrustum)
-    : Frustum(InFrustum)
+	: Frustum(InFrustum)
 {
-    Clear();
-    CalculateAngles();
+	Clear();
+	CalculateAngles();
 }
 
 void FFrustumBuilder::Clear()
 {
-    FModelGenMeshBuilder::Clear();
-    ClearEndCapConnectionPoints();
+	FModelGenMeshBuilder::Clear();
+	ClearEndCapConnectionPoints();
+	// [REVERTED] 不再需要清理顶点缓存
 }
 
 bool FFrustumBuilder::Generate(FModelGenMeshData& OutMeshData)
 {
-    if (!Frustum.IsValid())
-    {
-        UE_LOG(LogTemp, Error, TEXT("FFrustumBuilder::Generate - Parameters validation failed"));
-        return false;
-    }
+	if (!Frustum.IsValid())
+	{
+		return false;
+	}
 
-    Clear();
-    ReserveMemory();
-
-    UE_LOG(LogTemp, Warning, TEXT("FFrustumBuilder::Generate - 开始生成Frustum网格"));
-    UE_LOG(LogTemp, Warning, TEXT("FFrustumBuilder::Generate - 参数: TopRadius=%.2f, BottomRadius=%.2f, Height=%.2f, TopSides=%d, BottomSides=%d"), 
-           Frustum.TopRadius, Frustum.BottomRadius, Frustum.Height, Frustum.TopSides, Frustum.BottomSides);
+	Clear();
+	ReserveMemory();
 
 	CreateSideGeometry();
-    GenerateTopGeometry();
+
+	// 生成顺序可以保持不变，逻辑上依然清晰
 	GenerateTopBevelGeometry();
 	GenerateBottomBevelGeometry();
+
+	GenerateTopGeometry();
+	GenerateBottomGeometry();
+
 	GenerateEndCaps();
-    GenerateBottomGeometry();
 
-    UE_LOG(LogTemp, Warning, TEXT("FFrustumBuilder::Generate - 网格生成完成: 顶点数=%d, 三角形数=%d"), 
-           MeshData.Vertices.Num(), MeshData.Triangles.Num() / 3);
+	if (!ValidateGeneratedData())
+	{
+		return false;
+	}
 
-    if (!ValidateGeneratedData())
-    {
-        UE_LOG(LogTemp, Error, TEXT("FFrustumBuilder::Generate - Generated data validation failed"));
-        UE_LOG(LogTemp, Error, TEXT("FFrustumBuilder::Generate - 详细数据: Vertices=%d, Triangles=%d, Normals=%d, UVs=%d, Tangents=%d"), 
-               MeshData.Vertices.Num(), MeshData.Triangles.Num(), MeshData.Normals.Num(), MeshData.UVs.Num(), MeshData.Tangents.Num());
-        return false;
-    }
-
-    OutMeshData = MeshData;
-    return true;
+	OutMeshData = MeshData;
+	return true;
 }
+
+// ... (其他未修改的函数保持不变) ...
 
 int32 FFrustumBuilder::CalculateVertexCountEstimate() const
 {
-    return Frustum.CalculateVertexCountEstimate();
+	return Frustum.CalculateVertexCountEstimate();
 }
 
 int32 FFrustumBuilder::CalculateTriangleCountEstimate() const
 {
-    return Frustum.CalculateTriangleCountEstimate();
+	return Frustum.CalculateTriangleCountEstimate();
 }
 
 void FFrustumBuilder::CreateSideGeometry()
 {
-    const float HalfHeight = Frustum.GetHalfHeight();
-    const float TopBevelStartZ = HalfHeight - CalculateBevelHeight(Frustum.TopRadius);
-    const float BottomBevelStartZ = -HalfHeight + CalculateBevelHeight(Frustum.BottomRadius);
-    
-    TArray<int32> TopRing = GenerateVertexRing(
-        Frustum.TopRadius, 
-        TopBevelStartZ, 
-        Frustum.TopSides
-    );
-    
-    TArray<int32> BottomRing = GenerateVertexRing(
-        Frustum.BottomRadius, 
-        BottomBevelStartZ, 
-        Frustum.BottomSides
-    );
+	const float HalfHeight = Frustum.GetHalfHeight();
+	const float TopBevelStartZ = HalfHeight - CalculateBevelHeight(Frustum.TopRadius);
+	const float BottomBevelStartZ = -HalfHeight + CalculateBevelHeight(Frustum.BottomRadius);
 
-    SideTopRing = TopRing;
-    SideBottomRing = BottomRing;
+	TArray<int32> TopRing = GenerateVertexRing(
+		Frustum.TopRadius,
+		TopBevelStartZ,
+		Frustum.TopSides
+	);
 
-    TArray<int32> TopRingOrigin = GenerateVertexRing(Frustum.TopRadius, HalfHeight, Frustum.TopSides);
-    TArray<int32> BottomRingOrigin = GenerateVertexRing(Frustum.BottomRadius, -HalfHeight, Frustum.BottomSides);
+	TArray<int32> BottomRing = GenerateVertexRing(
+		Frustum.BottomRadius,
+		BottomBevelStartZ,
+		Frustum.BottomSides
+	);
 
-    TArray<int32> BottomToTopMapping;
-    BottomToTopMapping.SetNum(BottomRingOrigin.Num());
-    for (int32 BottomIndex = 0; BottomIndex < BottomRingOrigin.Num(); ++BottomIndex)
-    {
-        const float BottomRatio = static_cast<float>(BottomIndex) / BottomRingOrigin.Num();
-        const int32 TopIndex = FMath::Clamp(FMath::RoundToInt(BottomRatio * TopRingOrigin.Num()), 0, TopRingOrigin.Num() - 1);
-        BottomToTopMapping[BottomIndex] = TopIndex;
-    }
+	SideTopRing = TopRing;
+	SideBottomRing = BottomRing;
 
-    TArray<TArray<int32>> VertexRings;
-    VertexRings.Add(BottomRing);
+	TArray<int32> TopRingOrigin = GenerateVertexRing(Frustum.TopRadius, HalfHeight, Frustum.TopSides);
+	TArray<int32> BottomRingOrigin = GenerateVertexRing(Frustum.BottomRadius, -HalfHeight, Frustum.BottomSides);
 
-    if (Frustum.HeightSegments > 1)
-    {
-        const float HeightStep = Frustum.Height / Frustum.HeightSegments;
+	TArray<int32> BottomToTopMapping;
+	BottomToTopMapping.SetNum(BottomRingOrigin.Num());
+	for (int32 BottomIndex = 0; BottomIndex < BottomRingOrigin.Num(); ++BottomIndex)
+	{
+		const float BottomRatio = static_cast<float>(BottomIndex) / BottomRingOrigin.Num();
+		const int32 TopIndex = FMath::Clamp(FMath::RoundToInt(BottomRatio * TopRingOrigin.Num()), 0, TopRingOrigin.Num() - 1);
+		BottomToTopMapping[BottomIndex] = TopIndex;
+	}
 
-        for (int32 h = Frustum.HeightSegments - 1; h > 0; --h)
-        {
-            const float CurrentHeight = HalfHeight - h * HeightStep;
-            const float HeightRatio = static_cast<float>(Frustum.HeightSegments - h) / Frustum.HeightSegments;
+	TArray<TArray<int32>> VertexRings;
+	VertexRings.Add(BottomRing);
 
-            TArray<int32> CurrentRing;
+	if (Frustum.HeightSegments > 1)
+	{
+		const float HeightStep = Frustum.Height / Frustum.HeightSegments;
 
-            for (int32 BottomIndex = 0; BottomIndex < BottomRingOrigin.Num(); ++BottomIndex)
-            {
-                const int32 TopIndex = BottomToTopMapping[BottomIndex];
+		for (int32 h = Frustum.HeightSegments - 1; h > 0; --h)
+		{
+			const float CurrentHeight = HalfHeight - h * HeightStep;
+			const float HeightRatio = static_cast<float>(Frustum.HeightSegments - h) / Frustum.HeightSegments;
 
-                const float XR = FMath::Lerp(
-                    GetPosByIndex(BottomRingOrigin[BottomIndex]).X, GetPosByIndex(TopRingOrigin[TopIndex]).X, HeightRatio);
-                const float YR = FMath::Lerp(
-                    GetPosByIndex(BottomRingOrigin[BottomIndex]).Y, GetPosByIndex(TopRingOrigin[TopIndex]).Y, HeightRatio);
+			TArray<int32> CurrentRing;
 
-                const float BaseRadius = FMath::Lerp(Frustum.BottomRadius, Frustum.TopRadius, HeightRatio);
-                const float BentRadius = CalculateBentRadius(BaseRadius, HeightRatio);
+			for (int32 BottomIndex = 0; BottomIndex < BottomRingOrigin.Num(); ++BottomIndex)
+			{
+				const int32 TopIndex = BottomToTopMapping[BottomIndex];
 
-                const float Scale = BentRadius / BaseRadius;
-                const float X = XR * Scale;
-                const float Y = YR * Scale;
+				const float XR = FMath::Lerp(
+					GetPosByIndex(BottomRingOrigin[BottomIndex]).X, GetPosByIndex(TopRingOrigin[TopIndex]).X, HeightRatio);
+				const float YR = FMath::Lerp(
+					GetPosByIndex(BottomRingOrigin[BottomIndex]).Y, GetPosByIndex(TopRingOrigin[TopIndex]).Y, HeightRatio);
 
-                const FVector InterpolatedPos(X, Y, CurrentHeight);
+				const float BaseRadius = FMath::Lerp(Frustum.BottomRadius, Frustum.TopRadius, HeightRatio);
+				const float BentRadius = CalculateBentRadius(BaseRadius, HeightRatio);
 
-                FVector Normal = FVector(X, Y, 0.0f).GetSafeNormal();
-                if (Normal.IsNearlyZero())
-                {
-                    Normal = FVector(1.0f, 0.0f, 0.0f);
-                }
-                
-                if (Frustum.BendAmount > KINDA_SMALL_NUMBER)
-                {
-                    const float BendFactor = FMath::Sin(HeightRatio * PI);
-                    const float NormalZ = -Frustum.BendAmount * FMath::Cos(HeightRatio * PI);
-                    Normal = (Normal + FVector(0, 0, NormalZ)).GetSafeNormal();
-                }
+				const float Scale = BentRadius / BaseRadius;
+				const float X = XR * Scale;
+				const float Y = YR * Scale;
 
-                const int32 VertexIndex = GetOrAddVertex(InterpolatedPos, Normal, GenerateStableUVCustom(InterpolatedPos, Normal));
-                CurrentRing.Add(VertexIndex);
-            }
+				const FVector InterpolatedPos(X, Y, CurrentHeight);
 
-            VertexRings.Add(CurrentRing);
-        }
-    }
-    VertexRings.Add(TopRing);
+				FVector Normal = FVector(X, Y, 0.0f).GetSafeNormal();
+				if (Normal.IsNearlyZero())
+				{
+					Normal = FVector(1.0f, 0.0f, 0.0f);
+				}
 
-    for (int32 i = VertexRings.Num() - 1; i >= 0; i--)
-    {
-        RecordEndCapConnectionPoint(VertexRings[i][0]);
-    }
+				if (Frustum.BendAmount > KINDA_SMALL_NUMBER)
+				{
+					const float BendFactor = FMath::Sin(HeightRatio * PI);
+					const float NormalZ = -Frustum.BendAmount * FMath::Cos(HeightRatio * PI);
+					Normal = (Normal + FVector(0, 0, NormalZ)).GetSafeNormal();
+				}
 
-    for (int i = 0; i < VertexRings.Num() - 1; i++)
-    {
-        TArray<int32> CurrentRing = VertexRings[i];
-        TArray<int32> NextRing = VertexRings[i + 1];
+				const int32 VertexIndex = GetOrAddVertex(InterpolatedPos, Normal, GenerateStableUVCustom(InterpolatedPos, Normal));
+				CurrentRing.Add(VertexIndex);
+			}
 
-        for (int32 CurrentIndex = 0; CurrentIndex < CurrentRing.Num(); ++CurrentIndex)
-        {
-            const int32 NextCurrentIndex =
-                (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) ? (CurrentIndex + 1) % CurrentRing.Num() : (CurrentIndex + 1);
+			VertexRings.Add(CurrentRing);
+		}
+	}
+	VertexRings.Add(TopRing);
 
-            if (NextCurrentIndex >= CurrentRing.Num())
-                continue;
+	for (int32 i = VertexRings.Num() - 1; i >= 0; i--)
+	{
+		RecordEndCapConnectionPoint(VertexRings[i][0]);
+	}
 
-            const float CurrentRatio = static_cast<float>(CurrentIndex) / CurrentRing.Num();
-            const float NextCurrentRatio = static_cast<float>(NextCurrentIndex) / CurrentRing.Num();
+	for (int i = 0; i < VertexRings.Num() - 1; i++)
+	{
+		TArray<int32> CurrentRing = VertexRings[i];
+		TArray<int32> NextRing = VertexRings[i + 1];
 
-            const int32 NextRingIndex = FMath::Clamp(FMath::RoundToInt(CurrentRatio * NextRing.Num()), 0, NextRing.Num() - 1);
-            const int32 NextRingNextIndex =
-                FMath::Clamp(FMath::RoundToInt(NextCurrentRatio * NextRing.Num()), 0, NextRing.Num() - 1);
+		for (int32 CurrentIndex = 0; CurrentIndex < CurrentRing.Num(); ++CurrentIndex)
+		{
+			const int32 NextCurrentIndex =
+				(Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) ? (CurrentIndex + 1) % CurrentRing.Num() : (CurrentIndex + 1);
 
-            AddQuad(CurrentRing[CurrentIndex], NextRing[NextRingIndex], NextRing[NextRingNextIndex], CurrentRing[NextCurrentIndex]);
-        }
-    }
+			if (NextCurrentIndex >= CurrentRing.Num())
+				continue;
+
+			const float CurrentRatio = static_cast<float>(CurrentIndex) / CurrentRing.Num();
+			const float NextCurrentRatio = static_cast<float>(NextCurrentIndex) / CurrentRing.Num();
+
+			const int32 NextRingIndex = FMath::Clamp(FMath::RoundToInt(CurrentRatio * NextRing.Num()), 0, NextRing.Num() - 1);
+			const int32 NextRingNextIndex =
+				FMath::Clamp(FMath::RoundToInt(NextCurrentRatio * NextRing.Num()), 0, NextRing.Num() - 1);
+
+			AddQuad(CurrentRing[CurrentIndex], NextRing[NextRingIndex], NextRing[NextRingNextIndex], CurrentRing[NextCurrentIndex]);
+		}
+	}
 }
 
 void FFrustumBuilder::GenerateTopGeometry()
 {
-    GenerateCapGeometry(Frustum.GetHalfHeight(), Frustum.TopSides, Frustum.TopRadius, true);
+	GenerateCapGeometry(Frustum.GetHalfHeight(), Frustum.TopSides, Frustum.TopRadius, true);
 }
 
 void FFrustumBuilder::GenerateBottomGeometry()
 {
-    GenerateCapGeometry(-Frustum.GetHalfHeight(), Frustum.BottomSides, Frustum.BottomRadius, false);
+	GenerateCapGeometry(-Frustum.GetHalfHeight(), Frustum.BottomSides, Frustum.BottomRadius, false);
 }
 
 void FFrustumBuilder::GenerateTopBevelGeometry()
 {
-    if (Frustum.BevelRadius <= 0.0f)
-    {
-        return;
-    }
-
-    GenerateBevelGeometry(true);
+	if (Frustum.BevelRadius <= 0.0f)
+	{
+		return;
+	}
+	GenerateBevelGeometry(true);
 }
 
 void FFrustumBuilder::GenerateBottomBevelGeometry()
 {
-    if (Frustum.BevelRadius <= 0.0f)
-    {
-        return;
-    }
-
-    GenerateBevelGeometry(false);
+	if (Frustum.BevelRadius <= 0.0f)
+	{
+		return;
+	}
+	GenerateBevelGeometry(false);
 }
 
 void FFrustumBuilder::GenerateEndCaps()
 {
-    if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER)
-    {
-        return;
-    }
-    
-    GenerateEndCap(StartAngle, FVector(-1, 0, 0), true);   
-    GenerateEndCap(EndAngle, FVector(1, 0, 0), false);
+	if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	GenerateEndCap(StartAngle, FVector(-1, 0, 0), true);
+	GenerateEndCap(EndAngle, FVector(1, 0, 0), false);
 }
 
 void FFrustumBuilder::GenerateEndCap(float Angle, const FVector& Normal, bool IsStart)
 {
-    if (EndCapConnectionPoints.Num() < 3)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("GenerateEndCap - %s端面连接点不足，无法生成端面"), IsStart ? TEXT("起始") : TEXT("结束"));
-        return;
-    }
+	if (EndCapConnectionPoints.Num() < 3)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("GenerateEndCap - %s端面连接点不足，无法生成端面"), IsStart ? TEXT("起始") : TEXT("结束"));
+		return;
+	}
 
-    TArray<int32> RotatedConnectionPoints;
-    RotatedConnectionPoints.Reserve(EndCapConnectionPoints.Num());
+	TArray<int32> RotatedConnectionPoints;
+	RotatedConnectionPoints.Reserve(EndCapConnectionPoints.Num());
 
-    for (int32 VertexIndex : EndCapConnectionPoints)
-    {
-        FVector OriginalPos = GetPosByIndex(VertexIndex);
-        
-        FVector EndCapPos;
-        if (IsStart)
-        {
-            EndCapPos = OriginalPos;
-        }
-        else
-        {
-            const float Radius = FMath::Sqrt(OriginalPos.X * OriginalPos.X + OriginalPos.Y * OriginalPos.Y);
-            const float CurrentAngle = FMath::Atan2(OriginalPos.Y, OriginalPos.X);
-            
-            const float RotationAngle = EndAngle - StartAngle;
-            const float NewAngle = CurrentAngle + RotationAngle;
-            
-            const float NewX = Radius * FMath::Cos(NewAngle);
-            const float NewY = Radius * FMath::Sin(NewAngle);
-            EndCapPos = FVector(NewX, NewY, OriginalPos.Z);
-        }
-        
-        FVector EndCapNormal = Normal;
-        
-        if (Frustum.BendAmount > KINDA_SMALL_NUMBER)
-        {
-            const float Z = EndCapPos.Z;
-            const float HeightRatio = (Z + Frustum.GetHalfHeight()) / Frustum.Height;
-            const float BendInfluence = FMath::Sin(HeightRatio * PI);
-            
-            FVector BendNormal = FVector(0, 0, -BendInfluence).GetSafeNormal();
-            EndCapNormal = (EndCapNormal + BendNormal * Frustum.BendAmount).GetSafeNormal();
-        }
-        
-        int32 NewVertexIndex = GetOrAddVertex(EndCapPos, EndCapNormal, GenerateStableUVCustom(EndCapPos, EndCapNormal));
-        RotatedConnectionPoints.Add(NewVertexIndex);
-    }
+	for (int32 VertexIndex : EndCapConnectionPoints)
+	{
+		FVector OriginalPos = GetPosByIndex(VertexIndex);
 
-    GenerateEndCapTrianglesFromVertices(RotatedConnectionPoints, IsStart, Angle);
+		FVector EndCapPos;
+		if (IsStart)
+		{
+			EndCapPos = OriginalPos;
+		}
+		else
+		{
+			const float Radius = FMath::Sqrt(OriginalPos.X * OriginalPos.X + OriginalPos.Y * OriginalPos.Y);
+			const float CurrentAngle = FMath::Atan2(OriginalPos.Y, OriginalPos.X);
+
+			const float RotationAngle = EndAngle - StartAngle;
+			const float NewAngle = CurrentAngle + RotationAngle;
+
+			const float NewX = Radius * FMath::Cos(NewAngle);
+			const float NewY = Radius * FMath::Sin(NewAngle);
+			EndCapPos = FVector(NewX, NewY, OriginalPos.Z);
+		}
+
+		FVector EndCapNormal = Normal;
+
+		if (Frustum.BendAmount > KINDA_SMALL_NUMBER)
+		{
+			const float Z = EndCapPos.Z;
+			const float HeightRatio = (Z + Frustum.GetHalfHeight()) / Frustum.Height;
+			const float BendInfluence = FMath::Sin(HeightRatio * PI);
+
+			FVector BendNormal = FVector(0, 0, -BendInfluence).GetSafeNormal();
+			EndCapNormal = (EndCapNormal + BendNormal * Frustum.BendAmount).GetSafeNormal();
+		}
+
+		int32 NewVertexIndex = GetOrAddVertex(EndCapPos, EndCapNormal, GenerateStableUVCustom(EndCapPos, EndCapNormal));
+		RotatedConnectionPoints.Add(NewVertexIndex);
+	}
+
+	GenerateEndCapTrianglesFromVertices(RotatedConnectionPoints, IsStart, Angle);
 }
 
 TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 Sides)
 {
-    TArray<int32> VertexRing;
-    const float AngleStep = CalculateAngleStep(Sides);
+	TArray<int32> VertexRing;
+	const float AngleStep = CalculateAngleStep(Sides);
 
-    const int32 VertexCount = (Frustum.ArcAngle < 360.0f - KINDA_SMALL_NUMBER) ? Sides + 1 : Sides + 1; // 末尾会与首点合并
+	const int32 VertexCount = (Frustum.ArcAngle < 360.0f - KINDA_SMALL_NUMBER) ? Sides + 1 : Sides + 1; // 末尾会与首点合并
 
-    for (int32 i = 0; i < VertexCount; ++i)
-    {
-        const float Angle = StartAngle + (i * AngleStep);
-        
-        const float X = Radius * FMath::Cos(Angle);
-        const float Y = Radius * FMath::Sin(Angle);
-        const FVector Pos(X, Y, Z);
-        FVector Normal = FVector(X, Y, 0.0f).GetSafeNormal();
-        if (Normal.IsNearlyZero())
-        {
-            Normal = FVector(1.0f, 0.0f, 0.0f);
-        }
+	for (int32 i = 0; i < VertexCount; ++i)
+	{
+		const float Angle = StartAngle + (i * AngleStep);
 
-        const int32 VertexIndex = GetOrAddVertex(Pos, Normal, GenerateStableUVCustom(Pos, Normal));
-        VertexRing.Add(VertexIndex);
-    }
-    // 满圆时闭合最后一个点到第一个
-    if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && VertexRing.Num() > 0)
-    {
-        VertexRing.Last() = VertexRing[0];
-    }
+		const float X = Radius * FMath::Cos(Angle);
+		const float Y = Radius * FMath::Sin(Angle);
+		const FVector Pos(X, Y, Z);
+		FVector Normal = FVector(X, Y, 0.0f).GetSafeNormal();
+		if (Normal.IsNearlyZero())
+		{
+			Normal = FVector(1.0f, 0.0f, 0.0f);
+		}
 
-    return VertexRing;
+		const int32 VertexIndex = GetOrAddVertex(Pos, Normal, GenerateStableUVCustom(Pos, Normal));
+		VertexRing.Add(VertexIndex);
+	}
+	// 满圆时闭合最后一个点到第一个
+	if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && VertexRing.Num() > 0)
+	{
+		VertexRing.Last() = VertexRing[0];
+	}
+
+	return VertexRing;
 }
 
+
+// [MODIFIED] 恢复为简单逻辑，总是独立创建自己的顶点
 void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bool bIsTop)
 {
-    FVector Normal(0.0f, 0.0f, bIsTop ? 1.0f : -1.0f);
+	FVector Normal(0.0f, 0.0f, bIsTop ? 1.0f : -1.0f);
 
-    const FVector CenterPos(0.0f, 0.0f, Z);
-    const int32 CenterVertex = GetOrAddVertex(CenterPos, Normal, GenerateStableUVCustom(CenterPos, Normal));
+	const FVector CenterPos(0.0f, 0.0f, Z);
+	const int32 CenterVertex = GetOrAddVertex(CenterPos, Normal, GenerateStableUVCustom(CenterPos, Normal));
 
-    const float AngleStep = CalculateAngleStep(Sides);
+	// 如果没有倒角，顶/底面半径就是它本身；如果有，半径要向内收缩。
+	const float CapRadius = FMath::Max(0.0f, Radius - Frustum.BevelRadius);
 
-    for (int32 SideIndex = 0; SideIndex < Sides; ++SideIndex)
-    {
-        const float CurrentAngle = StartAngle + (SideIndex * AngleStep);
-        const float NextAngle = StartAngle + ((SideIndex + 1) * AngleStep);
+	const float AngleStep = CalculateAngleStep(Sides);
+	const int32 LoopCount = (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) ? Sides : Sides;
 
-        const float CurrentRadius = Radius - Frustum.BevelRadius;
+	for (int32 SideIndex = 0; SideIndex < LoopCount; ++SideIndex)
+	{
+		const float CurrentAngle = StartAngle + (SideIndex * AngleStep);
+		const float NextAngle = StartAngle + ((SideIndex + 1) * AngleStep);
 
-        const FVector CurrentPos(CurrentRadius * FMath::Cos(CurrentAngle), CurrentRadius * FMath::Sin(CurrentAngle), Z);
-        const FVector NextPos(CurrentRadius * FMath::Cos(NextAngle), CurrentRadius * FMath::Sin(NextAngle), Z);
+		const FVector CurrentPos(CapRadius * FMath::Cos(CurrentAngle), CapRadius * FMath::Sin(CurrentAngle), Z);
+		const FVector NextPos(CapRadius * FMath::Cos(NextAngle), CapRadius * FMath::Sin(NextAngle), Z);
 
-        FVector AdjustedNormal = Normal;
+		const int32 V1 = GetOrAddVertex(CurrentPos, Normal, GenerateStableUVCustom(CurrentPos, Normal));
+		const int32 V2 = GetOrAddVertex(NextPos, Normal, GenerateStableUVCustom(NextPos, Normal));
 
-        const int32 V1 = GetOrAddVertex(CurrentPos, AdjustedNormal, GenerateStableUVCustom(CurrentPos, AdjustedNormal));
-        const int32 V2 = GetOrAddVertex(NextPos, AdjustedNormal, GenerateStableUVCustom(NextPos, AdjustedNormal));
-
-        if (SideIndex == 0)
-        {
-            RecordEndCapConnectionPoint(V1);
-        }
-
-        if (bIsTop)
-        {
-            AddTriangle(CenterVertex, V2, V1);
-        }
-        else
-        {
-            AddTriangle(CenterVertex, V1, V2);
-        }
-    }
+		if (bIsTop)
+		{
+			AddTriangle(CenterVertex, V2, V1);
+		}
+		else
+		{
+			AddTriangle(CenterVertex, V1, V2);
+		}
+	}
 }
 
-// 几何上直接连接上下底的点和侧边变化的点
-// 法线上体现光滑
+// [MODIFIED] 移除顶点缓存逻辑，只负责生成倒角面本身
 void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop) {
-  const float HalfHeight = Frustum.GetHalfHeight();
-  const float BevelRadius = Frustum.BevelRadius;
+	const float HalfHeight = Frustum.GetHalfHeight();
+	const float BevelRadius = Frustum.BevelRadius;
 
-  if (BevelRadius <= 0.0f) {
-    return;
-  }
+	if (BevelRadius <= 0.0f) {
+		return;
+	}
 
-  const float Radius = bIsTop ? Frustum.TopRadius : Frustum.BottomRadius;
-  const int32 Sides = bIsTop ? Frustum.TopSides : Frustum.BottomSides;
-  const TArray<int32>& SideRing = bIsTop ? SideTopRing : SideBottomRing;
+	const float Radius = bIsTop ? Frustum.TopRadius : Frustum.BottomRadius;
+	const int32 Sides = bIsTop ? Frustum.TopSides : Frustum.BottomSides;
+	const TArray<int32>& SideRing = bIsTop ? SideTopRing : SideBottomRing;
 
-  // 检查 SideRing 是否为空
-  if (SideRing.Num() == 0) {
-    return;
-  }
+	if (SideRing.Num() == 0) {
+		return;
+	}
 
-  const float StartZ = GetPosByIndex(SideRing[0]).Z;
-  const float EndZ = bIsTop ? HalfHeight : -HalfHeight;
-  const float AngleStep = CalculateAngleStep(Sides);
+	const float EndZ = bIsTop ? HalfHeight : -HalfHeight;
+	const float AngleStep = CalculateAngleStep(Sides);
+	const int32 RingSize = (Frustum.ArcAngle < 360.0f - KINDA_SMALL_NUMBER) ? Sides + 1 : Sides + 1;
 
-  // 使用 SideRing 的大小而不是 VertexCount
-  const int32 RingSize = SideRing.Num();
+	TArray<int32> StartRing = SideRing;
+	TArray<int32> EndRing;
+	EndRing.Reserve(RingSize);
 
-  TArray<int32> StartRingForEndCap;
+	for (int32 s = 0; s < RingSize; ++s) {
+		const float angle = StartAngle + (s * AngleStep);
+		const FVector SidePos = GetPosByIndex(SideRing[s]);
 
-  // --- Generate Start Ring (Outer Ring of Bevel) ---
-  TArray<int32> StartRing;
-  StartRing.Reserve(RingSize);
+		FVector SideNormal = FVector(SidePos.X, SidePos.Y, 0.0f).GetSafeNormal();
+		if (SideNormal.IsNearlyZero())
+		{
+			SideNormal = FVector(FMath::Cos(angle), FMath::Sin(angle), 0.f);
+		}
+		FVector CapNormal = FVector(0.0f, 0.0f, bIsTop ? 1.0f : -1.0f);
+		FVector BevelNormal = (SideNormal + CapNormal).GetSafeNormal();
 
-  for (int32 s = 0; s < RingSize; ++s) {
-    // Position is taken from the existing side ring.
-    const FVector Position = GetPosByIndex(SideRing[s]);
+		StartRing[s] = GetOrAddVertex(SidePos, BevelNormal, GenerateStableUVCustom(SidePos, BevelNormal));
 
-    // To create a smooth transition, new vertices are created at the same
-    // positions but with blended normals suitable for the start of the bevel.
-    const float VertexHeightRatio = (Position.Z + HalfHeight) / Frustum.Height;
-    const float BevelInfluence = FMath::Clamp(VertexHeightRatio, 0.0f, 1.0f);
+		const float CapRadius = FMath::Max(0.0f, Radius - Frustum.BevelRadius);
+		const FVector CapPos(CapRadius * FMath::Cos(angle), CapRadius * FMath::Sin(angle), EndZ);
+		EndRing.Add(GetOrAddVertex(CapPos, BevelNormal, GenerateStableUVCustom(CapPos, BevelNormal)));
+	}
 
-    FVector SideNormal = FVector(Position.X, Position.Y, 0.0f).GetSafeNormal();
-    FVector CapNormal = FVector(0.0f, 0.0f, bIsTop ? 1.0f : -1.0f);
-    FVector Normal =
-        FMath::Lerp(SideNormal, CapNormal, BevelInfluence).GetSafeNormal();
+	if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && EndRing.Num() > 0) {
+		EndRing.Last() = EndRing[0];
+	}
 
-    StartRing.Add(GetOrAddVertex(Position, Normal,
-                                 GenerateStableUVCustom(Position, Normal)));
-  }
+	// 连接内外环形成倒角面
+	const int32 ConnectLoopCount = (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) ? Sides : Sides;
+	for (int32 s = 0; s < ConnectLoopCount; ++s) {
+		const int32 V00 = StartRing[s];
+		const int32 V10 = EndRing[s];
+		const int32 V01 = StartRing[s + 1];
+		const int32 V11 = EndRing[s + 1];
 
-  // Close the ring if it's a full circle.
-  if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && StartRing.Num() > 0) {
-    StartRing.Last() = StartRing[0];
-  }
-
-  StartRingForEndCap.Add(StartRing[0]);
-
-  // --- Generate End Ring (Inner Ring of Bevel) ---
-  TArray<int32> EndRing;
-  EndRing.Reserve(RingSize);
-
-  for (int32 s = 0; s < RingSize; ++s) {
-    const float angle = StartAngle + (s * AngleStep);
-    const float CapRadius = FMath::Max(0.0f, Radius - Frustum.BevelRadius);
-    const FVector Position(CapRadius * FMath::Cos(angle),
-                           CapRadius * FMath::Sin(angle), EndZ);
-
-    // Calculate normals for the inner ring.
-    const float VertexHeightRatio = (Position.Z + HalfHeight) / Frustum.Height;
-    const float BevelInfluence = FMath::Clamp(VertexHeightRatio, 0.0f, 1.0f);
-
-    FVector SideNormal = FVector(Position.X, Position.Y, 0.0f).GetSafeNormal();
-    FVector CapNormal = FVector(0.0f, 0.0f, bIsTop ? 1.0f : -1.0f);
-    FVector Normal =
-        FMath::Lerp(SideNormal, CapNormal, BevelInfluence).GetSafeNormal();
-
-    EndRing.Add(GetOrAddVertex(Position, Normal,
-                               GenerateStableUVCustom(Position, Normal)));
-  }
-
-  // Close the ring if it's a full circle.
-  if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && EndRing.Num() > 0) {
-    EndRing.Last() = EndRing[0];
-  }
-
-  StartRingForEndCap.Add(EndRing[0]);
-
-  // --- Connect the Start and End rings with quadrilaterals ---
-  for (int32 s = 0; s < RingSize - 1; ++s) {
-    const int32 V00 = StartRing[s];
-    const int32 V10 = EndRing[s];
-    const int32 V01 = StartRing[s + 1];
-    const int32 V11 = EndRing[s + 1];
-
-    if (bIsTop) {
-      AddQuad(V00, V10, V11, V01);
-    } else {
-      AddQuad(V00, V01, V11, V10);
-    }
-  }
-
-  // --- Record connection points for generating the end cap surface ---
-  if (bIsTop) {
-    for (int i = StartRingForEndCap.Num() - 1; i >= 0; i--) {
-      RecordEndCapConnectionPoint(StartRingForEndCap[i]);
-    }
-  } else {
-    for (int i = 0; i < StartRingForEndCap.Num(); i++) {
-      RecordEndCapConnectionPoint(StartRingForEndCap[i]);
-    }
-  }
+		if (bIsTop) {
+			AddQuad(V00, V10, V11, V01);
+		}
+		else {
+			AddQuad(V00, V01, V11, V10);
+		}
+	}
 }
 
 float FFrustumBuilder::CalculateBentRadius(float BaseRadius, float HeightRatio)
 {
-    const float BendFactor = FMath::Sin(HeightRatio * PI);
-    const float BentRadius = BaseRadius + Frustum.BendAmount * BendFactor * BaseRadius;
+	const float BendFactor = FMath::Sin(HeightRatio * PI);
+	const float BentRadius = BaseRadius + Frustum.BendAmount * BendFactor * BaseRadius;
 
-    if (Frustum.MinBendRadius > KINDA_SMALL_NUMBER)
-    {
-        return FMath::Max(BentRadius, Frustum.MinBendRadius);
-    }
+	if (Frustum.MinBendRadius > KINDA_SMALL_NUMBER)
+	{
+		return FMath::Max(BentRadius, Frustum.MinBendRadius);
+	}
 
-    return FMath::Max(BentRadius, KINDA_SMALL_NUMBER);
+	return FMath::Max(BentRadius, KINDA_SMALL_NUMBER);
 }
 
 float FFrustumBuilder::CalculateBevelHeight(float Radius)
 {
-    return FMath::Min(Frustum.BevelRadius, Radius);
+	return FMath::Min(Frustum.BevelRadius, Radius);
 }
 
 float FFrustumBuilder::CalculateHeightRatio(float Z)
 {
-    const float HalfHeight = Frustum.GetHalfHeight();
-    return (Z + HalfHeight) / Frustum.Height;
+	const float HalfHeight = Frustum.GetHalfHeight();
+	return (Z + HalfHeight) / Frustum.Height;
 }
 
 float FFrustumBuilder::CalculateAngleStep(int32 Sides)
 {
-    return ArcAngleRadians / Sides;
+	if (Sides == 0) return 0.0f;
+	return ArcAngleRadians / Sides;
 }
-
-
 
 void FFrustumBuilder::GenerateEndCapTrianglesFromVertices(const TArray<int32>& OrderedVertices, bool IsStart, float Angle)
 {
-    if (OrderedVertices.Num() < 2)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("GenerateEndCapTrianglesFromVertices - 顶点数量不足，无法生成面"));
-        return;
-    }
+	if (OrderedVertices.Num() < 2)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("GenerateEndCapTrianglesFromVertices - 顶点数量不足，无法生成面"));
+		return;
+	}
 
-    TArray<int32> SortedVertices = OrderedVertices;
-    SortedVertices.Sort([this](const int32& A, const int32& B) -> bool
-    {
-        FVector PosA = GetPosByIndex(A);
-        FVector PosB = GetPosByIndex(B);
-        return PosA.Z > PosB.Z;
-    });
+	TArray<int32> SortedVertices = OrderedVertices;
+	SortedVertices.Sort([this](const int32& A, const int32& B) -> bool
+		{
+			FVector PosA = GetPosByIndex(A);
+			FVector PosB = GetPosByIndex(B);
+			return PosA.Z > PosB.Z;
+		});
 
-    const FVector EndCapNormal = IsStart ? FVector(-1, 0, 0) : FVector(1, 0, 0);
+	const FVector EndCapNormal = IsStart ? FVector(-1, 0, 0) : FVector(1, 0, 0);
 
-    if (SortedVertices.Num() == 2)
-    {
-        const int32 V1 = SortedVertices[0];
-        const int32 V2 = SortedVertices[1];
-        
-        FVector Pos1 = GetPosByIndex(V1);
-        FVector Pos2 = GetPosByIndex(V2);
-        
-        const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), EndCapNormal, GenerateStableUVCustom(FVector(0, 0, Pos1.Z), EndCapNormal));
-        const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), EndCapNormal, GenerateStableUVCustom(FVector(0, 0, Pos2.Z), EndCapNormal));
-        
-        if (IsStart)
-        {
-            AddTriangle(V1, V2, CenterV1);
-            AddTriangle(V2, CenterV2, CenterV1);
-        }
-        else
-        {
-            AddTriangle(V2, V1, CenterV1);
-            AddTriangle(CenterV1, CenterV2, V2);
-        }
-    }
-    else
-    {
-        for (int32 i = 0; i < SortedVertices.Num() - 1; ++i)
-        {
-            const int32 V1 = SortedVertices[i];
-            const int32 V2 = SortedVertices[i + 1];
-            
-            FVector Pos1 = GetPosByIndex(V1);
-            FVector Pos2 = GetPosByIndex(V2);
-            
-            const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), EndCapNormal, GenerateStableUVCustom(FVector(0, 0, Pos1.Z), EndCapNormal));
-            const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), EndCapNormal, GenerateStableUVCustom(FVector(0, 0, Pos2.Z), EndCapNormal));
-            
-            if (IsStart)
-            {
-                AddTriangle(V1, V2, CenterV1);
-                AddTriangle(V2, CenterV2, CenterV1);
-            }
-            else
-            {
-                AddTriangle(V2, V1, CenterV1);
-                AddTriangle(CenterV1, CenterV2, V2);
-            }
-        }
-    }
+	if (SortedVertices.Num() == 2)
+	{
+		const int32 V1 = SortedVertices[0];
+		const int32 V2 = SortedVertices[1];
+
+		FVector Pos1 = GetPosByIndex(V1);
+		FVector Pos2 = GetPosByIndex(V2);
+
+		const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), EndCapNormal, GenerateStableUVCustom(FVector(0, 0, Pos1.Z), EndCapNormal));
+		const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), EndCapNormal, GenerateStableUVCustom(FVector(0, 0, Pos2.Z), EndCapNormal));
+
+		if (IsStart)
+		{
+			AddTriangle(V1, V2, CenterV1);
+			AddTriangle(V2, CenterV2, CenterV1);
+		}
+		else
+		{
+			AddTriangle(V2, V1, CenterV1);
+			AddTriangle(CenterV1, CenterV2, V2);
+		}
+	}
+	else
+	{
+		for (int32 i = 0; i < SortedVertices.Num() - 1; ++i)
+		{
+			const int32 V1 = SortedVertices[i];
+			const int32 V2 = SortedVertices[i + 1];
+
+			FVector Pos1 = GetPosByIndex(V1);
+			FVector Pos2 = GetPosByIndex(V2);
+
+			const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), EndCapNormal, GenerateStableUVCustom(FVector(0, 0, Pos1.Z), EndCapNormal));
+			const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), EndCapNormal, GenerateStableUVCustom(FVector(0, 0, Pos2.Z), EndCapNormal));
+
+			if (IsStart)
+			{
+				AddTriangle(V1, V2, CenterV1);
+				AddTriangle(V2, CenterV2, CenterV1);
+			}
+			else
+			{
+				AddTriangle(V2, V1, CenterV1);
+				AddTriangle(CenterV1, CenterV2, V2);
+			}
+		}
+	}
 }
 
 void FFrustumBuilder::RecordEndCapConnectionPoint(int32 VertexIndex)
 {
-    EndCapConnectionPoints.Add(VertexIndex);
+	EndCapConnectionPoints.Add(VertexIndex);
 }
 
 const TArray<int32>& FFrustumBuilder::GetEndCapConnectionPoints() const
 {
-    return EndCapConnectionPoints;
+	return EndCapConnectionPoints;
 }
 
 void FFrustumBuilder::ClearEndCapConnectionPoints()
 {
-    EndCapConnectionPoints.Empty();
+	EndCapConnectionPoints.Empty();
 }
 
 FVector2D FFrustumBuilder::GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const
 {
-    const float X = Position.X;
-    const float Y = Position.Y;
-    const float Z = Position.Z;
-    
-    float Angle = FMath::Atan2(Y, X);
-    if (Angle < 0) Angle += 2.0f * PI;
-    
-    if (FMath::Abs(Normal.Z) > 0.9f)
-    {
-        // 顶底面：使用单UV系统（0-1范围）
-        float U = Angle / (2.0f * PI);  // 0.0 到 1.0
-        float V = (Z + Frustum.GetHalfHeight()) / Frustum.Height;  // 0.0 到 1.0
-        
-        if (Z > 0)
-        {
-            // 顶面：V = 0.5
-            V = 0.5f;
-        }
-        else
-        {
-            // 底面：V = 1.0
-            V = 1.0f;
-        }
-        
-        return FVector2D(U, V);
-    }
-    else if (FMath::Abs(Normal.X) > 0.9f || FMath::Abs(Normal.Y) > 0.9f)
-    {
-        // 侧面：使用单UV系统（0-1范围）
-        const float BaseV = (Z + Frustum.GetHalfHeight()) / Frustum.Height;
-        const float AdjustedV = 0.1f + BaseV * 0.8f;  // 0.1 到 0.9
-        
-        if (FMath::Abs(Normal.X) > 0.9f)
-        {
-            if (Normal.X < 0)
-            {
-                // 左面：U从0.0到0.25
-                const float U = (Angle / (2.0f * PI)) * 0.25f;
-                return FVector2D(U, AdjustedV);
-            }
-            else
-            {
-                // 右面：U从0.75到1.0
-                const float U = 0.75f + (Angle / (2.0f * PI)) * 0.25f;
-                return FVector2D(U, AdjustedV);
-            }
-        }
-        else
-        {
-            if (Normal.Y < 0)
-            {
-                // 后面：U从0.25到0.5
-                const float U = 0.25f + (Angle / (2.0f * PI)) * 0.25f;
-                return FVector2D(U, AdjustedV);
-            }
-            else
-            {
-                // 前面：U从0.5到0.75
-                const float U = 0.5f + (Angle / (2.0f * PI)) * 0.25f;
-                return FVector2D(U, AdjustedV);
-            }
-        }
-    }
-    else
-    {
-        // 倒角面：使用单UV系统（0-1范围）
-        const float U = 0.25f + (Angle / (2.0f * PI)) * 0.5f;  // 0.25 到 0.75
-        const float V = (Z + Frustum.GetHalfHeight()) / Frustum.Height;  // 0.0 到 1.0
-        return FVector2D(U, V);
-    }
+	const float X = Position.X;
+	const float Y = Position.Y;
+	const float Z = Position.Z;
+
+	float Angle = FMath::Atan2(Y, X);
+	if (Angle < 0) Angle += 2.0f * PI;
+
+	if (FMath::Abs(Normal.Z) > 0.9f)
+	{
+		// 顶底面：使用单UV系统（0-1范围）
+		float U = Angle / (2.0f * PI);  // 0.0 到 1.0
+		float V = (Z + Frustum.GetHalfHeight()) / Frustum.Height;  // 0.0 到 1.0
+
+		if (Z > 0)
+		{
+			// 顶面：V = 0.5
+			V = 0.5f;
+		}
+		else
+		{
+			// 底面：V = 1.0
+			V = 1.0f;
+		}
+
+		return FVector2D(U, V);
+	}
+	else if (FMath::Abs(Normal.X) > 0.9f || FMath::Abs(Normal.Y) > 0.9f)
+	{
+		// 侧面：使用单UV系统（0-1范围）
+		const float BaseV = (Z + Frustum.GetHalfHeight()) / Frustum.Height;
+		const float AdjustedV = 0.1f + BaseV * 0.8f;  // 0.1 到 0.9
+
+		if (FMath::Abs(Normal.X) > 0.9f)
+		{
+			if (Normal.X < 0)
+			{
+				// 左面：U从0.0到0.25
+				const float U = (Angle / (2.0f * PI)) * 0.25f;
+				return FVector2D(U, AdjustedV);
+			}
+			else
+			{
+				// 右面：U从0.75到1.0
+				const float U = 0.75f + (Angle / (2.0f * PI)) * 0.25f;
+				return FVector2D(U, AdjustedV);
+			}
+		}
+		else
+		{
+			if (Normal.Y < 0)
+			{
+				// 后面：U从0.25到0.5
+				const float U = 0.25f + (Angle / (2.0f * PI)) * 0.25f;
+				return FVector2D(U, AdjustedV);
+			}
+			else
+			{
+				// 前面：U从0.5到0.75
+				const float U = 0.5f + (Angle / (2.0f * PI)) * 0.25f;
+				return FVector2D(U, AdjustedV);
+			}
+		}
+	}
+	else
+	{
+		// 倒角面：使用单UV系统（0-1范围）
+		const float U = 0.25f + (Angle / (2.0f * PI)) * 0.5f;  // 0.25 到 0.75
+		const float V = (Z + Frustum.GetHalfHeight()) / Frustum.Height;  // 0.0 到 1.0
+		return FVector2D(U, V);
+	}
 }
 
 void FFrustumBuilder::CalculateAngles()
 {
-    ArcAngleRadians = FMath::DegreesToRadians(Frustum.ArcAngle);
-    StartAngle = -ArcAngleRadians / 2.0f;
-    EndAngle = ArcAngleRadians / 2.0f;
+	ArcAngleRadians = FMath::DegreesToRadians(Frustum.ArcAngle);
+	StartAngle = -ArcAngleRadians / 2.0f;
+	EndAngle = ArcAngleRadians / 2.0f;
 }
