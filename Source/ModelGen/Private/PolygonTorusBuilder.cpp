@@ -44,36 +44,41 @@ int32 FPolygonTorusBuilder::CalculateTriangleCountEstimate() const {
 }
 
 void FPolygonTorusBuilder::GenerateVertices() {
-  const float MajorRad = PolygonTorus.MajorRadius;
-  const float MinorRad = PolygonTorus.MinorRadius;
-  const int32 MajorSegs = PolygonTorus.MajorSegments;
-  const int32 MinorSegs = PolygonTorus.MinorSegments;
-  const float AngleRad = FMath::DegreesToRadians(PolygonTorus.TorusAngle);
+    const float MajorRad = PolygonTorus.MajorRadius;
+    const float MinorRad = PolygonTorus.MinorRadius;
+    const int32 MajorSegs = PolygonTorus.MajorSegments;
+    const int32 MinorSegs = PolygonTorus.MinorSegments;
+    const float AngleRad = FMath::DegreesToRadians(PolygonTorus.TorusAngle);
 
-  const float StartAngle = -AngleRad / 2.0f;
-  const float MajorAngleStep = AngleRad / MajorSegs;
-  const float MinorAngleStep = 2.0f * PI / MinorSegs;
+    const float StartAngle = -AngleRad / 2.0f;
+    const float MajorAngleStep = AngleRad / MajorSegs;
+    const float MinorAngleStep = 2.0f * PI / MinorSegs;
 
-  for (int32 MajorIndex = 0; MajorIndex <= MajorSegs; ++MajorIndex) {
-    const float MajorAngle = StartAngle + MajorIndex * MajorAngleStep;
-    const float MajorCos = FMath::Cos(MajorAngle);
-    const float MajorSin = FMath::Sin(MajorAngle);
+    for (int32 MajorIndex = 0; MajorIndex <= MajorSegs; ++MajorIndex) {
+        const float MajorAngle = StartAngle + MajorIndex * MajorAngleStep;
+        const float MajorCos = FMath::Cos(MajorAngle);
+        const float MajorSin = FMath::Sin(MajorAngle);
 
-    for (int32 MinorIndex = 0; MinorIndex < MinorSegs; ++MinorIndex) {
-      const float MinorAngle = MinorIndex * MinorAngleStep;
-      const float MinorCos = FMath::Cos(MinorAngle);
-      const float MinorSin = FMath::Sin(MinorAngle);
+        for (int32 MinorIndex = 0; MinorIndex < MinorSegs; ++MinorIndex) {
+            // 修改次环的起始角度，使其第一个面平行于水平面
+            // 添加90度偏移（HALF_PI），使次环从顶部开始而不是从侧面开始
+            const float MinorAngle = MinorIndex * MinorAngleStep + HALF_PI;
+            const float MinorCos = FMath::Cos(MinorAngle);
+            const float MinorSin = FMath::Sin(MinorAngle);
 
-      const float X = (MajorRad + MinorRad * MinorCos) * MajorCos;
-      const float Y = (MajorRad + MinorRad * MinorCos) * MajorSin;
-      const float Z = MinorRad * MinorSin;
+            // 保持主环的坐标计算不变
+            const float X = (MajorRad + MinorRad * MinorCos) * MajorCos;
+            const float Y = (MajorRad + MinorRad * MinorCos) * MajorSin;
+            const float Z = MinorRad * MinorSin;
 
-      const FVector Position(X, Y, Z);
-      const FVector Normal = FVector(MinorCos * MajorCos, MinorCos * MajorSin, MinorSin).GetSafeNormal();
+            const FVector Position(X, Y, Z);
 
-      GetOrAddVertexWithDualUV(Position, Normal);
+            // 调整法线计算以匹配新的次环方向
+            const FVector Normal = FVector(MinorCos * MajorCos, MinorCos * MajorSin, MinorSin).GetSafeNormal();
+
+            GetOrAddVertexWithDualUV(Position, Normal);
+        }
     }
-  }
 }
 
 void FPolygonTorusBuilder::GenerateTriangles() {

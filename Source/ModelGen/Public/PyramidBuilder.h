@@ -71,6 +71,6 @@ private:
     // 新增：用于直接传入UV
     int32 GetOrAddVertexWithUV(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
 
-    // 保留原始 GetOrAddVertexWithDualUV，用于金字塔侧面和底面
+    // 保留原始 GetOrAddVertexWithDualUV，用于棱锥侧面和底面
     int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal);
 };

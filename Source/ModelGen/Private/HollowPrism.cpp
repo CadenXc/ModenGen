@@ -143,7 +143,7 @@ void AHollowPrism::SetOuterRadius(float NewOuterRadius)
         OuterRadius = NewOuterRadius;
         if (OuterRadius < InnerRadius)
         {
-            InnerRadius = OuterRadius - 0.1f;
+            InnerRadius = OuterRadius - KINDA_SMALL_NUMBER;
         }
         if (ProceduralMeshComponent)
         {
