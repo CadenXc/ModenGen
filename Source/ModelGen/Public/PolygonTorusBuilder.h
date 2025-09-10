@@ -26,6 +26,10 @@ public:
 private:
     const APolygonTorus& PolygonTorus;
 
+    // 新增：用于存储封盖边缘顶点索引的数组
+    TArray<int32> StartCapIndices;
+    TArray<int32> EndCapIndices;
+
     void GenerateVertices();
     void GenerateTriangles();
     void GenerateEndCaps();
