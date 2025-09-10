@@ -3,6 +3,7 @@
 #include "PolygonTorusBuilder.h"
 #include "PolygonTorus.h"
 #include "ModelGenMeshData.h"
+#include "CoreMinimal.h"
 
 FPolygonTorusBuilder::FPolygonTorusBuilder(const APolygonTorus& InPolygonTorus)
     : PolygonTorus(InPolygonTorus) {
@@ -44,83 +45,74 @@ int32 FPolygonTorusBuilder::CalculateTriangleCountEstimate() const {
 }
 
 void FPolygonTorusBuilder::GenerateVertices() {
+    // 直接计算圆环参数
     const float MajorRad = PolygonTorus.MajorRadius;
     const float MinorRad = PolygonTorus.MinorRadius;
     const int32 MajorSegs = PolygonTorus.MajorSegments;
     const int32 MinorSegs = PolygonTorus.MinorSegments;
     const float AngleRad = FMath::DegreesToRadians(PolygonTorus.TorusAngle);
-
+    
     const float StartAngle = -AngleRad / 2.0f;
     const float MajorAngleStep = AngleRad / MajorSegs;
     const float MinorAngleStep = 2.0f * PI / MinorSegs;
-
+    
+    // 生成主环和次环顶点
+    // 主环：沿圆环中心线分布
+    // 次环：每个主环位置上的圆形截面
     for (int32 MajorIndex = 0; MajorIndex <= MajorSegs; ++MajorIndex) {
         const float MajorAngle = StartAngle + MajorIndex * MajorAngleStep;
         const float MajorCos = FMath::Cos(MajorAngle);
         const float MajorSin = FMath::Sin(MajorAngle);
-
+        
+        // 为每个主环位置生成次环顶点
         for (int32 MinorIndex = 0; MinorIndex < MinorSegs; ++MinorIndex) {
-            // 修改次环的起始角度，使其第一个面平行于水平面
-            // 添加90度偏移（HALF_PI），使次环从顶部开始而不是从侧面开始
-            const float MinorAngle = MinorIndex * MinorAngleStep + HALF_PI;
+            // 计算次环角度，确保第一个面平行于水平面且在模型最下面
+            // 调整角度使第一个点和第二个点有相同的Z值（水平面）
+            // 使用数学公式计算正确的角度偏移，使水平面在最下面
+            const float AngleOffset = -(PI / 2.0f) - (MinorAngleStep / 2.0f);
+            const float MinorAngle = MinorIndex * MinorAngleStep + AngleOffset;
             const float MinorCos = FMath::Cos(MinorAngle);
             const float MinorSin = FMath::Sin(MinorAngle);
-
-            // 保持主环的坐标计算不变
-            const float X = (MajorRad + MinorRad * MinorCos) * MajorCos;
-            const float Y = (MajorRad + MinorRad * MinorCos) * MajorSin;
-            const float Z = MinorRad * MinorSin;
-
-            const FVector Position(X, Y, Z);
-
-            // 调整法线计算以匹配新的次环方向
-            const FVector Normal = FVector(MinorCos * MajorCos, MinorCos * MajorSin, MinorSin).GetSafeNormal();
-
-            GetOrAddVertexWithDualUV(Position, Normal);
+            
+            // 计算次环在局部坐标系中的位置
+            // MinorCos对应径向方向，MinorSin对应Z轴方向
+            const float RadialOffset = MinorCos * MinorRad;
+            const float ZOffset = MinorSin * MinorRad;
+            
+            // 转换到世界坐标系
+            const FVector VertexPosition(
+                (MajorRad + RadialOffset) * MajorCos,
+                (MajorRad + RadialOffset) * MajorSin,
+                ZOffset
+            );
+            
+            // 计算顶点法线
+            const FVector VertexNormal = FVector(MinorCos * MajorCos, MinorCos * MajorSin, MinorSin).GetSafeNormal();
+            
+            GetOrAddVertexWithDualUV(VertexPosition, VertexNormal);
         }
     }
 }
 
 void FPolygonTorusBuilder::GenerateTriangles() {
-  const int32 MajorSegs = PolygonTorus.MajorSegments;
-  const int32 MinorSegs = PolygonTorus.MinorSegments;
-  const bool bIsFullCircle = FMath::IsNearlyEqual(PolygonTorus.TorusAngle, 360.0f);
+    const int32 MajorSegs = PolygonTorus.MajorSegments;
+    const int32 MinorSegs = PolygonTorus.MinorSegments;
+    const bool bIsFullCircle = FMath::IsNearlyEqual(PolygonTorus.TorusAngle, 360.0f);
 
-  if (bIsFullCircle) {
     for (int32 MajorIndex = 0; MajorIndex < MajorSegs; ++MajorIndex) {
-      for (int32 MinorIndex = 0; MinorIndex < MinorSegs; ++MinorIndex) {
-        const int32 CurrentMajor = MajorIndex;
-        const int32 NextMajor = (MajorIndex + 1) % MajorSegs;
-        const int32 CurrentMinor = MinorIndex;
-        const int32 NextMinor = (MinorIndex + 1) % MinorSegs;
+        for (int32 MinorIndex = 0; MinorIndex < MinorSegs; ++MinorIndex) {
+            const int32 NextMajor = bIsFullCircle ? (MajorIndex + 1) % MajorSegs : MajorIndex + 1;
+            const int32 NextMinor = (MinorIndex + 1) % MinorSegs;
 
-        const int32 V0 = CurrentMajor * MinorSegs + CurrentMinor;
-        const int32 V1 = CurrentMajor * MinorSegs + NextMinor;
-        const int32 V2 = NextMajor * MinorSegs + NextMinor;
-        const int32 V3 = NextMajor * MinorSegs + CurrentMinor;
+            const int32 V0 = MajorIndex * MinorSegs + MinorIndex;
+            const int32 V1 = MajorIndex * MinorSegs + NextMinor;
+            const int32 V2 = NextMajor * MinorSegs + NextMinor;
+            const int32 V3 = NextMajor * MinorSegs + MinorIndex;
 
-        AddTriangle(V0, V1, V2);
-        AddTriangle(V0, V2, V3);
-      }
+            AddTriangle(V0, V1, V2);
+            AddTriangle(V0, V2, V3);
+        }
     }
-  } else {
-    for (int32 MajorIndex = 0; MajorIndex < MajorSegs; ++MajorIndex) {
-      for (int32 MinorIndex = 0; MinorIndex < MinorSegs; ++MinorIndex) {
-        const int32 CurrentMajor = MajorIndex;
-        const int32 NextMajor = MajorIndex + 1;
-        const int32 CurrentMinor = MinorIndex;
-        const int32 NextMinor = (MinorIndex + 1) % MinorSegs;
-
-        const int32 V0 = CurrentMajor * MinorSegs + CurrentMinor;
-        const int32 V1 = CurrentMajor * MinorSegs + NextMinor;
-        const int32 V2 = NextMajor * MinorSegs + NextMinor;
-        const int32 V3 = NextMajor * MinorSegs + CurrentMinor;
-
-        AddTriangle(V0, V1, V2);
-        AddTriangle(V0, V2, V3);
-      }
-    }
-  }
 }
 
 void FPolygonTorusBuilder::GenerateEndCaps() {
@@ -344,3 +336,4 @@ int32 FPolygonTorusBuilder::GetOrAddVertexWithDualUV(const FVector& Pos, const F
 
   return FModelGenMeshBuilder::GetOrAddVertexWithDualUV(Pos, Normal, MainUV, SecondaryUV);
 }
+
