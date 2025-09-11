@@ -138,7 +138,7 @@ void FFrustumBuilder::CreateSideGeometry()
 					Normal = (Normal + FVector(0, 0, NormalZ)).GetSafeNormal();
 				}
 
-				const int32 VertexIndex = GetOrAddVertex(InterpolatedPos, Normal, GenerateStableUVCustom(InterpolatedPos, Normal));
+				const int32 VertexIndex = GetOrAddVertex(InterpolatedPos, Normal);
 				CurrentRing.Add(VertexIndex);
 			}
 
@@ -261,7 +261,7 @@ void FFrustumBuilder::GenerateEndCap(float Angle, const FVector& Normal, bool Is
 			EndCapNormal = (EndCapNormal + BendNormal * Frustum.BendAmount).GetSafeNormal();
 		}
 
-		int32 NewVertexIndex = GetOrAddVertex(EndCapPos, EndCapNormal, GenerateStableUVCustom(EndCapPos, EndCapNormal));
+		int32 NewVertexIndex = GetOrAddVertex(EndCapPos, EndCapNormal);
 		RotatedConnectionPoints.Add(NewVertexIndex);
 	}
 
@@ -288,7 +288,7 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 S
 			Normal = FVector(1.0f, 0.0f, 0.0f);
 		}
 
-		const int32 VertexIndex = GetOrAddVertex(Pos, Normal, GenerateStableUVCustom(Pos, Normal));
+		const int32 VertexIndex = GetOrAddVertex(Pos, Normal);
 		VertexRing.Add(VertexIndex);
 	}
 	// 满圆时闭合最后一个点到第一个
@@ -307,7 +307,7 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bo
 	FVector Normal(0.0f, 0.0f, bIsTop ? 1.0f : -1.0f);
 
 	const FVector CenterPos(0.0f, 0.0f, Z);
-	const int32 CenterVertex = GetOrAddVertex(CenterPos, Normal, GenerateStableUVCustom(CenterPos, Normal));
+	const int32 CenterVertex = GetOrAddVertex(CenterPos, Normal);
 
 	// 如果没有倒角，顶/底面半径就是它本身；如果有，半径要向内收缩。
 	const float CapRadius = FMath::Max(0.0f, Radius - Frustum.BevelRadius);
@@ -323,8 +323,8 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bo
 		const FVector CurrentPos(CapRadius * FMath::Cos(CurrentAngle), CapRadius * FMath::Sin(CurrentAngle), Z);
 		const FVector NextPos(CapRadius * FMath::Cos(NextAngle), CapRadius * FMath::Sin(NextAngle), Z);
 
-		const int32 V1 = GetOrAddVertex(CurrentPos, Normal, GenerateStableUVCustom(CurrentPos, Normal));
-		const int32 V2 = GetOrAddVertex(NextPos, Normal, GenerateStableUVCustom(NextPos, Normal));
+		const int32 V1 = GetOrAddVertex(CurrentPos, Normal);
+		const int32 V2 = GetOrAddVertex(NextPos, Normal);
 
 		if (bIsTop)
 		{
@@ -374,11 +374,11 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop) {
 		FVector CapNormal = FVector(0.0f, 0.0f, bIsTop ? 1.0f : -1.0f);
 		FVector BevelNormal = (SideNormal + CapNormal).GetSafeNormal();
 
-		StartRing[s] = GetOrAddVertex(SidePos, BevelNormal, GenerateStableUVCustom(SidePos, BevelNormal));
+		StartRing[s] = GetOrAddVertex(SidePos, BevelNormal);
 
 		const float CapRadius = FMath::Max(0.0f, Radius - Frustum.BevelRadius);
 		const FVector CapPos(CapRadius * FMath::Cos(angle), CapRadius * FMath::Sin(angle), EndZ);
-		EndRing.Add(GetOrAddVertex(CapPos, BevelNormal, GenerateStableUVCustom(CapPos, BevelNormal)));
+		EndRing.Add(GetOrAddVertex(CapPos, BevelNormal));
 	}
 
 	if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && EndRing.Num() > 0) {
@@ -458,8 +458,8 @@ void FFrustumBuilder::GenerateEndCapTrianglesFromVertices(const TArray<int32>& O
 		FVector Pos1 = GetPosByIndex(V1);
 		FVector Pos2 = GetPosByIndex(V2);
 
-		const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), EndCapNormal, GenerateStableUVCustom(FVector(0, 0, Pos1.Z), EndCapNormal));
-		const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), EndCapNormal, GenerateStableUVCustom(FVector(0, 0, Pos2.Z), EndCapNormal));
+		const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), EndCapNormal);
+		const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), EndCapNormal);
 
 		if (IsStart)
 		{
@@ -482,8 +482,8 @@ void FFrustumBuilder::GenerateEndCapTrianglesFromVertices(const TArray<int32>& O
 			FVector Pos1 = GetPosByIndex(V1);
 			FVector Pos2 = GetPosByIndex(V2);
 
-			const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), EndCapNormal, GenerateStableUVCustom(FVector(0, 0, Pos1.Z), EndCapNormal));
-			const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), EndCapNormal, GenerateStableUVCustom(FVector(0, 0, Pos2.Z), EndCapNormal));
+			const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), EndCapNormal);
+			const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), EndCapNormal);
 
 			if (IsStart)
 			{
@@ -514,79 +514,7 @@ void FFrustumBuilder::ClearEndCapConnectionPoints()
 	EndCapConnectionPoints.Empty();
 }
 
-FVector2D FFrustumBuilder::GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const
-{
-	const float X = Position.X;
-	const float Y = Position.Y;
-	const float Z = Position.Z;
-
-	float Angle = FMath::Atan2(Y, X);
-	if (Angle < 0) Angle += 2.0f * PI;
-
-	if (FMath::Abs(Normal.Z) > 0.9f)
-	{
-		// 顶底面：使用单UV系统（0-1范围）
-		float U = Angle / (2.0f * PI);  // 0.0 到 1.0
-		float V = (Z + Frustum.GetHalfHeight()) / Frustum.Height;  // 0.0 到 1.0
-
-		if (Z > 0)
-		{
-			// 顶面：V = 0.5
-			V = 0.5f;
-		}
-		else
-		{
-			// 底面：V = 1.0
-			V = 1.0f;
-		}
-
-		return FVector2D(U, V);
-	}
-	else if (FMath::Abs(Normal.X) > 0.9f || FMath::Abs(Normal.Y) > 0.9f)
-	{
-		// 侧面：使用单UV系统（0-1范围）
-		const float BaseV = (Z + Frustum.GetHalfHeight()) / Frustum.Height;
-		const float AdjustedV = 0.1f + BaseV * 0.8f;  // 0.1 到 0.9
-
-		if (FMath::Abs(Normal.X) > 0.9f)
-		{
-			if (Normal.X < 0)
-			{
-				// 左面：U从0.0到0.25
-				const float U = (Angle / (2.0f * PI)) * 0.25f;
-				return FVector2D(U, AdjustedV);
-			}
-			else
-			{
-				// 右面：U从0.75到1.0
-				const float U = 0.75f + (Angle / (2.0f * PI)) * 0.25f;
-				return FVector2D(U, AdjustedV);
-			}
-		}
-		else
-		{
-			if (Normal.Y < 0)
-			{
-				// 后面：U从0.25到0.5
-				const float U = 0.25f + (Angle / (2.0f * PI)) * 0.25f;
-				return FVector2D(U, AdjustedV);
-			}
-			else
-			{
-				// 前面：U从0.5到0.75
-				const float U = 0.5f + (Angle / (2.0f * PI)) * 0.25f;
-				return FVector2D(U, AdjustedV);
-			}
-		}
-	}
-	else
-	{
-		// 倒角面：使用单UV系统（0-1范围）
-		const float U = 0.25f + (Angle / (2.0f * PI)) * 0.5f;  // 0.25 到 0.75
-		const float V = (Z + Frustum.GetHalfHeight()) / Frustum.Height;  // 0.0 到 1.0
-		return FVector2D(U, V);
-	}
-}
+// UV生成已移除 - 让UE4自动处理UV生成
 
 void FFrustumBuilder::CalculateAngles()
 {

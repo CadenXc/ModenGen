@@ -10,7 +10,6 @@ void FModelGenMeshData::Clear()
     Triangles.Reset();
     Normals.Reset();
     UVs.Reset();
-    UV1s.Reset();
     VertexColors.Reset();
     Tangents.Reset();
     MaterialIndices.Reset();
@@ -26,7 +25,6 @@ void FModelGenMeshData::Reserve(int32 InVertexCount, int32 InTriangleCount)
     Vertices.Reserve(InVertexCount);
     Normals.Reserve(InVertexCount);
     UVs.Reserve(InVertexCount);
-    UV1s.Reserve(InVertexCount);
     VertexColors.Reserve(InVertexCount);
     Tangents.Reserve(InVertexCount);
     
@@ -40,7 +38,6 @@ bool FModelGenMeshData::IsValid() const
     const bool bValidTriangleCount = Triangles.Num() % 3 == 0;
     const bool bMatchingArraySizes = Normals.Num() == Vertices.Num() &&
                                    UVs.Num() == Vertices.Num() &&
-                                   UV1s.Num() == Vertices.Num() &&
                                    Tangents.Num() == Vertices.Num();
     
     // 添加额外的安全检查
@@ -67,7 +64,6 @@ int32 FModelGenMeshData::AddVertex(const FVector& Position, const FVector& Norma
     Vertices.Add(Position);
     Normals.Add(Normal);
     UVs.Add(UV);
-    UV1s.Add(FVector2D::ZeroVector); // 默认第二UV通道为0
     VertexColors.Add(Color);
     Tangents.Add(FProcMeshTangent(CalculateTangent(Normal), false));
     
@@ -75,22 +71,6 @@ int32 FModelGenMeshData::AddVertex(const FVector& Position, const FVector& Norma
     return Index;
 }
 
-int32 FModelGenMeshData::AddVertexWithDualUV(const FVector& Position, const FVector& Normal, 
-                                             const FVector2D& UV, const FVector2D& UV1, 
-                                             const FLinearColor& Color)
-{
-    const int32 Index = Vertices.Num();
-    
-    Vertices.Add(Position);
-    Normals.Add(Normal);
-    UVs.Add(UV);
-    UV1s.Add(UV1);
-    VertexColors.Add(Color);
-    Tangents.Add(FProcMeshTangent(CalculateTangent(Normal), false));
-    
-    VertexCount = Vertices.Num();
-    return Index;
-}
 
 void FModelGenMeshData::AddTriangle(int32 V1, int32 V2, int32 V3, int32 MaterialIndex)
 {
@@ -185,22 +165,16 @@ void FModelGenMeshData::ToProceduralMesh(UProceduralMeshComponent* MeshComponent
     UE_LOG(LogTemp, Log, TEXT("FModelGenMeshData::ToProceduralMesh - Creating mesh section with %d vertices, %d triangles"), 
            Vertices.Num(), TriangleCount);
     
-    // 创建支持双UV通道的网格
-    if (UV1s.Num() > 0 && UV1s.Num() == Vertices.Num())
-    {
-        // 在UE4中，我们需要使用CreateMeshSection_LinearColor的重载版本来支持多UV通道
-        // 由于UE4的ProceduralMeshComponent限制，我们暂时只使用主UV通道
-        // 第二UV通道可以通过材质编辑器中的UV1节点访问
-        MeshComponent->CreateMeshSection_LinearColor(SectionIndex, Vertices, Triangles, Normals, UVs, VertexColors, Tangents, false);
-        
-        // 注意：在UE4中，第二UV通道需要通过材质编辑器中的UV1节点来访问
-        // 这里我们确保UV1s数组被正确填充，以便后续可能的扩展
-    }
-    else
-    {
-        // 使用单UV通道创建网格
-        MeshComponent->CreateMeshSection_LinearColor(SectionIndex, Vertices, Triangles, Normals, UVs, VertexColors, Tangents, false);
-    }
+    // 让UE4自动生成UV - 传递空UV数组，UE4会自动生成高质量的UV
+    TArray<FVector2D> EmptyUVs;
+    MeshComponent->CreateMeshSection_LinearColor(SectionIndex, Vertices, Triangles, Normals, EmptyUVs, VertexColors, Tangents, false);
+}
+
+void FModelGenMeshData::CopyUVToChannel(int32 TargetChannel) const
+{
+    // 这个方法用于将来如果需要复制UV到其他通道
+    // 目前我们只使用第一个UV通道，所以暂时不需要实现
+    UE_LOG(LogTemp, Log, TEXT("FModelGenMeshData::CopyUVToChannel - 复制UV到通道 %d (暂未实现)"), TargetChannel);
 }
 
 void FModelGenMeshData::CalculateTangents()

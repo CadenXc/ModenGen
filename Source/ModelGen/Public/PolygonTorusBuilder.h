@@ -40,9 +40,8 @@ private:
     void ValidateAndClampParameters();
     void LogMeshStatistics();
     
-    virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const override;
-    FVector2D GenerateSecondaryUV(const FVector& Position, const FVector& Normal) const;
-    int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal);
+    // UV生成已移除 - 让UE4自动处理UV生成
+    int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal);
     
     
 };

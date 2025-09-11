@@ -59,5 +59,5 @@ private:
     const TArray<int32>& GetEndCapConnectionPoints() const;
     void Clear();
 
-    virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const override;
+    // UV生成已移除 - 让UE4自动处理UV生成
 };

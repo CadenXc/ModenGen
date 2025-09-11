@@ -65,7 +65,7 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     const FVector StartCenter = FVector(FMath::Cos(StartAngle) * MajorRad, FMath::Sin(StartAngle) * MajorRad, 0.0f);
     // 修正法线：法线应指向圆弧的反方向，即切线的反方向
     const FVector StartNormal = FVector(FMath::Sin(StartAngle), -FMath::Cos(StartAngle), 0.0f);
-    const int32 StartCenterIndex = GetOrAddVertexWithDualUV(StartCenter, StartNormal);
+    const int32 StartCenterIndex = GetOrAddVertex(StartCenter, StartNormal);
 
     for (int32 i = 0; i < StartCapIndices.Num(); ++i)
     {
@@ -81,7 +81,7 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     const FVector EndCenter = FVector(FMath::Cos(EndAngle) * MajorRad, FMath::Sin(EndAngle) * MajorRad, 0.0f);
     // 终止法线：法线应指向圆弧的前进方向，即切线方向
     const FVector EndNormal = FVector(-FMath::Sin(EndAngle), FMath::Cos(EndAngle), 0.0f);
-    const int32 EndCenterIndex = GetOrAddVertexWithDualUV(EndCenter, EndNormal);
+    const int32 EndCenterIndex = GetOrAddVertex(EndCenter, EndNormal);
 
     for (int32 i = 0; i < EndCapIndices.Num(); ++i)
     {
@@ -125,55 +125,11 @@ void FPolygonTorusBuilder::LogMeshStatistics() {
          MeshData.GetVertexCount(), MeshData.GetTriangleCount());
 }
 
-FVector2D FPolygonTorusBuilder::GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const {
-  float X = Position.X;
-  float Y = Position.Y;
-  float Z = Position.Z;
+// UV生成已移除 - 让UE4自动处理UV生成
 
-  float MajorAngle = FMath::Atan2(Y, X);
-  if (MajorAngle < 0)
-    MajorAngle += 2.0f * PI;
-
-  float DistanceFromCenter = FMath::Sqrt(X * X + Y * Y);
-  float MinorRadius = DistanceFromCenter - PolygonTorus.MajorRadius;
-
-  float MinorAngle = FMath::Asin(Z / PolygonTorus.MinorRadius);
-  if (MinorRadius < 0)
-    MinorAngle = PI - MinorAngle;
-
-  float U = MajorAngle / (2.0f * PI);
-  float V = (MinorAngle + PI) / (2.0f * PI);
-
-  return FVector2D(U, V);
-}
-
-FVector2D FPolygonTorusBuilder::GenerateSecondaryUV(const FVector& Position, const FVector& Normal) const {
-  float X = Position.X;
-  float Y = Position.Y;
-  float Z = Position.Z;
-
-  float MajorAngle = FMath::Atan2(Y, X);
-  if (MajorAngle < 0)
-    MajorAngle += 2.0f * PI;
-
-  float DistanceFromCenter = FMath::Sqrt(X * X + Y * Y);
-  float MinorRadius = DistanceFromCenter - PolygonTorus.MajorRadius;
-
-  float MinorAngle = FMath::Asin(Z / PolygonTorus.MinorRadius);
-  if (MinorRadius < 0)
-    MinorAngle = PI - MinorAngle;
-
-  float U = MajorAngle / (2.0f * PI);
-  float V = 0.2f + (MinorAngle + PI) / (2.0f * PI) * 0.6f;
-
-  return FVector2D(U, V);
-}
-
-int32 FPolygonTorusBuilder::GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal) {
-  FVector2D MainUV = GenerateStableUVCustom(Pos, Normal);
-  FVector2D SecondaryUV = GenerateSecondaryUV(Pos, Normal);
-
-  return FModelGenMeshBuilder::GetOrAddVertexWithDualUV(Pos, Normal, MainUV, SecondaryUV);
+int32 FPolygonTorusBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal) {
+  // 不计算UV，让UE4自动生成
+  return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal);
 }
 
 void FPolygonTorusBuilder::GenerateVertices()
@@ -276,10 +232,10 @@ void FPolygonTorusBuilder::GenerateTriangles()
             // --- 获取顶点索引并创建三角形 ---
             
             // 获取或创建四边形的四个顶点。如果法线不同，将会创建新顶点
-            const int32 V0 = GetOrAddVertexWithDualUV(QuadPositions[0], QuadNormals[0]); // Major, Minor
-            const int32 V1 = GetOrAddVertexWithDualUV(QuadPositions[1], QuadNormals[1]); // Major, Minor + 1
-            const int32 V2 = GetOrAddVertexWithDualUV(QuadPositions[2], QuadNormals[2]); // Major + 1, Minor
-            const int32 V3 = GetOrAddVertexWithDualUV(QuadPositions[3], QuadNormals[3]); // Major + 1, Minor + 1
+            const int32 V0 = GetOrAddVertex(QuadPositions[0], QuadNormals[0]); // Major, Minor
+            const int32 V1 = GetOrAddVertex(QuadPositions[1], QuadNormals[1]); // Major, Minor + 1
+            const int32 V2 = GetOrAddVertex(QuadPositions[2], QuadNormals[2]); // Major + 1, Minor
+            const int32 V3 = GetOrAddVertex(QuadPositions[3], QuadNormals[3]); // Major + 1, Minor + 1
 
             // 如果这是第一个主分段，记录其起始边（V0）的顶点索引
             if (MajorIndex == 0)

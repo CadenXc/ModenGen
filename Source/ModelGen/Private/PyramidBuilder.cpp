@@ -75,9 +75,9 @@ void FPyramidBuilder::GeneratePyramidSides()
         FVector Edge2 = PyramidTopPoint - PyramidBaseVertices[i];
         FVector SideNormal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
 
-        int32 TopVertex = GetOrAddVertexWithDualUV(PyramidTopPoint, SideNormal);
-        int32 V1 = GetOrAddVertexWithDualUV(PyramidBaseVertices[i], SideNormal);
-        int32 V2 = GetOrAddVertexWithDualUV(PyramidBaseVertices[NextI], SideNormal);
+        int32 TopVertex = GetOrAddVertex(PyramidTopPoint, SideNormal);
+        int32 V1 = GetOrAddVertex(PyramidBaseVertices[i], SideNormal);
+        int32 V2 = GetOrAddVertex(PyramidBaseVertices[NextI], SideNormal);
 
         AddTriangle(V2, V1, TopVertex);
     }
@@ -162,37 +162,7 @@ void FPyramidBuilder::InitializePyramidVertices()
     PyramidTopPoint = FVector(0, 0, Height);
 }
 
-FVector2D FPyramidBuilder::GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const
-{
-    float X = Position.X;
-    float Y = Position.Y;
-    float Z = Position.Z;
-
-    if (FMath::Abs(Normal.Z) > 0.9f)
-    {
-        if (Z < 0.1f)
-        {
-            float U = 0.5f + X / (BevelTopRadius * 2.0f);
-            float V = 0.5f + Y / (BevelTopRadius * 2.0f);
-            return FVector2D(U, V);
-        }
-        else
-        {
-            float U = (X / BevelTopRadius + 1.0f) * 0.5f;
-            float V = (Y / BevelTopRadius + 1.0f) * 0.5f;
-            return FVector2D(U, V);
-        }
-    }
-    else
-    {
-        float Angle = FMath::Atan2(Y, X);
-        if (Angle < 0) Angle += 2.0f * PI;
-
-        float U = Angle / (2.0f * PI);
-        float V = (Z / Height);
-        return FVector2D(U, V);
-    }
-}
+// UV生成已移除 - 让UE4自动处理UV生成
 
 void FPyramidBuilder::PrecomputeUVs()
 {
@@ -233,10 +203,10 @@ void FPyramidBuilder::GeneratePolygonFaceOptimized(const TArray<FVector>& Vertic
     TArray<int32> VertexIndices;
     VertexIndices.Reserve(Vertices.Num());
 
-    // 为底部面片使用 GetOrAddVertexWithDualUV
+    // 为底部面片使用 GetOrAddVertex
     for (int32 i = 0; i < Vertices.Num(); ++i)
     {
-        int32 VertexIndex = GetOrAddVertexWithDualUV(Vertices[i], Normal);
+        int32 VertexIndex = GetOrAddVertex(Vertices[i], Normal);
         VertexIndices.Add(VertexIndex);
     }
 
@@ -276,16 +246,14 @@ void FPyramidBuilder::GenerateSideStripOptimized(const TArray<FVector>& BottomVe
     }
 }
 
-int32 FPyramidBuilder::GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal)
+int32 FPyramidBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal)
 {
-    FVector2D MainUV = GenerateStableUVCustom(Pos, Normal);
-    FVector2D SecondaryUV(0.0f, 0.0f); // 暂时不生成次UV
-
-    return FModelGenMeshBuilder::GetOrAddVertexWithDualUV(Pos, Normal, MainUV, SecondaryUV);
+    // 不计算UV，让UE4自动生成
+    return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal);
 }
 
 int32 FPyramidBuilder::GetOrAddVertexWithUV(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
-    FVector2D SecondaryUV(0.0f, 0.0f); // 暂时不生成次UV
-    return FModelGenMeshBuilder::GetOrAddVertexWithDualUV(Pos, Normal, UV, SecondaryUV);
+    // 不计算UV，让UE4自动生成
+    return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal);
 }

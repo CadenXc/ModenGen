@@ -95,13 +95,8 @@ private:
     int32 GetCornerGridSize(int32 Lat) const;
     bool ValidatePrecomputedData() const;
     
-    /** 基于顶点位置的稳定UV映射 - 重写父类实现 */
-    virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const override;
     
-    /** 生成第二UV通道 - 传统UV系统 */
-    FVector2D GenerateSecondaryUV(const FVector& Position, const FVector& Normal) const;
-    
-    /** 使用双UV通道添加顶点 */
-    int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal);
+    /** 添加顶点 */
+    int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal);
     
 };

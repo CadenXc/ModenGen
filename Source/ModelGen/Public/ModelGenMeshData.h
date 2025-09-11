@@ -38,9 +38,6 @@ public:
     TArray<FVector2D> UVs;
     
     UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Vertices")
-    TArray<FVector2D> UV1s;
-    
-    UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Vertices")
     TArray<FLinearColor> VertexColors;
     
     UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Vertices")
@@ -81,12 +78,6 @@ public:
                    const FVector2D& UV = FVector2D::ZeroVector, 
                    const FLinearColor& Color = FLinearColor::White);
     
-    int32 AddVertexWithDualUV(const FVector& Position, 
-                              const FVector& Normal = FVector::ZeroVector, 
-                              const FVector2D& UV = FVector2D::ZeroVector,
-                              const FVector2D& UV1 = FVector2D::ZeroVector,
-                              const FLinearColor& Color = FLinearColor::White);
-    
     void AddTriangle(int32 V0, int32 V1, int32 V2, int32 MaterialIndex = 0);
     
     void AddQuad(int32 V0, int32 V1, int32 V2, int32 V3, int32 MaterialIndex = 0);
@@ -94,6 +85,9 @@ public:
     void Merge(const FModelGenMeshData& Other);
     
     void ToProceduralMesh(UProceduralMeshComponent* MeshComponent, int32 SectionIndex = 0) const;
+    
+    /** 复制主UV通道到指定通道（用于多UV通道支持） */
+    void CopyUVToChannel(int32 TargetChannel) const;
 
     void CalculateTangents();
 

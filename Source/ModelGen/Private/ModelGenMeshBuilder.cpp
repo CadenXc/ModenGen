@@ -7,13 +7,12 @@ FModelGenMeshBuilder::FModelGenMeshBuilder()
     Clear();
 }
 
-int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
+int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal)
 {
-    // 使用更高效的复合键生成
-    FString VertexKey = FString::Printf(TEXT("%.4f,%.4f,%.4f|%.3f,%.3f,%.3f|%.4f,%.4f"),
+    // 使用更高效的复合键生成（不包含UV，让UE4自动生成）
+    FString VertexKey = FString::Printf(TEXT("%.4f,%.4f,%.4f|%.3f,%.3f,%.3f"),
         Pos.X, Pos.Y, Pos.Z,
-        Normal.X, Normal.Y, Normal.Z,
-        UV.X, UV.Y);
+        Normal.X, Normal.Y, Normal.Z);
 
     // 尝试查找已存在的顶点
     if (int32* FoundIndex = UniqueVerticesMap.Find(VertexKey))
@@ -21,36 +20,14 @@ int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& No
         return *FoundIndex;
     }
 
-    // 添加新顶点并记录其索引
-    const int32 NewIndex = AddVertex(Pos, Normal, UV);
+    // 添加新顶点并记录其索引（不传递UV，让UE4自动生成）
+    const int32 NewIndex = AddVertex(Pos, Normal);
     UniqueVerticesMap.Add(VertexKey, NewIndex);
 
     IndexToPosMap.Add(NewIndex, Pos);
     return NewIndex;
 }
 
-int32 FModelGenMeshBuilder::GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal, 
-                                                     const FVector2D& UV, const FVector2D& UV1)
-{
-    // 使用更高效的复合键生成
-    FString VertexKey = FString::Printf(TEXT("%.4f,%.4f,%.4f|%.3f,%.3f,%.3f|%.4f,%.4f|%.4f,%.4f"),
-        Pos.X, Pos.Y, Pos.Z,
-        Normal.X, Normal.Y, Normal.Z,
-        UV.X, UV.Y, UV1.X, UV1.Y);
-
-    // 尝试查找已存在的顶点
-    if (int32* FoundIndex = UniqueVerticesMap.Find(VertexKey))
-    {
-        return *FoundIndex;
-    }
-
-    // 添加新顶点并记录其索引
-    const int32 NewIndex = MeshData.AddVertexWithDualUV(Pos, Normal, UV, UV1);
-    UniqueVerticesMap.Add(VertexKey, NewIndex);
-
-    IndexToPosMap.Add(NewIndex, Pos);
-    return NewIndex;
-}
 
 FVector FModelGenMeshBuilder::GetPosByIndex(int32 Index) const
 {
@@ -62,9 +39,10 @@ FVector FModelGenMeshBuilder::GetPosByIndex(int32 Index) const
     return FVector::ZeroVector;
 }
 
-int32 FModelGenMeshBuilder::AddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
+int32 FModelGenMeshBuilder::AddVertex(const FVector& Pos, const FVector& Normal)
 {
-    return MeshData.AddVertex(Pos, Normal, UV);
+    // 不传递UV，让UE4自动生成
+    return MeshData.AddVertex(Pos, Normal, FVector2D::ZeroVector);
 }
 
 void FModelGenMeshBuilder::AddTriangle(int32 V0, int32 V1, int32 V2)
@@ -101,44 +79,5 @@ void FModelGenMeshBuilder::ReserveMemory()
     MeshData.Reserve(EstimatedVertexCount, EstimatedTriangleCount);
 }
 
-// 通用稳定UV映射实现
-FVector2D FModelGenMeshBuilder::GenerateStableUV(const FVector& Position, const FVector& Normal) const
-{
-    // 首先尝试调用子类的自定义实现
-    FVector2D CustomUV = GenerateStableUVCustom(Position, Normal);
-    
-    // 如果子类没有重写，返回默认实现
-    if (CustomUV.X == 0.0f && CustomUV.Y == 0.0f)
-    {
-        // 简化的默认UV映射：基于法线方向选择坐标
-        const float Threshold = 0.9f;
-        if (FMath::Abs(Normal.Z) > Threshold)
-        {
-            return FVector2D((Position.X + 1.0f) * 0.5f, (Position.Y + 1.0f) * 0.5f);
-        }
-        else if (FMath::Abs(Normal.X) > Threshold)
-        {
-            return FVector2D((Position.Y + 1.0f) * 0.5f, (Position.Z + 1.0f) * 0.5f);
-        }
-        else
-        {
-            return FVector2D((Position.X + 1.0f) * 0.5f, (Position.Z + 1.0f) * 0.5f);
-        }
-    }
-    
-    return CustomUV;
-}
+// UV生成已移除 - 让UE4自动处理UV生成
 
-// 默认自定义实现
-FVector2D FModelGenMeshBuilder::GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const
-{
-    // 默认返回零向量，表示使用通用实现
-    return FVector2D(0.0f, 0.0f);
-}
-
-// 默认第二UV通道实现
-FVector2D FModelGenMeshBuilder::GenerateSecondaryUVCustom(const FVector& Position, const FVector& Normal) const
-{
-    // 默认返回零向量，表示使用通用实现
-    return FVector2D(0.0f, 0.0f);
-}

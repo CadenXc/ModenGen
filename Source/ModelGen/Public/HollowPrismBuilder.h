@@ -100,12 +100,7 @@ class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
                                bool bIsTop) const;
   // UV 生成
 
-  virtual FVector2D GenerateStableUVCustom(
-      const FVector& Position,
-      const FVector& Normal) const override;
+  // UV生成已移除 - 让UE4自动处理UV生成
 
-  FVector2D GenerateSecondaryUV(const FVector& Position,
-                                const FVector& Normal) const;
-
-  int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal);
+  int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal);
 };

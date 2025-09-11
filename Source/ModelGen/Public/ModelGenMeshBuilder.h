@@ -34,32 +34,22 @@ class MODELGEN_API FModelGenMeshBuilder
      TMap<FString, int32> UniqueVerticesMap;
      TMap<int32, FVector> IndexToPosMap;
  
-     int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
+    int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal);
      
-     int32 GetOrAddVertexWithDualUV(const FVector& Pos, const FVector& Normal, 
-                                    const FVector2D& UV, const FVector2D& UV1);
-     
-     FVector GetPosByIndex(int32 index) const;
- 
-     int32 AddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
-     void AddTriangle(int32 V0, int32 V1, int32 V2);
-     void AddQuad(int32 V0, int32 V1, int32 V2, int32 V3);
-     
-     FVector CalculateTangent(const FVector& Normal) const;
-     
-     void Clear();
-     
-     bool ValidateGeneratedData() const;
-     
-     void ReserveMemory();
-     
-     /** 基于顶点位置的稳定UV映射 - 通用实现 */
-     FVector2D GenerateStableUV(const FVector& Position, const FVector& Normal) const;
-     
-     /** 基于顶点位置的稳定UV映射 - 子类可重写的虚函数 */
-     virtual FVector2D GenerateStableUVCustom(const FVector& Position, const FVector& Normal) const;
-     
-     /** 生成第二UV通道 - 子类可重写的虚函数 */
-     virtual FVector2D GenerateSecondaryUVCustom(const FVector& Position, const FVector& Normal) const;
+    FVector GetPosByIndex(int32 index) const;
+
+    int32 AddVertex(const FVector& Pos, const FVector& Normal);
+    void AddTriangle(int32 V0, int32 V1, int32 V2);
+    void AddQuad(int32 V0, int32 V1, int32 V2, int32 V3);
+    
+    FVector CalculateTangent(const FVector& Normal) const;
+    
+    void Clear();
+    
+    bool ValidateGeneratedData() const;
+    
+    void ReserveMemory();
+    
+    // UV生成已移除 - 让UE4自动处理UV生成
  };
  
