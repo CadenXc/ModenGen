@@ -26,15 +26,31 @@ class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
 
  private:
   const AHollowPrism& HollowPrism;
+  
+  // 端盖顶点索引记录
+  TArray<int32> StartCapIndices;
+  TArray<int32> EndCapIndices;
+  
   // 墙体和顶/底盖
 
   void GenerateInnerWalls();
 
   void GenerateOuterWalls();
 
+  // 通用墙体生成方法
+  void GenerateWalls(float Radius, int32 Sides, bool bIsInner);
+
   void GenerateTopCapWithTriangles();
 
   void GenerateBottomCapWithTriangles();
+
+  void GenerateTopCapWithBevel();
+
+  void GenerateBottomCapWithBevel();
+
+  void GenerateCapVerticesWithBevel(TArray<int32>& OutInnerVertices, 
+                                   TArray<int32>& OutOuterVertices, 
+                                   bool bIsTopCap);
 
   // 倒角
 
@@ -45,6 +61,13 @@ class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
   // 端盖 (非完整圆环时)
 
   void GenerateEndCaps();
+
+  void GenerateAdvancedEndCaps();
+
+  void GenerateEndCapFromIndices(const TArray<int32>& CapIndices, 
+                                 const FVector& Center, 
+                                 const FVector& Normal, 
+                                 bool IsStart);
 
   void GenerateEndCap(float Angle, bool IsStart);
 

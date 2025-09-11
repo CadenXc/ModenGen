@@ -43,11 +43,6 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Vertices")
     TArray<FProcMeshTangent> Tangents;
     
-    UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Materials")
-    TArray<int32> MaterialIndices;
-    
-    UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Collision")
-    bool bHasCollision = false;
 
     //~ Begin Statistics Section
     UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Statistics")
@@ -56,8 +51,6 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Statistics")
     int32 TriangleCount = 0;
     
-    UPROPERTY(BlueprintReadOnly, Category = "Mesh Data|Statistics")
-    int32 MaterialCount = 0;
 
 public:
     //~ Begin Public Methods
@@ -71,16 +64,15 @@ public:
     
     int32 GetTriangleCount() const { return TriangleCount; }
     
-    int32 GetMaterialCount() const { return MaterialCount; }
     
     int32 AddVertex(const FVector& Position, 
                    const FVector& Normal = FVector::ZeroVector, 
                    const FVector2D& UV = FVector2D::ZeroVector, 
                    const FLinearColor& Color = FLinearColor::White);
     
-    void AddTriangle(int32 V0, int32 V1, int32 V2, int32 MaterialIndex = 0);
+    void AddTriangle(int32 V0, int32 V1, int32 V2);
     
-    void AddQuad(int32 V0, int32 V1, int32 V2, int32 V3, int32 MaterialIndex = 0);
+    void AddQuad(int32 V0, int32 V1, int32 V2, int32 V3);
     
     void Merge(const FModelGenMeshData& Other);
     

@@ -12,12 +12,10 @@ void FModelGenMeshData::Clear()
     UVs.Reset();
     VertexColors.Reset();
     Tangents.Reset();
-    MaterialIndices.Reset();
     TriangleKeySet.Reset();
     
     VertexCount = 0;
     TriangleCount = 0;
-    MaterialCount = 0;
 }
 
 void FModelGenMeshData::Reserve(int32 InVertexCount, int32 InTriangleCount)
@@ -29,7 +27,6 @@ void FModelGenMeshData::Reserve(int32 InVertexCount, int32 InTriangleCount)
     Tangents.Reserve(InVertexCount);
     
     Triangles.Reserve(InTriangleCount * 3);
-    MaterialIndices.Reserve(InTriangleCount);
 }
 
 bool FModelGenMeshData::IsValid() const
@@ -72,7 +69,7 @@ int32 FModelGenMeshData::AddVertex(const FVector& Position, const FVector& Norma
 }
 
 
-void FModelGenMeshData::AddTriangle(int32 V1, int32 V2, int32 V3, int32 MaterialIndex)
+void FModelGenMeshData::AddTriangle(int32 V1, int32 V2, int32 V3)
 {
     // 退化三角形过滤
     if (V1 == V2 || V2 == V3 || V1 == V3)
@@ -98,16 +95,13 @@ void FModelGenMeshData::AddTriangle(int32 V1, int32 V2, int32 V3, int32 Material
     Triangles.Add(V1);
     Triangles.Add(V2);
     Triangles.Add(V3);
-    MaterialIndices.Add(MaterialIndex);
-    
     TriangleCount = Triangles.Num() / 3;
-    MaterialCount = FMath::Max(MaterialCount, MaterialIndex + 1);
 }
 
-void FModelGenMeshData::AddQuad(int32 V0, int32 V1, int32 V2, int32 V3, int32 MaterialIndex)
+void FModelGenMeshData::AddQuad(int32 V0, int32 V1, int32 V2, int32 V3)
 {
-    AddTriangle(V0, V1, V2, MaterialIndex);
-    AddTriangle(V0, V2, V3, MaterialIndex);
+    AddTriangle(V0, V1, V2);
+    AddTriangle(V0, V2, V3);
 }
 
 void FModelGenMeshData::Merge(const FModelGenMeshData& Other)
@@ -127,11 +121,9 @@ void FModelGenMeshData::Merge(const FModelGenMeshData& Other)
         Triangles.Add(Other.Triangles[i] + VertexOffset);
     }
     
-    MaterialIndices.Append(Other.MaterialIndices);
     
     VertexCount = Vertices.Num();
     TriangleCount = Triangles.Num() / 3;
-    MaterialCount = FMath::Max(MaterialCount, Other.MaterialCount);
 }
 
 void FModelGenMeshData::ToProceduralMesh(UProceduralMeshComponent* MeshComponent, int32 SectionIndex) const
@@ -147,8 +139,8 @@ void FModelGenMeshData::ToProceduralMesh(UProceduralMeshComponent* MeshComponent
         UE_LOG(LogTemp, Error, TEXT("FModelGenMeshData::ToProceduralMesh - Mesh data is not valid"));
         UE_LOG(LogTemp, Error, TEXT("FModelGenMeshData::ToProceduralMesh - Vertices: %d, Triangles: %d, Normals: %d, UVs: %d, Tangents: %d"), 
                Vertices.Num(), Triangles.Num(), Normals.Num(), UVs.Num(), Tangents.Num());
-        UE_LOG(LogTemp, Error, TEXT("FModelGenMeshData::ToProceduralMesh - TriangleCount: %d, MaterialCount: %d"), 
-               TriangleCount, MaterialCount);
+        UE_LOG(LogTemp, Error, TEXT("FModelGenMeshData::ToProceduralMesh - TriangleCount: %d"), 
+               TriangleCount);
         
         // 检查三角形索引的有效性
         for (int32 i = 0; i < FMath::Min(Triangles.Num(), 30); ++i) // 只检查前30个索引
