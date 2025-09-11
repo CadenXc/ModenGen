@@ -61,7 +61,7 @@ void FBevelCubeBuilder::PrecomputeAlphaValues()
 {
     const int32 ArraySize = BevelSegments + 1;
     AlphaValues.SetNum(ArraySize);
-    
+
     for (int32 i = 0; i < ArraySize; ++i)
     {
         AlphaValues[i] = static_cast<float>(i) / BevelSegments;
@@ -72,7 +72,7 @@ void FBevelCubeBuilder::PrecomputeCornerGridSizes()
 {
     const int32 ArraySize = BevelSegments + 1;
     CornerGridSizes.SetNum(ArraySize);
-    
+
     for (int32 Lat = 0; Lat < ArraySize; ++Lat)
     {
         const int32 LonCount = ArraySize - Lat;
@@ -161,7 +161,7 @@ void FBevelCubeBuilder::InitializeEdgeBevelDefs()
 void FBevelCubeBuilder::CalculateCorePoints()
 {
     CorePoints.Reserve(8);
-    
+
     // 8个角落的核心点：
     CorePoints.Add(FVector(-InnerOffset, -InnerOffset, -InnerOffset));
     CorePoints.Add(FVector(InnerOffset, -InnerOffset, -InnerOffset));
@@ -175,28 +175,41 @@ void FBevelCubeBuilder::CalculateCorePoints()
 
 void FBevelCubeBuilder::GenerateMainFaces()
 {
-    // 为每个面分配唯一的UV区域，避免重叠
+    const float U_WIDTH = 1.0f / 4.0f;
+    const float V_HEIGHT = 1.0f / 6.0f;
+
     for (int32 FaceIndex = 0; FaceIndex < FaceDefinitions.Num(); ++FaceIndex)
     {
         const FFaceData& Face = FaceDefinitions[FaceIndex];
-        
-        // 计算UV偏移，每个面占据UV空间的1/6
-        // 使用稳定UV映射系统，基于顶点位置生成UV
         TArray<FVector> FaceVerts = GenerateRectangleVertices(Face.Center, Face.SizeX, Face.SizeY);
-        
-        GenerateQuadSides(FaceVerts, Face.Normal, TArray<FVector2D>());
+
+        const float U0 = 0.0f;
+        const float V0 = static_cast<float>(FaceIndex) * V_HEIGHT;
+
+        TArray<FVector2D> FaceUVs;
+        FaceUVs.Add(FVector2D(U0, V0));
+        FaceUVs.Add(FVector2D(U0, V0 + V_HEIGHT));
+        FaceUVs.Add(FVector2D(U0 + U_WIDTH, V0 + V_HEIGHT));
+        FaceUVs.Add(FVector2D(U0 + U_WIDTH, V0));
+
+        GenerateQuadSides(FaceVerts, Face.Normal, FaceUVs);
     }
 }
 
 void FBevelCubeBuilder::GenerateEdgeBevels()
 {
-    // 为每条边生成倒角，分配唯一的UV区域
+    const float U_WIDTH = 1.0f / 4.0f;
+    const float V_HEIGHT = 1.0f / 12.0f;
+    const float U_OFFSET = U_WIDTH;
+
     for (int32 EdgeIndex = 0; EdgeIndex < EdgeBevelDefs.Num(); ++EdgeIndex)
     {
         const FEdgeBevelDef& EdgeDef = EdgeBevelDefs[EdgeIndex];
-        
-        // 使用稳定UV映射系统，基于顶点位置生成UV
-        GenerateEdgeStrip(EdgeDef.Core1Idx, EdgeDef.Core2Idx, EdgeDef.Normal1, EdgeDef.Normal2, 0.0f, 0.0f);
+        const float U0 = U_OFFSET;
+        const float V0 = static_cast<float>(EdgeIndex) * V_HEIGHT;
+
+        GenerateEdgeStrip(EdgeDef.Core1Idx, EdgeDef.Core2Idx, EdgeDef.Normal1, EdgeDef.Normal2,
+            FVector2D(U0, V0), FVector2D(U_WIDTH, V_HEIGHT));
     }
 }
 
@@ -207,48 +220,45 @@ void FBevelCubeBuilder::GenerateCornerBevels()
         return;
     }
 
-    // 为每个角落生成倒角，分配唯一的UV区域
+    const float U_WIDTH = 1.0f / 4.0f;
+    const float V_HEIGHT = 1.0f / 8.0f;
+    const float U_OFFSET = 2.0f * U_WIDTH;
+
     for (int32 CornerIndex = 0; CornerIndex < 8; ++CornerIndex)
     {
-        // 使用稳定UV映射系统，基于顶点位置生成UV
-        GenerateCornerBevel(CornerIndex, 0.0f, 0.0f);
+        const float U0 = U_OFFSET;
+        const float V0 = static_cast<float>(CornerIndex) * V_HEIGHT;
+        GenerateCornerBevel(CornerIndex, FVector2D(U0, V0), FVector2D(U_WIDTH, V_HEIGHT));
     }
 }
 
-// 新增：提取角落倒角生成逻辑
-void FBevelCubeBuilder::GenerateCornerBevel(int32 CornerIndex, float UVOffsetX, float UVWidth)
+void FBevelCubeBuilder::GenerateCornerBevel(int32 CornerIndex, const FVector2D& UVOffset, const FVector2D& UVScale)
 {
     const FVector& CurrentCorePoint = CorePoints[CornerIndex];
     bool bSpecialCornerRenderingOrder = IsSpecialCorner(CornerIndex);
 
-    // 计算角落的轴向
     const FVector AxisX(FMath::Sign(CurrentCorePoint.X), 0.0f, 0.0f);
     const FVector AxisY(0.0f, FMath::Sign(CurrentCorePoint.Y), 0.0f);
     const FVector AxisZ(0.0f, 0.0f, FMath::Sign(CurrentCorePoint.Z));
 
-    // 使用预计算的网格尺寸，并添加安全检查
     if (CornerGridSizes.Num() == 0)
     {
         return;
     }
-    
-    TArray<TArray<int32>> CornerVerticesGrid = CornerGridSizes;
-    
-    // 生成四分之一球体的顶点
-    GenerateCornerVerticesGrid(CornerIndex, CurrentCorePoint, AxisX, AxisY, AxisZ, CornerVerticesGrid, UVOffsetX, UVWidth);
 
-    // 生成四分之一球体的三角形
+    TArray<TArray<int32>> CornerVerticesGrid = CornerGridSizes;
+
+    GenerateCornerVerticesGrid(CornerIndex, CurrentCorePoint, AxisX, AxisY, AxisZ, CornerVerticesGrid, UVOffset, UVScale);
     GenerateCornerTrianglesGrid(CornerVerticesGrid, bSpecialCornerRenderingOrder);
 }
 
-void FBevelCubeBuilder::GenerateEdgeStrip(int32 Core1Idx, int32 Core2Idx, 
-                                         const FVector& Normal1, const FVector& Normal2,
-                                         float UVOffsetX, float UVWidth)
+void FBevelCubeBuilder::GenerateEdgeStrip(int32 Core1Idx, int32 Core2Idx,
+    const FVector& Normal1, const FVector& Normal2,
+    const FVector2D& UVOffset, const FVector2D& UVScale)
 {
     TArray<int32> PrevStripStartIndices;
     TArray<int32> PrevStripEndIndices;
 
-    // 使用预计算的Alpha值，避免重复计算
     for (int32 s = 0; s <= BevelSegments; ++s)
     {
         const float Alpha = GetAlphaValue(s);
@@ -257,10 +267,14 @@ void FBevelCubeBuilder::GenerateEdgeStrip(int32 Core1Idx, int32 Core2Idx,
         FVector PosStart = CorePoints[Core1Idx] + CurrentNormal * BevelRadius;
         FVector PosEnd = CorePoints[Core2Idx] + CurrentNormal * BevelRadius;
 
-        int32 VtxStart = GetOrAddVertex(PosStart, CurrentNormal);
-        int32 VtxEnd = GetOrAddVertex(PosEnd, CurrentNormal); 
+        const float U_Alpha = static_cast<float>(s) / BevelSegments;
+        FVector2D UV_Start = UVOffset + FVector2D(U_Alpha * UVScale.X, 0.0f);
+        FVector2D UV_End = UVOffset + FVector2D(U_Alpha * UVScale.X, 1.0f * UVScale.Y);
 
-        if (s > 0 && PrevStripStartIndices.Num() > 0 && PrevStripEndIndices.Num() > 0)
+        int32 VtxStart = GetOrAddVertex(PosStart, CurrentNormal, UV_Start);
+        int32 VtxEnd = GetOrAddVertex(PosEnd, CurrentNormal, UV_End);
+
+        if (s > 0)
         {
             AddQuad(PrevStripStartIndices[0], PrevStripEndIndices[0], VtxEnd, VtxStart);
         }
@@ -270,8 +284,8 @@ void FBevelCubeBuilder::GenerateEdgeStrip(int32 Core1Idx, int32 Core2Idx,
     }
 }
 
-void FBevelCubeBuilder::GenerateCornerTriangles(const TArray<TArray<int32>>& CornerVerticesGrid, 
-                                               int32 Lat, int32 Lon, bool bSpecialOrder)
+void FBevelCubeBuilder::GenerateCornerTriangles(const TArray<TArray<int32>>& CornerVerticesGrid,
+    int32 Lat, int32 Lon, bool bSpecialOrder)
 {
     const int32 V00 = CornerVerticesGrid[Lat][Lon];
     const int32 V10 = CornerVerticesGrid[Lat + 1][Lon];
@@ -305,107 +319,91 @@ TArray<FVector> FBevelCubeBuilder::GenerateRectangleVertices(const FVector& Cent
 {
     TArray<FVector> Vertices;
     Vertices.Reserve(4);
-    
-    // 生成矩形的四个顶点（按照右手法则：从法线方向看，顶点按逆时针排列）
+
     Vertices.Add(Center - SizeX - SizeY);
     Vertices.Add(Center - SizeX + SizeY);
     Vertices.Add(Center + SizeX + SizeY);
     Vertices.Add(Center + SizeX - SizeY);
-    
+
     return Vertices;
 }
 
 void FBevelCubeBuilder::GenerateQuadSides(const TArray<FVector>& Verts, const FVector& Normal, const TArray<FVector2D>& UVs)
 {
-    if (Verts.Num() != 4)
+    if (Verts.Num() != 4 || UVs.Num() != 4)
     {
         return;
     }
-    
-    int32 V0 = GetOrAddVertex(Verts[0], Normal);
-    int32 V1 = GetOrAddVertex(Verts[1], Normal);
-    int32 V2 = GetOrAddVertex(Verts[2], Normal);
-    int32 V3 = GetOrAddVertex(Verts[3], Normal);
-    
+
+    int32 V0 = GetOrAddVertex(Verts[0], Normal, UVs[0]);
+    int32 V1 = GetOrAddVertex(Verts[1], Normal, UVs[1]);
+    int32 V2 = GetOrAddVertex(Verts[2], Normal, UVs[2]);
+    int32 V3 = GetOrAddVertex(Verts[3], Normal, UVs[3]);
+
     AddQuad(V0, V1, V2, V3);
 }
 
-TArray<FVector> FBevelCubeBuilder::GenerateEdgeVertices(const FVector& CorePoint1, const FVector& CorePoint2, 
-                                                        const FVector& Normal1, const FVector& Normal2, float Alpha) const
+TArray<FVector> FBevelCubeBuilder::GenerateEdgeVertices(const FVector& CorePoint1, const FVector& CorePoint2,
+    const FVector& Normal1, const FVector& Normal2, float Alpha) const
 {
     TArray<FVector> Vertices;
     Vertices.Reserve(2);
-    
-    // 计算插值法线
+
     FVector CurrentNormal = FMath::Lerp(Normal1, Normal2, Alpha).GetSafeNormal();
-    
-    // 生成边缘的两个顶点
+
     FVector PosStart = CorePoint1 + CurrentNormal * BevelRadius;
     FVector PosEnd = CorePoint2 + CurrentNormal * BevelRadius;
-    
+
     Vertices.Add(PosStart);
     Vertices.Add(PosEnd);
-    
+
     return Vertices;
 }
 
-TArray<FVector> FBevelCubeBuilder::GenerateCornerVertices(const FVector& CorePoint, const FVector& AxisX, 
-                                                          const FVector& AxisY, const FVector& AxisZ, int32 Lat, int32 Lon) const
+TArray<FVector> FBevelCubeBuilder::GenerateCornerVertices(const FVector& CorePoint, const FVector& AxisX,
+    const FVector& AxisY, const FVector& AxisZ, int32 Lat, int32 Lon) const
 {
     TArray<FVector> Vertices;
     Vertices.Reserve(1);
-    
+
     const float LatAlpha = GetAlphaValue(Lat);
     const float LonAlpha = GetAlphaValue(Lon);
 
-    // 计算法线（三轴插值）
     FVector CurrentNormal = (AxisX * (1.0f - LatAlpha - LonAlpha) +
         AxisY * LatAlpha +
         AxisZ * LonAlpha);
     CurrentNormal.Normalize();
 
-    // 计算顶点位置
     FVector CurrentPos = CorePoint + CurrentNormal * BevelRadius;
     Vertices.Add(CurrentPos);
-    
+
     return Vertices;
 }
 
-void FBevelCubeBuilder::GenerateCornerVerticesGrid(int32 CornerIndex, const FVector& CorePoint, 
-                                                   const FVector& AxisX, const FVector& AxisY, const FVector& AxisZ,
-                                                   TArray<TArray<int32>>& CornerVerticesGrid,
-                                                   float UVOffsetX, float UVWidth)
+void FBevelCubeBuilder::GenerateCornerVerticesGrid(int32 CornerIndex, const FVector& CorePoint,
+    const FVector& AxisX, const FVector& AxisY, const FVector& AxisZ,
+    TArray<TArray<int32>>& CornerVerticesGrid,
+    const FVector2D& UVOffset, const FVector2D& UVScale)
 {
-    // 生成四分之一球体的顶点
     for (int32 Lat = 0; Lat < CornerVerticesGrid.Num(); ++Lat)
     {
-        // 添加边界检查
-        if (!IsValidCornerGridIndex(Lat, 0))
-        {
-            continue;
-        }
-        
+        if (!IsValidCornerGridIndex(Lat, 0)) continue;
+
         for (int32 Lon = 0; Lon < CornerVerticesGrid[Lat].Num(); ++Lon)
         {
-            // 添加边界检查
-            if (!IsValidCornerGridIndex(Lat, Lon))
-            {
-                continue;
-            }
-            
+            if (!IsValidCornerGridIndex(Lat, Lon)) continue;
+
             const float LonAlpha = GetAlphaValue(Lon);
             const float LatAlpha = GetAlphaValue(Lat);
 
-            // 使用辅助函数生成顶点
             TArray<FVector> Vertices = GenerateCornerVertices(CorePoint, AxisX, AxisY, AxisZ, Lat, Lon);
             if (Vertices.Num() > 0)
             {
-                FVector CurrentNormal = (AxisX * (1.0f - LatAlpha - LonAlpha) +
-                    AxisY * LatAlpha +
-                    AxisZ * LonAlpha);
-                CurrentNormal.Normalize();
+                FVector CurrentNormal = (Vertices[0] - CorePoint).GetSafeNormal();
 
-                CornerVerticesGrid[Lat][Lon] = GetOrAddVertex(Vertices[0], CurrentNormal);
+                FVector2D UV = UVOffset + FVector2D(LonAlpha * UVScale.X, LatAlpha * UVScale.Y);
+
+                CornerVerticesGrid[Lat][Lon] = GetOrAddVertex(Vertices[0], CurrentNormal, UV);
             }
         }
     }
@@ -413,23 +411,14 @@ void FBevelCubeBuilder::GenerateCornerVerticesGrid(int32 CornerIndex, const FVec
 
 void FBevelCubeBuilder::GenerateCornerTrianglesGrid(const TArray<TArray<int32>>& CornerVerticesGrid, bool bSpecialOrder)
 {
-    // 生成四分之一球体的三角形
     for (int32 Lat = 0; Lat < CornerVerticesGrid.Num() - 1; ++Lat)
     {
-        // 添加边界检查
-        if (!IsValidCornerGridIndex(Lat, 0))
-        {
-            continue;
-        }
-        
+        if (!IsValidCornerGridIndex(Lat, 0)) continue;
+
         for (int32 Lon = 0; Lon < CornerVerticesGrid[Lat].Num() - 1; ++Lon)
         {
-            // 添加边界检查
-            if (!IsValidCornerGridIndex(Lat, Lon))
-            {
-                continue;
-            }
-            
+            if (!IsValidCornerGridIndex(Lat, Lon)) continue;
+
             GenerateCornerTriangles(CornerVerticesGrid, Lat, Lon, bSpecialOrder);
         }
     }
@@ -437,7 +426,6 @@ void FBevelCubeBuilder::GenerateCornerTrianglesGrid(const TArray<TArray<int32>>&
 
 bool FBevelCubeBuilder::IsSpecialCorner(int32 CornerIndex) const
 {
-    // 使用预定义的常量数组，避免硬编码
     static const TArray<int32> SpecialCornerIndices = { 4, 7, 2, 1 };
     return SpecialCornerIndices.Contains(CornerIndex);
 }
@@ -448,8 +436,7 @@ float FBevelCubeBuilder::GetAlphaValue(int32 Index) const
     {
         return AlphaValues[Index];
     }
-    
-    // 返回安全的默认值
+
     return FMath::Clamp(static_cast<float>(Index) / BevelSegments, 0.0f, 1.0f);
 }
 
@@ -460,16 +447,8 @@ bool FBevelCubeBuilder::IsValidAlphaIndex(int32 Index) const
 
 bool FBevelCubeBuilder::IsValidCornerGridIndex(int32 Lat, int32 Lon) const
 {
-    if (Lat < 0 || Lat >= CornerGridSizes.Num())
-    {
-        return false;
-    }
-    
-    if (Lon < 0 || Lon >= CornerGridSizes[Lat].Num())
-    {
-        return false;
-    }
-    
+    if (Lat < 0 || Lat >= CornerGridSizes.Num()) return false;
+    if (Lon < 0 || Lon >= CornerGridSizes[Lat].Num()) return false;
     return true;
 }
 
@@ -479,27 +458,16 @@ int32 FBevelCubeBuilder::GetCornerGridSize(int32 Lat) const
     {
         return CornerGridSizes[Lat].Num();
     }
-    
     return 0;
 }
 
 bool FBevelCubeBuilder::ValidatePrecomputedData() const
 {
     bool bIsValid = true;
-    
-    // 验证AlphaValues
-    if (AlphaValues.Num() != BevelSegments + 1)
-    {
-        bIsValid = false;
-    }
-    
-    // 验证CornerGridSizes
-    if (CornerGridSizes.Num() != BevelSegments + 1)
-    {
-        bIsValid = false;
-    }
-    
-    // 验证每个子数组的大小
+
+    if (AlphaValues.Num() != BevelSegments + 1) bIsValid = false;
+    if (CornerGridSizes.Num() != BevelSegments + 1) bIsValid = false;
+
     for (int32 Lat = 0; Lat < CornerGridSizes.Num(); ++Lat)
     {
         int32 ExpectedSize = BevelSegments + 1 - Lat;
@@ -508,14 +476,11 @@ bool FBevelCubeBuilder::ValidatePrecomputedData() const
             bIsValid = false;
         }
     }
-    
+
     return bIsValid;
 }
 
-// UV生成已移除 - 让UE4自动处理UV生成
-
-int32 FBevelCubeBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal)
+int32 FBevelCubeBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
-    // 不计算UV，让UE4自动生成
-    return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal);
+    return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal, UV);
 }

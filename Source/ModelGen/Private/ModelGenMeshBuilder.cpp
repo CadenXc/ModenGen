@@ -7,6 +7,26 @@ FModelGenMeshBuilder::FModelGenMeshBuilder()
     Clear();
 }
 
+int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
+{
+    // 复合键包含位置、法线和UV，因为同一位置在UV接缝处可能是不同的顶点
+    FString VertexKey = FString::Printf(TEXT("%.4f,%.4f,%.4f|%.3f,%.3f,%.3f|%.4f,%.4f"),
+        Pos.X, Pos.Y, Pos.Z,
+        Normal.X, Normal.Y, Normal.Z,
+        UV.X, UV.Y);
+
+    if (int32* FoundIndex = UniqueVerticesMap.Find(VertexKey))
+    {
+        return *FoundIndex;
+    }
+
+    const int32 NewIndex = AddVertex(Pos, Normal, UV);
+    UniqueVerticesMap.Add(VertexKey, NewIndex);
+    IndexToPosMap.Add(NewIndex, Pos);
+
+    return NewIndex;
+}
+
 int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal)
 {
     // 使用更高效的复合键生成（不包含UV，让UE4自动生成）
@@ -28,7 +48,6 @@ int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& No
     return NewIndex;
 }
 
-
 FVector FModelGenMeshBuilder::GetPosByIndex(int32 Index) const
 {
     if (const FVector* FoundPos = IndexToPosMap.Find(Index))
@@ -37,6 +56,11 @@ FVector FModelGenMeshBuilder::GetPosByIndex(int32 Index) const
     }
 
     return FVector::ZeroVector;
+}
+
+int32 FModelGenMeshBuilder::AddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
+{
+    return MeshData.AddVertex(Pos, Normal, UV);
 }
 
 int32 FModelGenMeshBuilder::AddVertex(const FVector& Pos, const FVector& Normal)
@@ -75,9 +99,6 @@ void FModelGenMeshBuilder::ReserveMemory()
 {
     const int32 EstimatedVertexCount = CalculateVertexCountEstimate();
     const int32 EstimatedTriangleCount = CalculateTriangleCountEstimate();
-    
+
     MeshData.Reserve(EstimatedVertexCount, EstimatedTriangleCount);
 }
-
-// UV生成已移除 - 让UE4自动处理UV生成
-
