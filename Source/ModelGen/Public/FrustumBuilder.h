@@ -51,7 +51,7 @@ private:
     void GenerateTopBevelGeometry();
     void GenerateBottomBevelGeometry();
     void GenerateEndCaps();
-    void GenerateEndCap(float Angle, const FVector& Normal, bool IsStart);
+    void GenerateEndCap(float Angle, bool IsStart);
     void GenerateEndCapTrianglesFromVertices(const TArray<int32>& OrderedVertices, bool IsStart, float Angle);
 
     void RecordEndCapConnectionPoint(int32 VertexIndex);

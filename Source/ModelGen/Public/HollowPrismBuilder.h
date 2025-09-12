@@ -10,7 +10,6 @@
 
 class AHollowPrism;
 class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
-
 {
  public:
   //~ Begin Constructor

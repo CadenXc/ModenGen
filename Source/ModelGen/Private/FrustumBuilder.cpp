@@ -31,8 +31,8 @@ bool FFrustumBuilder::Generate(FModelGenMeshData& OutMeshData)
 	CreateSideGeometry();
 
 	// 生成顺序可以保持不变，逻辑上依然清晰
-	GenerateTopBevelGeometry();
-	GenerateBottomBevelGeometry();
+	 GenerateTopBevelGeometry();
+	 GenerateBottomBevelGeometry();
 
 	GenerateTopGeometry();
 	GenerateBottomGeometry();
@@ -212,11 +212,12 @@ void FFrustumBuilder::GenerateEndCaps()
 		return;
 	}
 
-	GenerateEndCap(StartAngle, FVector(-1, 0, 0), true);
-	GenerateEndCap(EndAngle, FVector(1, 0, 0), false);
+	// 端面法线应该根据角度计算
+	GenerateEndCap(StartAngle, true);
+	GenerateEndCap(EndAngle, false);
 }
 
-void FFrustumBuilder::GenerateEndCap(float Angle, const FVector& Normal, bool IsStart)
+void FFrustumBuilder::GenerateEndCap(float Angle, bool IsStart)
 {
 	if (EndCapConnectionPoints.Num() < 3)
 	{
@@ -249,7 +250,10 @@ void FFrustumBuilder::GenerateEndCap(float Angle, const FVector& Normal, bool Is
 			EndCapPos = FVector(NewX, NewY, OriginalPos.Z);
 		}
 
-		FVector EndCapNormal = Normal;
+		// 端面法线应该垂直于端面平面
+		// 根据是否为开始端面来确定法线方向
+		FVector BaseNormal = FVector(FMath::Cos(Angle + PI/2), FMath::Sin(Angle + PI/2), 0.0f);
+		FVector EndCapNormal = IsStart ? -BaseNormal : BaseNormal;
 
 		if (Frustum.BendAmount > KINDA_SMALL_NUMBER)
 		{
@@ -326,6 +330,12 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bo
 		const int32 V1 = GetOrAddVertex(CurrentPos, Normal);
 		const int32 V2 = GetOrAddVertex(NextPos, Normal);
 
+		// 记录端盖连接点（只记录开始点，i=0的那个）
+		if (SideIndex == 0)
+		{
+			RecordEndCapConnectionPoint(V1);
+		}
+
 		if (bIsTop)
 		{
 			AddTriangle(CenterVertex, V2, V1);
@@ -383,6 +393,12 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop) {
 
 	if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && EndRing.Num() > 0) {
 		EndRing.Last() = EndRing[0];
+	}
+
+	// 记录倒角开始点到端盖连接点（只记录开始点，i=0的那个）
+	if (StartRing.Num() > 0)
+	{
+		RecordEndCapConnectionPoint(StartRing[0]);
 	}
 
 	// 连接内外环形成倒角面
@@ -448,7 +464,14 @@ void FFrustumBuilder::GenerateEndCapTrianglesFromVertices(const TArray<int32>& O
 			return PosA.Z > PosB.Z;
 		});
 
-	const FVector EndCapNormal = IsStart ? FVector(-1, 0, 0) : FVector(1, 0, 0);
+	// 计算端面的实际法线方向
+	// 端面法线应该垂直于端面平面
+	// 根据是否为开始端面来确定法线方向
+	const FVector BaseNormal = FVector(FMath::Cos(Angle + PI/2), FMath::Sin(Angle + PI/2), 0.0f);
+	const FVector EndCapNormal = IsStart ? -BaseNormal : BaseNormal;
+	
+	// 中心线法线应该与端面法线一致，确保渲染方向正确
+	const FVector CenterLineNormal = EndCapNormal;
 
 	if (SortedVertices.Num() == 2)
 	{
@@ -458,8 +481,8 @@ void FFrustumBuilder::GenerateEndCapTrianglesFromVertices(const TArray<int32>& O
 		FVector Pos1 = GetPosByIndex(V1);
 		FVector Pos2 = GetPosByIndex(V2);
 
-		const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), EndCapNormal);
-		const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), EndCapNormal);
+		const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), CenterLineNormal);
+		const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), CenterLineNormal);
 
 		if (IsStart)
 		{
@@ -482,8 +505,8 @@ void FFrustumBuilder::GenerateEndCapTrianglesFromVertices(const TArray<int32>& O
 			FVector Pos1 = GetPosByIndex(V1);
 			FVector Pos2 = GetPosByIndex(V2);
 
-			const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), EndCapNormal);
-			const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), EndCapNormal);
+			const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), CenterLineNormal);
+			const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), CenterLineNormal);
 
 			if (IsStart)
 			{
