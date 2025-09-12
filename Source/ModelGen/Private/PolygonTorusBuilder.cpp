@@ -3,7 +3,6 @@
 #include "PolygonTorusBuilder.h"
 #include "PolygonTorus.h"
 #include "ModelGenMeshData.h"
-#include "CoreMinimal.h"
 
 FPolygonTorusBuilder::FPolygonTorusBuilder(const APolygonTorus& InPolygonTorus)
     : PolygonTorus(InPolygonTorus) {

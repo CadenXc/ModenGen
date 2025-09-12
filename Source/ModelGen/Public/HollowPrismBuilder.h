@@ -31,6 +31,12 @@ class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
   TArray<int32> StartCapIndices;
   TArray<int32> EndCapIndices;
   
+  // 倒角连接顶点记录
+  TArray<int32> TopInnerBevelVertices;   // 顶部内环倒角连接顶点
+  TArray<int32> TopOuterBevelVertices;   // 顶部外环倒角连接顶点
+  TArray<int32> BottomInnerBevelVertices; // 底部内环倒角连接顶点
+  TArray<int32> BottomOuterBevelVertices; // 底部外环倒角连接顶点
+  
   // 墙体和顶/底盖
 
   void GenerateInnerWalls();
@@ -101,6 +107,7 @@ class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
 
                          bool bIsInner,
                          bool bIsTop);
+
   // 新的、重构后的端盖生成函数
 
   void GenerateEndCapColumn(float Angle,
@@ -109,6 +116,10 @@ class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
 
   void GenerateEndCapTriangles(const TArray<int32>& OrderedVertices,
                                bool IsStart);
+
+  // 基于记录的端盖生成函数
+  void GenerateEndCapFromRecordedVertices(const TArray<int32>& RecordedVertices,
+                                         bool IsStart);
   // 计算函数
 
   float CalculateStartAngle() const;

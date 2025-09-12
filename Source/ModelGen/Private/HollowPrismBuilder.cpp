@@ -24,6 +24,12 @@ bool FHollowPrismBuilder::Generate(FModelGenMeshData& OutMeshData)
     // 清空端盖顶点索引记录
     StartCapIndices.Empty();
     EndCapIndices.Empty();
+    
+    // 清空倒角连接顶点记录
+    TopInnerBevelVertices.Empty();
+    TopOuterBevelVertices.Empty();
+    BottomInnerBevelVertices.Empty();
+    BottomOuterBevelVertices.Empty();
 
     // 生成主体几何体
     GenerateInnerWalls();
@@ -95,6 +101,21 @@ void FHollowPrismBuilder::GenerateWalls(float Radius, int32 Sides, bool bIsInner
 
         TopVertices.Add(TopVertex);
         BottomVertices.Add(BottomVertex);
+
+        // 记录与倒角连接的顶点（如果有倒角）
+        if (HollowPrism.BevelRadius > 0.0f)
+        {
+            if (bIsInner)
+            {
+                TopInnerBevelVertices.Add(TopVertex);
+                BottomInnerBevelVertices.Add(BottomVertex);
+            }
+            else
+            {
+                TopOuterBevelVertices.Add(TopVertex);
+                BottomOuterBevelVertices.Add(BottomVertex);
+            }
+        }
 
         // 记录起始和结束位置的顶点索引（用于端盖生成）
         if (!bFull)
@@ -253,23 +274,16 @@ void FHollowPrismBuilder::GenerateEndCaps()
 
 void FHollowPrismBuilder::GenerateAdvancedEndCaps()
 {
-    const float ArcAngleRadians = FMath::DegreesToRadians(HollowPrism.ArcAngle);
-    const float StartAngle = -ArcAngleRadians / 2.0f;
-    const float EndAngle = ArcAngleRadians / 2.0f;
-
-    // 计算端盖法线 - 确保正确的方向
-    const FVector StartNormal = FVector(FMath::Sin(StartAngle), -FMath::Cos(StartAngle), 0.0f).GetSafeNormal();
-    const FVector EndNormal = FVector(-FMath::Sin(EndAngle), FMath::Cos(EndAngle), 0.0f).GetSafeNormal();
-
-    // 生成起始端盖
-    TArray<int32> StartCapVertices;
-    GenerateEndCapColumn(StartAngle, StartNormal, StartCapVertices);
-    GenerateEndCapTriangles(StartCapVertices, true);
-
-    // 生成结束端盖
-    TArray<int32> EndCapVertices;
-    GenerateEndCapColumn(EndAngle, EndNormal, EndCapVertices);
-    GenerateEndCapTriangles(EndCapVertices, false);
+    // 使用记录的顶点索引生成端盖
+    if (StartCapIndices.Num() > 0)
+    {
+        GenerateEndCapFromRecordedVertices(StartCapIndices, true);
+    }
+    
+    if (EndCapIndices.Num() > 0)
+    {
+        GenerateEndCapFromRecordedVertices(EndCapIndices, false);
+    }
 }
 
 // 已移除 GenerateEndCapFromIndices 函数
@@ -365,15 +379,24 @@ void FHollowPrismBuilder::GenerateBevelGeometry(bool bIsTop, bool bIsInner)
     if (HollowPrism.BevelRadius <= 0.0f || HollowPrism.BevelSegments <= 0) return;
 
     TArray<int32> PrevRing;
-    for (int32 i = 0; i <= HollowPrism.BevelSegments; ++i)
+    
+    // 第一个环使用记录的侧面顶点
+    if (bIsTop)
+    {
+        PrevRing = bIsInner ? TopInnerBevelVertices : TopOuterBevelVertices;
+    }
+    else
+    {
+        PrevRing = bIsInner ? BottomInnerBevelVertices : BottomOuterBevelVertices;
+    }
+    
+    for (int32 i = 1; i <= HollowPrism.BevelSegments; ++i)
     {
         TArray<int32> CurrentRing;
         GenerateBevelRing(CurrentRing, bIsTop, bIsInner, i, HollowPrism.BevelSegments);
 
-        if (i > 0)
-        {
-            ConnectBevelRings(PrevRing, CurrentRing, bIsInner, bIsTop);
-        }
+        // 连接前一个环和当前环
+        ConnectBevelRings(PrevRing, CurrentRing, bIsInner, bIsTop);
         PrevRing = CurrentRing;
     }
 }
@@ -468,6 +491,7 @@ void FHollowPrismBuilder::ConnectBevelRings(const TArray<int32>& PrevRing,
     }
 }
 
+
 // [FIXED] Correctly generates the end cap vertex column, accounting for bevels.
 void FHollowPrismBuilder::GenerateEndCapColumn(float Angle, const FVector& Normal, TArray<int32>& OutOrderedVertices)
 {
@@ -526,8 +550,8 @@ void FHollowPrismBuilder::GenerateEndCapColumn(float Angle, const FVector& Norma
 
     // === 2. Bottom Bevel ===
     // Generate vertices from the wall junction down to the bottom flat cap.
-    // Start from i=1 to avoid duplicating the vertex at the wall-bevel seam.
-    for (int32 i = 1; i <= BevelSegments; ++i)
+    // Start from i=0 to ensure we have the wall-bevel seam vertex.
+    for (int32 i = 0; i <= BevelSegments; ++i)
     {
         // Alpha goes from 0 (wall) up to 1 (cap).
         const float Alpha = static_cast<float>(i) / BevelSegments;
@@ -575,6 +599,47 @@ void FHollowPrismBuilder::GenerateEndCapTriangles(const TArray<int32>& OrderedVe
             // 结束端盖，法线朝外，顺时针
             AddQuad(V_Outer_Curr, V_Inner_Curr, V_Inner_Next, V_Outer_Next);
         }
+    }
+}
+
+void FHollowPrismBuilder::GenerateEndCapFromRecordedVertices(const TArray<int32>& RecordedVertices, bool IsStart)
+{
+    if (RecordedVertices.Num() < 4)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("GenerateEndCapFromRecordedVertices - 记录的顶点数量不足，无法生成端盖"));
+        return;
+    }
+
+    // 对于有倒角的情况，我们需要生成完整的端盖顶点
+    if (HollowPrism.BevelRadius > 0.0f && HollowPrism.BevelSegments > 0)
+    {
+        // 有倒角时，使用原来的 GenerateEndCapColumn 方法
+        const float ArcAngleRadians = FMath::DegreesToRadians(HollowPrism.ArcAngle);
+        const float Angle = IsStart ? -ArcAngleRadians / 2.0f : ArcAngleRadians / 2.0f;
+        const FVector Normal = IsStart ? 
+            FVector(FMath::Sin(Angle), -FMath::Cos(Angle), 0.0f).GetSafeNormal() :
+            FVector(-FMath::Sin(Angle), FMath::Cos(Angle), 0.0f).GetSafeNormal();
+        
+        TArray<int32> OrderedVertices;
+        GenerateEndCapColumn(Angle, Normal, OrderedVertices);
+        GenerateEndCapTriangles(OrderedVertices, IsStart);
+    }
+    else
+    {
+        // 无倒角时，使用记录的顶点
+        // 记录的顶点顺序：[外壁顶部, 外壁底部, 内壁顶部, 内壁底部]
+        // 需要重新排列为：[外壁顶部, 内壁顶部, 外壁底部, 内壁底部] 的顺序
+        TArray<int32> OrderedVertices;
+        OrderedVertices.Reserve(RecordedVertices.Num());
+        
+        // 按照端盖需要的顺序重新排列顶点
+        OrderedVertices.Add(RecordedVertices[0]); // 外壁顶部
+        OrderedVertices.Add(RecordedVertices[2]); // 内壁顶部
+        OrderedVertices.Add(RecordedVertices[1]); // 外壁底部
+        OrderedVertices.Add(RecordedVertices[3]); // 内壁底部
+
+        // 使用现有的三角形生成函数
+        GenerateEndCapTriangles(OrderedVertices, IsStart);
     }
 }
 
