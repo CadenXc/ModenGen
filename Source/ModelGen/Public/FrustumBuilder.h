@@ -37,6 +37,7 @@ private:
     // [REVERTED] 移除了 TopCapRing 和 BottomCapRing，因为不再需要共享顶点
 
     TArray<int32> GenerateVertexRing(float Radius, float Z, int32 Sides);
+    TArray<int32> GenerateVertexRing(float Radius, float Z, int32 Sides, float VCoord, const FVector2D& UVOffset, const FVector2D& UVScale);
     void GenerateCapGeometry(float Z, int32 Sides, float Radius, bool bIsTop);
     void GenerateBevelGeometry(bool bIsTop);
     float CalculateBentRadius(float BaseRadius, float HeightRatio);
