@@ -50,9 +50,41 @@ int32 FPyramidBuilder::CalculateTriangleCountEstimate() const
 {
     return Pyramid.CalculateTriangleCountEstimate();
 }
+
 void FPyramidBuilder::GenerateBaseFace()
 {
-    GeneratePolygonFaceOptimized(BaseVertices, FVector(0, 0, -1));
+    // 底面使用独立的UV区域，类似BevelCube的主面处理
+    FVector Normal(0, 0, -1);
+
+    if (BaseVertices.Num() < 3)
+    {
+        return;
+    }
+
+    TArray<int32> VertexIndices;
+    VertexIndices.Reserve(BaseVertices.Num());
+
+    // 底面UV映射到 [0, 0] - [0.5, 0.5] 区域
+    for (int32 i = 0; i < BaseVertices.Num(); ++i)
+    {
+        // 将底面顶点映射到UV空间
+        float U = 0.25f + 0.25f * (BaseVertices[i].X / BaseRadius);
+        float V = 0.25f + 0.25f * (BaseVertices[i].Y / BaseRadius);
+        FVector2D UV(U, V);
+
+        int32 VertexIndex = GetOrAddVertexWithUV(BaseVertices[i], Normal, UV);
+        VertexIndices.Add(VertexIndex);
+    }
+
+    // 生成三角形（扇形方式）
+    for (int32 i = 1; i < BaseVertices.Num() - 1; ++i)
+    {
+        int32 V0 = VertexIndices[0];
+        int32 V1 = VertexIndices[i];
+        int32 V2 = VertexIndices[i + 1];
+
+        AddTriangle(V0, V1, V2);
+    }
 }
 
 void FPyramidBuilder::GenerateBevelSection()
@@ -62,23 +94,75 @@ void FPyramidBuilder::GenerateBevelSection()
         return;
     }
 
-    GenerateSideStripOptimized(BevelBottomVertices, BevelTopVertices, BaseUVs, BevelUVs);
+    // 倒角部分UV映射到 [0.5, 0] - [1, 0.25] 区域
+    const float U_START = 0.5f;
+    const float U_WIDTH = 0.5f;
+    const float V_START = 0.0f;
+    const float V_HEIGHT = 0.25f;
+
+    for (int32 i = 0; i < BevelBottomVertices.Num(); ++i)
+    {
+        const int32 NextI = (i + 1) % BevelBottomVertices.Num();
+
+        // 为每个顶点计算独立的法线
+        FVector Normal_i = (BevelBottomVertices[i] - FVector(0, 0, BevelBottomVertices[i].Z)).GetSafeNormal();
+        FVector Normal_NextI = (BevelBottomVertices[NextI] - FVector(0, 0, BevelBottomVertices[NextI].Z)).GetSafeNormal();
+
+        // 计算UV坐标
+        float U0 = U_START + (static_cast<float>(i) / Sides) * U_WIDTH;
+        float U1 = U_START + (static_cast<float>(i + 1) / Sides) * U_WIDTH;
+
+        FVector2D UV_Bottom_i(U0, V_START);
+        FVector2D UV_Bottom_NextI(U1, V_START);
+        FVector2D UV_Top_i(U0, V_START + V_HEIGHT);
+        FVector2D UV_Top_NextI(U1, V_START + V_HEIGHT);
+
+        // 创建顶点
+        int32 V0 = GetOrAddVertexWithUV(BevelBottomVertices[i], Normal_i, UV_Bottom_i);
+        int32 V1 = GetOrAddVertexWithUV(BevelBottomVertices[NextI], Normal_NextI, UV_Bottom_NextI);
+        int32 V2 = GetOrAddVertexWithUV(BevelTopVertices[NextI], Normal_NextI, UV_Top_NextI);
+        int32 V3 = GetOrAddVertexWithUV(BevelTopVertices[i], Normal_i, UV_Top_i);
+
+        // 添加两个三角形组成四边形
+        AddTriangle(V0, V3, V2);
+        AddTriangle(V0, V2, V1);
+    }
 }
 
 void FPyramidBuilder::GeneratePyramidSides()
 {
+    // 金字塔侧面UV映射，每个面独立分配UV区域
+    // 使用 [0, 0.5] - [1, 1] 区域，分割给各个侧面
+
+    const float U_WIDTH_PER_SIDE = 1.0f / Sides;
+    const float V_START = 0.5f;
+    const float V_HEIGHT = 0.5f;
+
     for (int32 i = 0; i < Sides; ++i)
     {
         const int32 NextI = (i + 1) % Sides;
 
+        // 计算侧面法线
         FVector Edge1 = PyramidBaseVertices[NextI] - PyramidBaseVertices[i];
         FVector Edge2 = PyramidTopPoint - PyramidBaseVertices[i];
         FVector SideNormal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
 
-        int32 TopVertex = GetOrAddVertex(PyramidTopPoint, SideNormal);
-        int32 V1 = GetOrAddVertex(PyramidBaseVertices[i], SideNormal);
-        int32 V2 = GetOrAddVertex(PyramidBaseVertices[NextI], SideNormal);
+        // 计算UV坐标
+        float U_START = static_cast<float>(i) * U_WIDTH_PER_SIDE;
+        float U_END = U_START + U_WIDTH_PER_SIDE;
 
+        // 顶点UV坐标 - 顶点在中心
+        FVector2D UV_Top((U_START + U_END) * 0.5f, V_START + V_HEIGHT);
+        // 底边顶点UV坐标
+        FVector2D UV_Base1(U_START, V_START);
+        FVector2D UV_Base2(U_END, V_START);
+
+        // 创建顶点
+        int32 TopVertex = GetOrAddVertexWithUV(PyramidTopPoint, SideNormal, UV_Top);
+        int32 V1 = GetOrAddVertexWithUV(PyramidBaseVertices[i], SideNormal, UV_Base1);
+        int32 V2 = GetOrAddVertexWithUV(PyramidBaseVertices[NextI], SideNormal, UV_Base2);
+
+        // 添加三角形
         AddTriangle(V2, V1, TopVertex);
     }
 }
@@ -162,25 +246,25 @@ void FPyramidBuilder::InitializePyramidVertices()
     PyramidTopPoint = FVector(0, 0, Height);
 }
 
-// UV生成已移除 - 让UE4自动处理UV生成
-
 void FPyramidBuilder::PrecomputeUVs()
 {
     PrecomputeUVScaleValues();
 
+    // 底部UV - 映射到圆形区域
     BaseUVs.SetNum(Sides);
     for (int32 i = 0; i < Sides; ++i)
     {
-        // 底部UVs
         BaseUVs[i] = FVector2D(0.5f + 0.5f * CosValues[i], 0.5f + 0.5f * SinValues[i]);
     }
 
+    // 金字塔侧面UV
     PyramidSideUVs.SetNum(Sides);
     for (int32 i = 0; i < Sides; ++i)
     {
         PyramidSideUVs[i] = FVector2D(static_cast<float>(i) / Sides, 1.0f);
     }
 
+    // 倒角UV
     if (BevelRadius > 0.0f)
     {
         BevelUVs.SetNum(Sides);
@@ -203,7 +287,7 @@ void FPyramidBuilder::GeneratePolygonFaceOptimized(const TArray<FVector>& Vertic
     TArray<int32> VertexIndices;
     VertexIndices.Reserve(Vertices.Num());
 
-    // 为底部面片使用 GetOrAddVertex
+    // 为底部面片使用 GetOrAddVertex（不带UV）
     for (int32 i = 0; i < Vertices.Num(); ++i)
     {
         int32 VertexIndex = GetOrAddVertex(Vertices[i], Normal);
@@ -220,7 +304,8 @@ void FPyramidBuilder::GeneratePolygonFaceOptimized(const TArray<FVector>& Vertic
     }
 }
 
-void FPyramidBuilder::GenerateSideStripOptimized(const TArray<FVector>& BottomVerts, const TArray<FVector>& TopVerts, const TArray<FVector2D>& BottomUVs, const TArray<FVector2D>& TopUVs)
+void FPyramidBuilder::GenerateSideStripOptimized(const TArray<FVector>& BottomVerts, const TArray<FVector>& TopVerts,
+    const TArray<FVector2D>& BottomUVs, const TArray<FVector2D>& TopUVs)
 {
     if (BottomVerts.Num() != TopVerts.Num() || BottomUVs.Num() != BottomVerts.Num() || TopUVs.Num() != TopVerts.Num())
     {
@@ -235,7 +320,7 @@ void FPyramidBuilder::GenerateSideStripOptimized(const TArray<FVector>& BottomVe
         FVector Normal_i = (BottomVerts[i] - FVector(0, 0, BottomVerts[i].Z)).GetSafeNormal();
         FVector Normal_NextI = (BottomVerts[NextI] - FVector(0, 0, BottomVerts[NextI].Z)).GetSafeNormal();
 
-        // 使用新的函数，传入 UV
+        // 使用带UV的函数
         int32 V0 = GetOrAddVertexWithUV(BottomVerts[i], Normal_i, BottomUVs[i]);
         int32 V1 = GetOrAddVertexWithUV(BottomVerts[NextI], Normal_NextI, BottomUVs[NextI]);
         int32 V2 = GetOrAddVertexWithUV(TopVerts[NextI], Normal_NextI, TopUVs[NextI]);
@@ -248,12 +333,12 @@ void FPyramidBuilder::GenerateSideStripOptimized(const TArray<FVector>& BottomVe
 
 int32 FPyramidBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal)
 {
-    // 不计算UV，让UE4自动生成
+    // 调用基类方法，不提供UV（让UE4自动生成）
     return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal);
 }
 
 int32 FPyramidBuilder::GetOrAddVertexWithUV(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
-    // 不计算UV，让UE4自动生成
-    return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal);
+    // 调用基类方法，提供UV坐标
+    return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal, UV);
 }
