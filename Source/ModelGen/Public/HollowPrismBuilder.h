@@ -26,9 +26,11 @@ class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
  private:
   const AHollowPrism& HollowPrism;
   
-  // 端盖顶点索引记录
-  TArray<int32> StartCapIndices;
-  TArray<int32> EndCapIndices;
+  // 端盖顶点索引记录 - 拆分为4个独立数组
+  TArray<int32> StartOuterCapIndices;  // 起始端盖外壁顶点
+  TArray<int32> StartInnerCapIndices;  // 起始端盖内壁顶点
+  TArray<int32> EndOuterCapIndices;    // 结束端盖外壁顶点
+  TArray<int32> EndInnerCapIndices;    // 结束端盖内壁顶点
   
   // 倒角连接顶点记录
   TArray<int32> TopInnerBevelVertices;   // 顶部内环倒角连接顶点
@@ -36,104 +38,60 @@ class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
   TArray<int32> BottomInnerBevelVertices; // 底部内环倒角连接顶点
   TArray<int32> BottomOuterBevelVertices; // 底部外环倒角连接顶点
   
-  // 墙体和顶/底盖
+  //~ Begin Wall Generation
+  void CreateInnerWalls();
+  void CreateOuterWalls();
+  void CreateWalls(float Radius, int32 Sides, bool bIsInner);
 
-  void GenerateInnerWalls();
+  //~ Begin Cap Generation
+  void CreateTopCap();
+  void CreateBottomCap();
+  void CreateCapVertices(TArray<int32>& OutInnerVertices, 
+                        TArray<int32>& OutOuterVertices, 
+                        bool bIsTopCap);
+  void CreateCapTriangles(const TArray<int32>& InnerVertices,
+                         const TArray<int32>& OuterVertices,
+                         bool bIsTopCap);
 
-  void GenerateOuterWalls();
-
-  // 通用墙体生成方法
-  void GenerateWalls(float Radius, int32 Sides, bool bIsInner);
-
-  void GenerateTopCapWithTriangles();
-
-  void GenerateBottomCapWithTriangles();
-
-  void GenerateTopCapWithBevel();
-
-  void GenerateBottomCapWithBevel();
-
-  void GenerateCapVerticesWithBevel(TArray<int32>& OutInnerVertices, 
-                                   TArray<int32>& OutOuterVertices, 
-                                   bool bIsTopCap);
-
-  // 倒角
-
-  void GenerateTopBevelGeometry();
-
-  void GenerateBottomBevelGeometry();
-
-  // 端盖 (非完整圆环时)
-
-  void GenerateEndCaps();
-
-  void GenerateAdvancedEndCaps();
-
-  void GenerateEndCapFromIndices(const TArray<int32>& CapIndices, 
-                                 const FVector& Center, 
-                                 const FVector& Normal, 
-                                 bool IsStart);
-
-  void GenerateEndCap(float Angle, bool IsStart);
-
-  // 顶点和三角形生成辅助函数
-
-  void GenerateCapTriangles(const TArray<int32>& InnerVertices,
-
-                            const TArray<int32>& OuterVertices,
-
-                            bool bIsTopCap);
-
-  void GenerateCapVertices(TArray<int32>& OutInnerVertices,
-
-                           TArray<int32>& OutOuterVertices,
-
-                           bool bIsTopCap);
-
-  void GenerateBevelGeometry(bool bIsTop, bool bIsInner);
-
-  void GenerateBevelRing(TArray<int32>& OutCurrentRing,
-
-                         bool bIsTop,
-                         bool bIsInner,
-
-                         int32 RingIndex,
-                         int32 TotalRings);
-
+  //~ Begin Bevel Generation
+  void CreateTopBevel();
+  void CreateBottomBevel();
+  void CreateBevelGeometry(bool bIsTop, bool bIsInner);
+  void CreateBevelRing(TArray<int32>& OutCurrentRing,
+                      bool bIsTop,
+                      bool bIsInner,
+                      int32 RingIndex,
+                      int32 TotalRings);
   void ConnectBevelRings(const TArray<int32>& PrevRing,
+                        const TArray<int32>& CurrentRing,
+                        bool bIsInner,
+                        bool bIsTop);
 
-                         const TArray<int32>& CurrentRing,
-
-                         bool bIsInner,
-                         bool bIsTop);
-
-  // 新的、重构后的端盖生成函数
-
-  void GenerateEndCapColumn(float Angle,
-                            const FVector& Normal,
-                            TArray<int32>& OutOrderedVertices);
-
-  void GenerateEndCapTriangles(const TArray<int32>& OrderedVertices,
-                               bool IsStart);
-
-  // 基于记录的端盖生成函数
-  void GenerateEndCapFromRecordedVertices(const TArray<int32>& RecordedVertices,
-                                         bool IsStart);
-  // 计算函数
-
+  //~ Begin End Cap Generation (for partial circles)
+  void CreateEndCaps();
+  void CreateAdvancedEndCaps();
+  void CreateEndCap(float Angle, bool bIsStart);
+  void CreateEndCapColumn(float Angle,
+                         const FVector& Normal,
+                         TArray<int32>& OutOrderedVertices);
+  void CreateEndCapTriangles(const TArray<int32>& OrderedVertices,
+                            bool bIsStart);
+  void CreateEndCapFromVertices(const TArray<int32>& RecordedVertices,
+                               bool bIsStart);
+  void CreateEndCapFromSeparateArrays(const TArray<int32>& OuterVertices,
+                                     const TArray<int32>& InnerVertices,
+                                     bool bIsStart);
+  void CreateEndCapWithBevel(bool bIsStart);
+  void CreateEndCapFromSimpleVertices(const TArray<int32>& RecordedVertices,
+                                     bool bIsStart);
+  void CreateEndCapWithBevelVertices(const TArray<int32>& RecordedVertices,
+                                    bool bIsStart);
+  //~ Begin Utility Functions
   float CalculateStartAngle() const;
-
   float CalculateAngleStep(int32 Sides) const;
-
   FVector CalculateVertexPosition(float Radius, float Angle, float Z) const;
-
-  FVector CalculateBevelNormal(float Angle,
-                               float Alpha,
-                               bool bIsInner,
-                               bool bIsTop) const;
-  // UV 生成
-
-  // UV生成已移除 - 让UE4自动处理UV生成
-
+  FVector CalculateBevelNormal(float Angle, float Alpha, bool bIsInner, bool bIsTop) const;
+  
+  //~ Begin Vertex Management
   int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal);
 };
