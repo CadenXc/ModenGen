@@ -96,10 +96,8 @@ void FFrustumBuilder::CreateSideGeometry()
 	BottomToTopMapping.SetNum(BottomRingOrigin.Num());
 	for (int32 BottomIndex = 0; BottomIndex < BottomRingOrigin.Num(); ++BottomIndex)
 	{
-		// 使用角度比例而不是顶点索引比例来确保正确的映射
-		const float BottomAngle = StartAngle + (BottomIndex * CalculateAngleStep(Frustum.BottomSides));
-		const float TopAngle = StartAngle + (BottomIndex * CalculateAngleStep(Frustum.TopSides));
-		const int32 TopIndex = FMath::Clamp(BottomIndex, 0, TopRingOrigin.Num() - 1);
+		const float BottomRatio = static_cast<float>(BottomIndex) / BottomRingOrigin.Num();
+		const int32 TopIndex = FMath::Clamp(FMath::RoundToInt(BottomRatio * TopRingOrigin.Num()), 0, TopRingOrigin.Num() - 1);
 		BottomToTopMapping[BottomIndex] = TopIndex;
 	}
 
@@ -172,14 +170,11 @@ void FFrustumBuilder::CreateSideGeometry()
 		TArray<int32> CurrentRing = VertexRings[i];
 		TArray<int32> NextRing = VertexRings[i + 1];
 
-		// 对于完整圆形和非完整圆形，都使用相同的处理逻辑
-		const int32 MaxIndex = CurrentRing.Num() - 1;
-
-		for (int32 CurrentIndex = 0; CurrentIndex < MaxIndex; ++CurrentIndex)
+		for (int32 CurrentIndex = 0; CurrentIndex < CurrentRing.Num(); ++CurrentIndex)
 		{
-			const int32 NextCurrentIndex = (CurrentIndex + 1);
+			const int32 NextCurrentIndex =
+				(Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) ? (CurrentIndex + 1) % CurrentRing.Num() : (CurrentIndex + 1);
 
-			// 确保NextCurrentIndex在有效范围内
 			if (NextCurrentIndex >= CurrentRing.Num())
 				continue;
 
@@ -324,7 +319,7 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 S
 	TArray<int32> VertexRing;
 	const float AngleStep = CalculateAngleStep(Sides);
 
-	const int32 VertexCount = Sides + 1; // 总是生成Sides+1个顶点
+	const int32 VertexCount = (Frustum.ArcAngle < 360.0f - KINDA_SMALL_NUMBER) ? Sides + 1 : Sides + 1; // 末尾会与首点合并
 
 	for (int32 i = 0; i < VertexCount; ++i)
 	{
@@ -342,10 +337,15 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 S
 		const int32 VertexIndex = GetOrAddVertex(Pos, Normal);
 		VertexRing.Add(VertexIndex);
 	}
-	// 满圆时闭合最后一个点到第一个
+	// 满圆时生成一个位置相同但UV不同的新顶点来闭合
 	if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && VertexRing.Num() > 0)
 	{
-		VertexRing.Last() = VertexRing[0];
+		const FVector LastPos = GetPosByIndex(VertexRing[0]);
+		const FVector LastNormal = MeshData.Normals[VertexRing[0]];
+		
+		// 为闭合点生成新的顶点，位置和法线相同但UV不同
+		const int32 CloseVertexIndex = GetOrAddVertex(LastPos, LastNormal);
+		VertexRing.Last() = CloseVertexIndex;
 	}
 
 	return VertexRing;
@@ -355,7 +355,7 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 S
 {
 	TArray<int32> VertexRing;
 	const float AngleStep = CalculateAngleStep(Sides);
-	const int32 VertexCount = Sides + 1; // 总是生成Sides+1个顶点
+	const int32 VertexCount = (Frustum.ArcAngle < 360.0f - KINDA_SMALL_NUMBER) ? Sides + 1 : Sides + 1; // 末尾会与首点合并
 
 	for (int32 i = 0; i < VertexCount; ++i)
 	{
@@ -367,6 +367,18 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 S
 		const FVector2D UV = UVOffset + FVector2D(U * UVScale.X, VCoord * UVScale.Y);
 
 		VertexRing.Add(GetOrAddVertex(Pos, Normal, UV));
+	}
+	// 满圆时生成一个位置相同但UV不同的新顶点来闭合
+	if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && VertexRing.Num() > 0)
+	{
+		const FVector LastPos = GetPosByIndex(VertexRing[0]);
+		const FVector LastNormal = MeshData.Normals[VertexRing[0]];
+		const FVector2D LastUV = MeshData.UVs[VertexRing[0]];
+		
+		// 为闭合点生成新的UV坐标，U=1.0确保UV不重叠
+		const FVector2D CloseUV = FVector2D(1.0f, LastUV.Y);
+		const int32 CloseVertexIndex = GetOrAddVertex(LastPos, LastNormal, CloseUV);
+		VertexRing.Last() = CloseVertexIndex;
 	}
 	return VertexRing;
 }
@@ -391,7 +403,7 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bo
 	const float CapRadius = FMath::Max(0.0f, Radius - Frustum.BevelRadius);
 
 	const float AngleStep = CalculateAngleStep(Sides);
-	const int32 LoopCount = Sides; // 总是连接Sides个面
+	const int32 LoopCount = (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) ? Sides : Sides;
 
 	for (int32 SideIndex = 0; SideIndex < LoopCount; ++SideIndex)
 	{
@@ -458,8 +470,7 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop) {
 	const float EndZ = bIsTop ? HalfHeight : -HalfHeight;
 	const float StartZ = bIsTop ? (HalfHeight - BevelRadius) : (-HalfHeight + BevelRadius);
 	const float AngleStep = CalculateAngleStep(Sides);
-	//const int32 RingSize = (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) ? Sides : Sides + 1; // 360度时生成Sides个顶点
-	const int32 RingSize = Sides + 1;
+	const int32 RingSize = (Frustum.ArcAngle < 360.0f - KINDA_SMALL_NUMBER) ? Sides + 1 : Sides + 1;
 
 	TArray<int32> StartRing;
 	TArray<int32> EndRing;
@@ -496,7 +507,16 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop) {
 		EndRing.Add(GetOrAddVertex(CapPos, BevelNormal, UV_Cap));
 	}
 
-	// 对于完整圆形，不需要特殊处理，因为我们已经生成了Sides+1个顶点
+	if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && EndRing.Num() > 0) {
+		const FVector LastPos = GetPosByIndex(EndRing[0]);
+		const FVector LastNormal = MeshData.Normals[EndRing[0]];
+		const FVector2D LastUV = MeshData.UVs[EndRing[0]];
+		
+		// 为闭合点生成新的UV坐标，U=1.0确保UV不重叠
+		const FVector2D CloseUV = FVector2D(1.0f, LastUV.Y);
+		const int32 CloseVertexIndex = GetOrAddVertex(LastPos, LastNormal, CloseUV);
+		EndRing.Last() = CloseVertexIndex;
+	}
 
 	// 记录倒角开始点到端盖连接点（只记录开始点，i=0的那个）
 	// 倒角有自己的顶点，位置相同但顶点不同
@@ -506,21 +526,12 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop) {
 	}
 
 	// 连接内外环形成倒角面
-	const int32 ConnectLoopCount = Sides; // 总是连接Sides个面
+	const int32 ConnectLoopCount = (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) ? Sides : Sides;
 	for (int32 s = 0; s < ConnectLoopCount; ++s) {
 		const int32 V00 = StartRing[s];
 		const int32 V10 = EndRing[s];
-
-		// 对于完整圆形，使用模运算；对于非完整圆形，直接加1
-		const int32 NextS = (s + 1);
-		// const int32 NextS = (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) ? (s + 1) % Sides : (s + 1);
-
-		// 确保NextS在有效范围内
-		if (NextS >= StartRing.Num() || NextS >= EndRing.Num())
-			continue;
-
-		const int32 V01 = StartRing[NextS];
-		const int32 V11 = EndRing[NextS];
+		const int32 V01 = StartRing[s + 1];
+		const int32 V11 = EndRing[s + 1];
 
 		if (bIsTop) {
 			AddQuad(V00, V10, V11, V01);
