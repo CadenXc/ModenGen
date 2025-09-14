@@ -170,13 +170,11 @@ void FFrustumBuilder::CreateSideGeometry()
 		TArray<int32> CurrentRing = VertexRings[i];
 		TArray<int32> NextRing = VertexRings[i + 1];
 
-		for (int32 CurrentIndex = 0; CurrentIndex < CurrentRing.Num(); ++CurrentIndex)
+		for (int32 CurrentIndex = 0; CurrentIndex < CurrentRing.Num() - 1; ++CurrentIndex)
 		{
-			const int32 NextCurrentIndex =
-				(Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) ? (CurrentIndex + 1) % CurrentRing.Num() : (CurrentIndex + 1);
+			const int32 NextCurrentIndex = CurrentIndex + 1;
 
-			if (NextCurrentIndex >= CurrentRing.Num())
-				continue;
+			// 侧面连接与ArcAngle无关，直接使用下一个顶点
 
 			const float CurrentRatio = static_cast<float>(CurrentIndex) / CurrentRing.Num();
 			const float NextCurrentRatio = static_cast<float>(NextCurrentIndex) / CurrentRing.Num();
@@ -319,7 +317,7 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 S
 	TArray<int32> VertexRing;
 	const float AngleStep = CalculateAngleStep(Sides);
 
-	const int32 VertexCount = (Frustum.ArcAngle < 360.0f - KINDA_SMALL_NUMBER) ? Sides + 1 : Sides + 1; // 末尾会与首点合并
+	const int32 VertexCount = Sides + 1; // 总是生成 Sides+1 个顶点
 
 	for (int32 i = 0; i < VertexCount; ++i)
 	{
@@ -334,52 +332,41 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 S
 			Normal = FVector(1.0f, 0.0f, 0.0f);
 		}
 
-		const int32 VertexIndex = GetOrAddVertex(Pos, Normal);
+		const FVector2D UV = FVector2D(0.0f, 0.0f);
+		const int32 VertexIndex = GetOrAddVertex(Pos, Normal, UV);
 		VertexRing.Add(VertexIndex);
-	}
-	// 满圆时生成一个位置相同但UV不同的新顶点来闭合
-	if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && VertexRing.Num() > 0)
-	{
-		const FVector LastPos = GetPosByIndex(VertexRing[0]);
-		const FVector LastNormal = MeshData.Normals[VertexRing[0]];
-		
-		// 为闭合点生成新的顶点，位置和法线相同但UV不同
-		const int32 CloseVertexIndex = GetOrAddVertex(LastPos, LastNormal);
-		VertexRing.Last() = CloseVertexIndex;
 	}
 
 	return VertexRing;
 }
 
-TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 Sides, float VCoord, const FVector2D& UVOffset, const FVector2D& UVScale)
+TArray<int32> FFrustumBuilder::GenerateVertexRing(
+	float Radius, float Z, int32 Sides, float VCoord,
+	const FVector2D& UVOffset, const FVector2D& UVScale)
 {
 	TArray<int32> VertexRing;
+
+	// 角度步进
 	const float AngleStep = CalculateAngleStep(Sides);
-	const int32 VertexCount = (Frustum.ArcAngle < 360.0f - KINDA_SMALL_NUMBER) ? Sides + 1 : Sides + 1; // 末尾会与首点合并
+
+	// 侧面生成与ArcAngle无关：总是生成 Sides+1 个点
+	const int32 VertexCount = Sides + 1;
 
 	for (int32 i = 0; i < VertexCount; ++i)
 	{
 		const float Angle = StartAngle + i * AngleStep;
+
 		const FVector Pos(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), Z);
 		const FVector Normal = FVector(Pos.X, Pos.Y, 0).GetSafeNormal();
 
+		// UV计算：使用线性分布，与ArcAngle无关
 		const float U = static_cast<float>(i) / Sides;
 		const FVector2D UV = UVOffset + FVector2D(U * UVScale.X, VCoord * UVScale.Y);
 
 		VertexRing.Add(GetOrAddVertex(Pos, Normal, UV));
 	}
-	// 满圆时生成一个位置相同但UV不同的新顶点来闭合
-	if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && VertexRing.Num() > 0)
-	{
-		const FVector LastPos = GetPosByIndex(VertexRing[0]);
-		const FVector LastNormal = MeshData.Normals[VertexRing[0]];
-		const FVector2D LastUV = MeshData.UVs[VertexRing[0]];
-		
-		// 为闭合点生成新的UV坐标，U=1.0确保UV不重叠
-		const FVector2D CloseUV = FVector2D(1.0f, LastUV.Y);
-		const int32 CloseVertexIndex = GetOrAddVertex(LastPos, LastNormal, CloseUV);
-		VertexRing.Last() = CloseVertexIndex;
-	}
+
+	// 侧面不需要闭合处理，保持与ArcAngle无关
 	return VertexRing;
 }
 
@@ -403,7 +390,7 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bo
 	const float CapRadius = FMath::Max(0.0f, Radius - Frustum.BevelRadius);
 
 	const float AngleStep = CalculateAngleStep(Sides);
-	const int32 LoopCount = (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) ? Sides : Sides;
+	const int32 LoopCount = Sides; // 与ArcAngle无关
 
 	for (int32 SideIndex = 0; SideIndex < LoopCount; ++SideIndex)
 	{
@@ -470,7 +457,7 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop) {
 	const float EndZ = bIsTop ? HalfHeight : -HalfHeight;
 	const float StartZ = bIsTop ? (HalfHeight - BevelRadius) : (-HalfHeight + BevelRadius);
 	const float AngleStep = CalculateAngleStep(Sides);
-	const int32 RingSize = (Frustum.ArcAngle < 360.0f - KINDA_SMALL_NUMBER) ? Sides + 1 : Sides + 1;
+	const int32 RingSize = Sides + 1; // 与ArcAngle无关
 
 	TArray<int32> StartRing;
 	TArray<int32> EndRing;
@@ -507,166 +494,97 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop) {
 		EndRing.Add(GetOrAddVertex(CapPos, BevelNormal, UV_Cap));
 	}
 
-	if (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER && EndRing.Num() > 0) {
-		const FVector LastPos = GetPosByIndex(EndRing[0]);
-		const FVector LastNormal = MeshData.Normals[EndRing[0]];
-		const FVector2D LastUV = MeshData.UVs[EndRing[0]];
-		
-		// 为闭合点生成新的UV坐标，U=1.0确保UV不重叠
-		const FVector2D CloseUV = FVector2D(1.0f, LastUV.Y);
-		const int32 CloseVertexIndex = GetOrAddVertex(LastPos, LastNormal, CloseUV);
-		EndRing.Last() = CloseVertexIndex;
-	}
-
-	// 记录倒角开始点到端盖连接点（只记录开始点，i=0的那个）
-	// 倒角有自己的顶点，位置相同但顶点不同
-	if (StartRing.Num() > 0)
-	{
-		RecordEndCapConnectionPoint(StartRing[0]);
-	}
-
-	// 连接内外环形成倒角面
-	const int32 ConnectLoopCount = (Frustum.ArcAngle >= 360.0f - KINDA_SMALL_NUMBER) ? Sides : Sides;
-	for (int32 s = 0; s < ConnectLoopCount; ++s) {
-		const int32 V00 = StartRing[s];
-		const int32 V10 = EndRing[s];
-		const int32 V01 = StartRing[s + 1];
-		const int32 V11 = EndRing[s + 1];
-
-		if (bIsTop) {
-			AddQuad(V00, V10, V11, V01);
+	// 倒角面生成与ArcAngle无关，总是生成倒角面
+	if (EndRing.Num() > 0) {
+		// 记录倒角开始点到端盖连接点（只记录开始点，i=0的那个）
+		// 倒角有自己的顶点，位置相同但顶点不同
+		if (StartRing.Num() > 0)
+		{
+			RecordEndCapConnectionPoint(StartRing[0]);
 		}
-		else {
-			AddQuad(V00, V01, V11, V10);
+
+		// 连接内外环形成倒角面 - 与ArcAngle无关
+		for (int32 s = 0; s < Sides; ++s) {
+			const int32 V00 = StartRing[s];
+			const int32 V10 = EndRing[s];
+			const int32 V01 = StartRing[s + 1];
+			const int32 V11 = EndRing[s + 1];
+
+			if (bIsTop) {
+				AddQuad(V00, V10, V11, V01);
+			}
+			else {
+				AddQuad(V00, V01, V11, V10);
+			}
 		}
 	}
 }
 
 float FFrustumBuilder::CalculateBentRadius(float BaseRadius, float HeightRatio)
-{
-	const float BendFactor = FMath::Sin(HeightRatio * PI);
-	const float BentRadius = BaseRadius + Frustum.BendAmount * BendFactor * BaseRadius;
-
-	if (Frustum.MinBendRadius > KINDA_SMALL_NUMBER)
 	{
-		return FMath::Max(BentRadius, Frustum.MinBendRadius);
+		const float BendFactor = FMath::Sin(HeightRatio * PI);
+		const float BentRadius = BaseRadius + Frustum.BendAmount * BendFactor * BaseRadius;
+
+		if (Frustum.MinBendRadius > KINDA_SMALL_NUMBER)
+		{
+			return FMath::Max(BentRadius, Frustum.MinBendRadius);
+		}
+
+		return FMath::Max(BentRadius, KINDA_SMALL_NUMBER);
 	}
 
-	return FMath::Max(BentRadius, KINDA_SMALL_NUMBER);
-}
-
-float FFrustumBuilder::CalculateBevelHeight(float Radius)
-{
-	return FMath::Min(Frustum.BevelRadius, Radius);
-}
-
-float FFrustumBuilder::CalculateHeightRatio(float Z)
-{
-	const float HalfHeight = Frustum.GetHalfHeight();
-	return (Z + HalfHeight) / Frustum.Height;
-}
-
-float FFrustumBuilder::CalculateAngleStep(int32 Sides)
-{
-	if (Sides == 0) return 0.0f;
-	return ArcAngleRadians / Sides;
-}
-void FFrustumBuilder::GenerateEndCapTrianglesFromVertices(const TArray<int32>& OrderedVertices, bool IsStart, float Angle)
-{
-	if (OrderedVertices.Num() < 2)
+	float FFrustumBuilder::CalculateBevelHeight(float Radius)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("GenerateEndCapTrianglesFromVertices - 顶点数量不足，无法生成面"));
-		return;
+		return FMath::Min(Frustum.BevelRadius, Radius);
 	}
 
-	TArray<int32> SortedVertices = OrderedVertices;
-	SortedVertices.Sort([this](const int32& A, const int32& B) -> bool
-		{
-			FVector PosA = GetPosByIndex(A);
-			FVector PosB = GetPosByIndex(B);
-			return PosA.Z > PosB.Z;
-		});
-
-	// 计算端面的实际法线方向
-	// 端面法线应该垂直于端面平面
-	// 根据是否为开始端面来确定法线方向
-	const FVector BaseNormal = FVector(FMath::Cos(Angle + PI / 2), FMath::Sin(Angle + PI / 2), 0.0f);
-	const FVector EndCapNormal = IsStart ? -BaseNormal : BaseNormal;
-
-	// 中心线法线应该与端面法线一致，确保渲染方向正确
-	const FVector CenterLineNormal = EndCapNormal;
-
-	// 端盖UV设置 - 放在左下角，垂直对齐，优化空间利用
-	// 端盖UV区域：[0, 0.2] x [0.4, 1]
-	// 起始端盖：[0, 0.2] x [0.4, 0.7]
-	// 结束端盖：[0, 0.2] x [0.7, 1]
-	const FVector2D UVOffset = IsStart ? FVector2D(0.0f, 0.4f) : FVector2D(0.0f, 0.7f);
-	const FVector2D UVScale(0.2f, 0.3f);
-
-	if (SortedVertices.Num() == 2)
+	float FFrustumBuilder::CalculateHeightRatio(float Z)
 	{
-		const int32 V1 = SortedVertices[0];
-		const int32 V2 = SortedVertices[1];
-
-		FVector Pos1 = GetPosByIndex(V1);
-		FVector Pos2 = GetPosByIndex(V2);
-
-		// 计算UV坐标
-		const float Radius1 = FMath::Sqrt(Pos1.X * Pos1.X + Pos1.Y * Pos1.Y);
-		const float Radius2 = FMath::Sqrt(Pos2.X * Pos2.X + Pos2.Y * Pos2.Y);
-		const float MaxRadius = FMath::Max(Frustum.TopRadius, Frustum.BottomRadius);
-
-		const float Angle1 = FMath::Atan2(Pos1.Y, Pos1.X);
-		const float Angle2 = FMath::Atan2(Pos2.Y, Pos2.X);
-
-		// 将角度映射到[0,1]范围 - 修复U值分布问题
-		float U1, U2;
-		if (IsStart)
-		{
-			U1 = FMath::Clamp((Angle1 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
-			U2 = FMath::Clamp((Angle2 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
-		}
-		else
-		{
-			// 对于结束端盖，反转角度方向
-			U1 = 1.0f - FMath::Clamp((Angle1 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
-			U2 = 1.0f - FMath::Clamp((Angle2 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
-		}
-
-		const float V1_UV = (Pos1.Z + Frustum.GetHalfHeight()) / Frustum.Height;
-		const float V2_UV = (Pos2.Z + Frustum.GetHalfHeight()) / Frustum.Height;
-
-		const FVector2D UV1 = UVOffset + FVector2D(U1 * UVScale.X, V1_UV * UVScale.Y);
-		const FVector2D UV2 = UVOffset + FVector2D(U2 * UVScale.X, V2_UV * UVScale.Y);
-
-		// 中心点的UV坐标
-		const FVector2D CenterUV1 = UVOffset + FVector2D(0.5f * UVScale.X, V1_UV * UVScale.Y);
-		const FVector2D CenterUV2 = UVOffset + FVector2D(0.5f * UVScale.X, V2_UV * UVScale.Y);
-
-		const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), CenterLineNormal, CenterUV1);
-		const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), CenterLineNormal, CenterUV2);
-
-		// 重新创建边缘顶点以更新UV坐标
-		const int32 V1_New = GetOrAddVertex(Pos1, EndCapNormal, UV1);
-		const int32 V2_New = GetOrAddVertex(Pos2, EndCapNormal, UV2);
-
-		if (IsStart)
-		{
-			AddTriangle(V1_New, V2_New, CenterV1);
-			AddTriangle(V2_New, CenterV2, CenterV1);
-		}
-		else
-		{
-			AddTriangle(V2_New, V1_New, CenterV1);
-			AddTriangle(CenterV1, CenterV2, V2_New);
-		}
+		const float HalfHeight = Frustum.GetHalfHeight();
+		return (Z + HalfHeight) / Frustum.Height;
 	}
-	else
+
+	float FFrustumBuilder::CalculateAngleStep(int32 Sides)
 	{
-		for (int32 i = 0; i < SortedVertices.Num() - 1; ++i)
+		if (Sides == 0) return 0.0f;
+		return ArcAngleRadians / Sides;
+	}
+	void FFrustumBuilder::GenerateEndCapTrianglesFromVertices(const TArray<int32>&OrderedVertices, bool IsStart, float Angle)
+	{
+		if (OrderedVertices.Num() < 2)
 		{
-			const int32 V1 = SortedVertices[i];
-			const int32 V2 = SortedVertices[i + 1];
+			UE_LOG(LogTemp, Warning, TEXT("GenerateEndCapTrianglesFromVertices - 顶点数量不足，无法生成面"));
+			return;
+		}
+
+		TArray<int32> SortedVertices = OrderedVertices;
+		SortedVertices.Sort([this](const int32& A, const int32& B) -> bool
+			{
+				FVector PosA = GetPosByIndex(A);
+				FVector PosB = GetPosByIndex(B);
+				return PosA.Z > PosB.Z;
+			});
+
+		// 计算端面的实际法线方向
+		// 端面法线应该垂直于端面平面
+		// 根据是否为开始端面来确定法线方向
+		const FVector BaseNormal = FVector(FMath::Cos(Angle + PI / 2), FMath::Sin(Angle + PI / 2), 0.0f);
+		const FVector EndCapNormal = IsStart ? -BaseNormal : BaseNormal;
+
+		// 中心线法线应该与端面法线一致，确保渲染方向正确
+		const FVector CenterLineNormal = EndCapNormal;
+
+		// 端盖UV设置 - 放在左下角，垂直对齐，优化空间利用
+		// 端盖UV区域：[0, 0.2] x [0.4, 1]
+		// 起始端盖：[0, 0.2] x [0.4, 0.7]
+		// 结束端盖：[0, 0.2] x [0.7, 1]
+		const FVector2D UVOffset = IsStart ? FVector2D(0.0f, 0.4f) : FVector2D(0.0f, 0.7f);
+		const FVector2D UVScale(0.2f, 0.3f);
+
+		if (SortedVertices.Num() == 2)
+		{
+			const int32 V1 = SortedVertices[0];
+			const int32 V2 = SortedVertices[1];
 
 			FVector Pos1 = GetPosByIndex(V1);
 			FVector Pos2 = GetPosByIndex(V2);
@@ -721,28 +639,93 @@ void FFrustumBuilder::GenerateEndCapTrianglesFromVertices(const TArray<int32>& O
 				AddTriangle(CenterV1, CenterV2, V2_New);
 			}
 		}
+		else
+		{
+			for (int32 i = 0; i < SortedVertices.Num() - 1; ++i)
+			{
+				const int32 V1 = SortedVertices[i];
+				const int32 V2 = SortedVertices[i + 1];
+
+				FVector Pos1 = GetPosByIndex(V1);
+				FVector Pos2 = GetPosByIndex(V2);
+
+				// 计算UV坐标
+				const float Radius1 = FMath::Sqrt(Pos1.X * Pos1.X + Pos1.Y * Pos1.Y);
+				const float Radius2 = FMath::Sqrt(Pos2.X * Pos2.X + Pos2.Y * Pos2.Y);
+				const float MaxRadius = FMath::Max(Frustum.TopRadius, Frustum.BottomRadius);
+
+				const float Angle1 = FMath::Atan2(Pos1.Y, Pos1.X);
+				const float Angle2 = FMath::Atan2(Pos2.Y, Pos2.X);
+
+				// 将角度映射到[0,1]范围 - 修复U值分布问题
+				float U1, U2;
+				if (IsStart)
+				{
+					U1 = FMath::Clamp((Angle1 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
+					U2 = FMath::Clamp((Angle2 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
+				}
+				else
+				{
+					// 对于结束端盖，反转角度方向
+					U1 = 1.0f - FMath::Clamp((Angle1 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
+					U2 = 1.0f - FMath::Clamp((Angle2 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
+				}
+
+				const float V1_UV = (Pos1.Z + Frustum.GetHalfHeight()) / Frustum.Height;
+				const float V2_UV = (Pos2.Z + Frustum.GetHalfHeight()) / Frustum.Height;
+
+				const FVector2D UV1 = UVOffset + FVector2D(U1 * UVScale.X, V1_UV * UVScale.Y);
+				const FVector2D UV2 = UVOffset + FVector2D(U2 * UVScale.X, V2_UV * UVScale.Y);
+
+				// 中心点的UV坐标
+				const FVector2D CenterUV1 = UVOffset + FVector2D(0.5f * UVScale.X, V1_UV * UVScale.Y);
+				const FVector2D CenterUV2 = UVOffset + FVector2D(0.5f * UVScale.X, V2_UV * UVScale.Y);
+
+				const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), CenterLineNormal, CenterUV1);
+				const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), CenterLineNormal, CenterUV2);
+
+				// 重新创建边缘顶点以更新UV坐标
+				const int32 V1_New = GetOrAddVertex(Pos1, EndCapNormal, UV1);
+				const int32 V2_New = GetOrAddVertex(Pos2, EndCapNormal, UV2);
+
+				if (IsStart)
+				{
+					AddTriangle(V1_New, V2_New, CenterV1);
+					AddTriangle(V2_New, CenterV2, CenterV1);
+				}
+				else
+				{
+					AddTriangle(V2_New, V1_New, CenterV1);
+					AddTriangle(CenterV1, CenterV2, V2_New);
+				}
+			}
+		}
 	}
-}
-void FFrustumBuilder::RecordEndCapConnectionPoint(int32 VertexIndex)
-{
-	EndCapConnectionPoints.Add(VertexIndex);
-}
+	void FFrustumBuilder::RecordEndCapConnectionPoint(int32 VertexIndex)
+	{
+		EndCapConnectionPoints.Add(VertexIndex);
+	}
 
-const TArray<int32>& FFrustumBuilder::GetEndCapConnectionPoints() const
-{
-	return EndCapConnectionPoints;
-}
+	const TArray<int32>& FFrustumBuilder::GetEndCapConnectionPoints() const
+	{
+		return EndCapConnectionPoints;
+	}
 
-void FFrustumBuilder::ClearEndCapConnectionPoints()
-{
-	EndCapConnectionPoints.Empty();
-}
+	void FFrustumBuilder::ClearEndCapConnectionPoints()
+	{
+		EndCapConnectionPoints.Empty();
+	}
 
-// UV生成已移除 - 让UE4自动处理UV生成
+	// UV生成已移除 - 让UE4自动处理UV生成
 
-void FFrustumBuilder::CalculateAngles()
+	void FFrustumBuilder::CalculateAngles()
+	{
+		ArcAngleRadians = FMath::DegreesToRadians(Frustum.ArcAngle);
+		StartAngle = -ArcAngleRadians / 2.0f;
+		EndAngle = ArcAngleRadians / 2.0f;
+	}
+
+int32 FFrustumBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
-	ArcAngleRadians = FMath::DegreesToRadians(Frustum.ArcAngle);
-	StartAngle = -ArcAngleRadians / 2.0f;
-	EndAngle = ArcAngleRadians / 2.0f;
+	return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal, UV);
 }
