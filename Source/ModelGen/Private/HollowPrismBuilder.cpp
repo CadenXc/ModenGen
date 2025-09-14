@@ -98,8 +98,12 @@ void FHollowPrismBuilder::CreateWalls(float Radius, int32 Sides, bool bIsInner)
             ? FVector(-FMath::Cos(Angle), -FMath::Sin(Angle), 0.0f).GetSafeNormal()
             : FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.0f).GetSafeNormal();
 
-        const int32 TopVertex = GetOrAddVertex(TopPos, Normal);
-        const int32 BottomVertex = GetOrAddVertex(BottomPos, Normal);
+        // 计算内外侧面UV坐标
+        const FVector2D TopUV = CalculateWallUV(Angle, WallTopZ, !bIsInner);
+        const FVector2D BottomUV = CalculateWallUV(Angle, WallBottomZ, !bIsInner);
+        
+        const int32 TopVertex = GetOrAddVertexWithUV(TopPos, Normal, TopUV);
+        const int32 BottomVertex = GetOrAddVertexWithUV(BottomPos, Normal, BottomUV);
 
         TopVertices.Add(TopVertex);
         BottomVertices.Add(BottomVertex);
@@ -226,7 +230,8 @@ void FHollowPrismBuilder::CreateCapVertices(TArray<int32>& OutInnerVertices,
         // 内环半径增加倒角半径
         const float AdjustedInnerRadius = HollowPrism.InnerRadius + HollowPrism.BevelRadius;
         const FVector InnerPos = CalculateVertexPosition(AdjustedInnerRadius, Angle, CurrentHight);
-        OutInnerVertices.Add(GetOrAddVertex(InnerPos, Normal));
+        const FVector2D InnerUV = CalculateCapUV(Angle, AdjustedInnerRadius, bIsTopCap);
+        OutInnerVertices.Add(GetOrAddVertexWithUV(InnerPos, Normal, InnerUV));
     }
 
     // 生成外环顶点（调整半径以考虑倒角）
@@ -236,7 +241,8 @@ void FHollowPrismBuilder::CreateCapVertices(TArray<int32>& OutInnerVertices,
         // 外环半径减少倒角半径
         const float AdjustedOuterRadius = HollowPrism.OuterRadius - HollowPrism.BevelRadius;
         const FVector OuterPos = CalculateVertexPosition(AdjustedOuterRadius, Angle, CurrentHight);
-        OutOuterVertices.Add(GetOrAddVertex(OuterPos, Normal));
+        const FVector2D OuterUV = CalculateCapUV(Angle, AdjustedOuterRadius, bIsTopCap);
+        OutOuterVertices.Add(GetOrAddVertexWithUV(OuterPos, Normal, OuterUV));
     }
 
     // 如果是完整圆形，确保最后一个顶点与第一个相同
@@ -301,16 +307,9 @@ void FHollowPrismBuilder::CreateEndCaps()
 
 void FHollowPrismBuilder::CreateAdvancedEndCaps()
 {
-    // 使用记录的顶点索引生成端盖
-    if (StartOuterCapIndices.Num() > 0 && StartInnerCapIndices.Num() > 0)
-    {
-        CreateEndCapFromSeparateArrays(StartOuterCapIndices, StartInnerCapIndices, true);
-    }
-    
-    if (EndOuterCapIndices.Num() > 0 && EndInnerCapIndices.Num() > 0)
-    {
-        CreateEndCapFromSeparateArrays(EndOuterCapIndices, EndInnerCapIndices, false);
-    }
+    // 使用正确的端盖生成方法，按高度顺序生成完整顶点列
+    CreateEndCapWithBevel(true);   // 起始端盖
+    CreateEndCapWithBevel(false);  // 结束端盖
 }
 
 
@@ -370,15 +369,8 @@ void FHollowPrismBuilder::CreateBevelGeometry(bool bIsTop, bool bIsInner)
 
     TArray<int32> PrevRing;
     
-    // 第一个环使用记录的侧面顶点
-    if (bIsTop)
-    {
-        PrevRing = bIsInner ? TopInnerBevelVertices : TopOuterBevelVertices;
-    }
-    else
-    {
-        PrevRing = bIsInner ? BottomInnerBevelVertices : BottomOuterBevelVertices;
-    }
+    // 第一个环重新生成，不共用壁面顶点
+    CreateBevelRing(PrevRing, bIsTop, bIsInner, 0, HollowPrism.BevelSegments);
     
     for (int32 i = 1; i <= HollowPrism.BevelSegments; ++i)
     {
@@ -401,16 +393,26 @@ void FHollowPrismBuilder::CreateBevelRing(TArray<int32>& OutCurrentRing,
     const float HalfHeight = HollowPrism.GetHalfHeight();
     const float ZSign = bIsTop ? 1.0f : -1.0f;
 
-    // 倒角圆弧的中心
-    const float CenterZ = HalfHeight * ZSign - HollowPrism.BevelRadius * ZSign;
-    const float CenterRadius = bIsInner ?
-        HollowPrism.InnerRadius + HollowPrism.BevelRadius :
-        HollowPrism.OuterRadius - HollowPrism.BevelRadius;
+    float CurrentZ, CurrentRadius;
+    
+    if (RingIndex == 0)
+    {
+        // 第一个环：与壁面连接处，重新生成顶点位置
+        CurrentZ = HalfHeight * ZSign - HollowPrism.BevelRadius * ZSign;
+        CurrentRadius = bIsInner ? HollowPrism.InnerRadius : HollowPrism.OuterRadius;
+    }
+    else
+    {
+        // 其他环：倒角圆弧上的点
+        const float CenterZ = HalfHeight * ZSign - HollowPrism.BevelRadius * ZSign;
+        const float CenterRadius = bIsInner ?
+            HollowPrism.InnerRadius + HollowPrism.BevelRadius :
+            HollowPrism.OuterRadius - HollowPrism.BevelRadius;
 
-    // 当前环上的点的位置和法线
-    const float CurrentZ = CenterZ + FMath::Sin(RingAngle) * HollowPrism.BevelRadius * ZSign;
-    const float RadiusFactor = FMath::Cos(RingAngle) * HollowPrism.BevelRadius;
-    const float CurrentRadius = bIsInner ? CenterRadius - RadiusFactor : CenterRadius + RadiusFactor;
+        CurrentZ = CenterZ + FMath::Sin(RingAngle) * HollowPrism.BevelRadius * ZSign;
+        const float RadiusFactor = FMath::Cos(RingAngle) * HollowPrism.BevelRadius;
+        CurrentRadius = bIsInner ? CenterRadius - RadiusFactor : CenterRadius + RadiusFactor;
+    }
 
     const int32 Sides = bIsInner ? HollowPrism.InnerSides : HollowPrism.OuterSides;
     const float StartAngle = CalculateStartAngle();
@@ -424,7 +426,8 @@ void FHollowPrismBuilder::CreateBevelRing(TArray<int32>& OutCurrentRing,
 
         const FVector Position = CalculateVertexPosition(CurrentRadius, SideAngle, CurrentZ);
         const FVector Normal = CalculateBevelNormal(SideAngle, Alpha, bIsInner, bIsTop);
-        const int32 VertexIndex = GetOrAddVertex(Position, Normal);
+        const FVector2D UV = CalculateBevelUV(SideAngle, Alpha, bIsInner, bIsTop);
+        const int32 VertexIndex = GetOrAddVertexWithUV(Position, Normal, UV);
         OutCurrentRing.Add(VertexIndex);
 
         // 记录倒角端盖顶点（如果不是完整圆环）
@@ -516,7 +519,7 @@ void FHollowPrismBuilder::ConnectBevelRings(const TArray<int32>& PrevRing,
 
 
 // [FIXED] Correctly generates the end cap vertex column, accounting for bevels.
-void FHollowPrismBuilder::CreateEndCapColumn(float Angle, const FVector& Normal, TArray<int32>& OutOrderedVertices)
+void FHollowPrismBuilder::CreateEndCapColumn(float Angle, const FVector& Normal, TArray<int32>& OutOrderedVertices, bool bIsStart)
 {
     const float HalfHeight = HollowPrism.GetHalfHeight();
     const float BevelRadius = HollowPrism.BevelRadius;
@@ -532,11 +535,16 @@ void FHollowPrismBuilder::CreateEndCapColumn(float Angle, const FVector& Normal,
         const FVector OuterBottom = CalculateVertexPosition(HollowPrism.OuterRadius, Angle, -HalfHeight);
         const FVector InnerBottom = CalculateVertexPosition(HollowPrism.InnerRadius, Angle, -HalfHeight);
 
-        // Add vertices in top-to-bottom, outer-then-inner order.
-        OutOrderedVertices.Add(GetOrAddVertex(OuterTop, Normal));
-        OutOrderedVertices.Add(GetOrAddVertex(InnerTop, Normal));
-        OutOrderedVertices.Add(GetOrAddVertex(OuterBottom, Normal));
-        OutOrderedVertices.Add(GetOrAddVertex(InnerBottom, Normal));
+        // Add vertices in top-to-bottom, outer-then-inner order with UV.
+        const FVector2D OuterTopUV = CalculateEndCapUVWithRadius(Angle, HalfHeight, HollowPrism.OuterRadius, bIsStart);
+        const FVector2D InnerTopUV = CalculateEndCapUVWithRadius(Angle, HalfHeight, HollowPrism.InnerRadius, bIsStart);
+        const FVector2D OuterBottomUV = CalculateEndCapUVWithRadius(Angle, -HalfHeight, HollowPrism.OuterRadius, bIsStart);
+        const FVector2D InnerBottomUV = CalculateEndCapUVWithRadius(Angle, -HalfHeight, HollowPrism.InnerRadius, bIsStart);
+        
+        OutOrderedVertices.Add(GetOrAddVertexWithUV(OuterTop, Normal, OuterTopUV));
+        OutOrderedVertices.Add(GetOrAddVertexWithUV(InnerTop, Normal, InnerTopUV));
+        OutOrderedVertices.Add(GetOrAddVertexWithUV(OuterBottom, Normal, OuterBottomUV));
+        OutOrderedVertices.Add(GetOrAddVertexWithUV(InnerBottom, Normal, InnerBottomUV));
         return;
     }
 
@@ -567,8 +575,12 @@ void FHollowPrismBuilder::CreateEndCapColumn(float Angle, const FVector& Normal,
         const FVector InnerPos = CalculateVertexPosition(CurrentRadius_Inner, Angle, CurrentZ);
         const FVector OuterPos = CalculateVertexPosition(CurrentRadius_Outer, Angle, CurrentZ);
 
-        OutOrderedVertices.Add(GetOrAddVertex(OuterPos, Normal));
-        OutOrderedVertices.Add(GetOrAddVertex(InnerPos, Normal));
+        // 计算UV坐标
+        const FVector2D OuterUV = CalculateEndCapUVWithRadius(Angle, CurrentZ, CurrentRadius_Outer, bIsStart);
+        const FVector2D InnerUV = CalculateEndCapUVWithRadius(Angle, CurrentZ, CurrentRadius_Inner, bIsStart);
+
+        OutOrderedVertices.Add(GetOrAddVertexWithUV(OuterPos, Normal, OuterUV));
+        OutOrderedVertices.Add(GetOrAddVertexWithUV(InnerPos, Normal, InnerUV));
     }
 
     // === 2. Bottom Bevel ===
@@ -595,8 +607,12 @@ void FHollowPrismBuilder::CreateEndCapColumn(float Angle, const FVector& Normal,
         const FVector InnerPos = CalculateVertexPosition(CurrentRadius_Inner, Angle, CurrentZ);
         const FVector OuterPos = CalculateVertexPosition(CurrentRadius_Outer, Angle, CurrentZ);
 
-        OutOrderedVertices.Add(GetOrAddVertex(OuterPos, Normal));
-        OutOrderedVertices.Add(GetOrAddVertex(InnerPos, Normal));
+        // 计算UV坐标
+        const FVector2D OuterUV = CalculateEndCapUVWithRadius(Angle, CurrentZ, CurrentRadius_Outer, bIsStart);
+        const FVector2D InnerUV = CalculateEndCapUVWithRadius(Angle, CurrentZ, CurrentRadius_Inner, bIsStart);
+
+        OutOrderedVertices.Add(GetOrAddVertexWithUV(OuterPos, Normal, OuterUV));
+        OutOrderedVertices.Add(GetOrAddVertexWithUV(InnerPos, Normal, InnerUV));
     }
 }
 
@@ -645,37 +661,56 @@ void FHollowPrismBuilder::CreateEndCapFromSeparateArrays(const TArray<int32>& Ou
         return;
     }
 
-    // 按Z值排序顶点（从高到低）
-    TArray<int32> SortedOuterVertices = OuterVertices;
-    TArray<int32> SortedInnerVertices = InnerVertices;
-    
-    SortedOuterVertices.Sort([this](const int32& A, const int32& B) {
-        return GetPosByIndex(A).Z > GetPosByIndex(B).Z;
-    });
-    
-    SortedInnerVertices.Sort([this](const int32& A, const int32& B) {
-        return GetPosByIndex(A).Z > GetPosByIndex(B).Z;
-    });
+    // 重新创建端盖顶点，参考Frustum的实现
+    TArray<int32> EndCapOuterVertices;
+    TArray<int32> EndCapInnerVertices;
     
     // 计算端盖法线（垂直于端盖表面）
     const FVector EndCapNormal = bIsStart ? 
         FVector(-1.0f, 0.0f, 0.0f) :  // 起始端盖法线朝外
-        FVector(-1.0f, 0.0f, 0.0f);    // 结束端盖法线朝外
+        FVector(1.0f, 0.0f, 0.0f);    // 结束端盖法线朝外
     
-    // 为端盖顶点重新创建，使用正确的端盖法线
-    TArray<int32> EndCapOuterVertices;
-    TArray<int32> EndCapInnerVertices;
-    
-    for (int32 i = 0; i < SortedOuterVertices.Num(); ++i)
+    // 重新创建外壁顶点
+    for (int32 i = 0; i < OuterVertices.Num(); ++i)
     {
-        const FVector OuterPos = GetPosByIndex(SortedOuterVertices[i]);
-        const FVector InnerPos = GetPosByIndex(SortedInnerVertices[i]);
+        const FVector OuterPos = GetPosByIndex(OuterVertices[i]);
         
-        // 重新创建顶点，使用端盖法线
-        const int32 NewOuterVertex = GetOrAddVertex(OuterPos, EndCapNormal);
-        const int32 NewInnerVertex = GetOrAddVertex(InnerPos, EndCapNormal);
+        // 基于索引计算U坐标，基于高度计算V坐标
+        const float U = static_cast<float>(i) / FMath::Max(1.0f, static_cast<float>(OuterVertices.Num() - 1));
+        const float V = (OuterPos.Z + HollowPrism.GetHalfHeight()) / (2.0f * HollowPrism.GetHalfHeight());
         
+        // 端盖UV区域分配：[0.75, 1] x [0, 1]
+        // 起始端盖：[0.75, 0.875] x [0, 1] - 使用镜像U映射
+        // 结束端盖：[0.875, 1] x [0, 1] - 使用正常U映射
+        const float EndCapU = bIsStart ? 
+            0.75f + (1.0f - U) * 0.125f : // 起始端盖：镜像映射 0.75 到 0.875
+            0.875f + U * 0.125f; // 结束端盖：正常映射 0.875 到 1
+        const float EndCapV = FMath::Clamp(V, 0.0f, 1.0f);
+        
+        const FVector2D OuterUV(EndCapU, EndCapV);
+        const int32 NewOuterVertex = GetOrAddVertexWithUV(OuterPos, EndCapNormal, OuterUV);
         EndCapOuterVertices.Add(NewOuterVertex);
+    }
+    
+    // 重新创建内壁顶点
+    for (int32 i = 0; i < InnerVertices.Num(); ++i)
+    {
+        const FVector InnerPos = GetPosByIndex(InnerVertices[i]);
+        
+        // 基于索引计算U坐标，基于高度计算V坐标
+        const float U = static_cast<float>(i) / FMath::Max(1.0f, static_cast<float>(InnerVertices.Num() - 1));
+        const float V = (InnerPos.Z + HollowPrism.GetHalfHeight()) / (2.0f * HollowPrism.GetHalfHeight());
+        
+        // 端盖UV区域分配：[0.75, 1] x [0, 1]
+        // 起始端盖：[0.75, 0.875] x [0, 1] - 使用镜像U映射
+        // 结束端盖：[0.875, 1] x [0, 1] - 使用正常U映射
+        const float EndCapU = bIsStart ? 
+            0.75f + (1.0f - U) * 0.125f : // 起始端盖：镜像映射 0.75 到 0.875
+            0.875f + U * 0.125f; // 结束端盖：正常映射 0.875 到 1
+        const float EndCapV = FMath::Clamp(V, 0.0f, 1.0f);
+        
+        const FVector2D InnerUV(EndCapU, EndCapV);
+        const int32 NewInnerVertex = GetOrAddVertexWithUV(InnerPos, EndCapNormal, InnerUV);
         EndCapInnerVertices.Add(NewInnerVertex);
     }
     
@@ -709,7 +744,7 @@ void FHollowPrismBuilder::CreateEndCapWithBevel(bool bIsStart)
         FVector(-FMath::Sin(Angle), FMath::Cos(Angle), 0.0f).GetSafeNormal();
     
     TArray<int32> OrderedVertices;
-    CreateEndCapColumn(Angle, Normal, OrderedVertices);
+    CreateEndCapColumn(Angle, Normal, OrderedVertices, bIsStart);
     CreateEndCapTriangles(OrderedVertices, bIsStart);
 }
 
@@ -797,4 +832,204 @@ int32 FHollowPrismBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Nor
 {
     // 不计算UV，让UE4自动生成
     return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal);
+}
+
+int32 FHollowPrismBuilder::GetOrAddVertexWithUV(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
+{
+    return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal, UV);
+}
+
+//~ Begin UV Functions
+
+FVector2D FHollowPrismBuilder::CalculateWallUV(float Angle, float Z, bool bIsOuter) const
+{
+    // 壁面UV映射：U基于角度，V基于高度
+    const float ArcAngleRadians = FMath::DegreesToRadians(HollowPrism.ArcAngle);
+    const float StartAngle = CalculateStartAngle();
+    const float HalfHeight = HollowPrism.GetHalfHeight();
+    
+    // 计算基础角度和高度
+    float BaseU = 0.0f;
+    float BaseV = 0.0f;
+    
+    if (ArcAngleRadians > 0.0f)
+    {
+        const float AngleRange = (Angle - StartAngle) / ArcAngleRadians;
+        const float ClampedRange = FMath::Clamp(AngleRange, 0.0f, 1.0f);
+        BaseU = ClampedRange; // 0 到 1
+    }
+    else
+    {
+        BaseU = 0.5f; // 如果弧角为0，使用中间值
+    }
+    
+    // 考虑倒角缩减后的实际壁面高度范围
+    const float ActualWallHeight = 2.0f * (HalfHeight - HollowPrism.BevelRadius);
+    const float ActualWallBottom = -HalfHeight + HollowPrism.BevelRadius;
+    
+    float HeightRange = 0.5f; // 默认中间值
+    if (ActualWallHeight > KINDA_SMALL_NUMBER)
+    {
+        HeightRange = (Z - ActualWallBottom) / ActualWallHeight;
+        HeightRange = FMath::Clamp(HeightRange, 0.0f, 1.0f);
+    }
+    BaseV = HeightRange;
+    
+    // 内外侧面UV区域分配：[0.2, 0.5] x [0, 1]
+    // 外侧面：[0.2, 0.5] x [0, 0.5] - 上方
+    // 内侧面：[0.2, 0.5] x [0.5, 1] - 下方
+    
+    if (bIsOuter)
+    {
+        // 外侧面：[0.2, 0.5] x [0, 0.5] - 上方
+        const float U = 0.2f + BaseU * 0.3f; // 0.2 到 0.5
+        const float V = BaseV * 0.5f; // 0 到 0.5
+        return FVector2D(U, V);
+    }
+    else
+    {
+        // 内侧面：[0.2, 0.5] x [0.5, 1] - 下方
+        const float U = 0.2f + BaseU * 0.3f; // 0.2 到 0.5
+        const float V = 0.5f + BaseV * 0.5f; // 0.5 到 1
+        return FVector2D(U, V);
+    }
+}
+
+FVector2D FHollowPrismBuilder::CalculateCapUV(float Angle, float Radius, bool bIsTop) const
+{
+    // 端盖UV映射：基于角度和半径的极坐标映射
+    const float ArcAngleRadians = FMath::DegreesToRadians(HollowPrism.ArcAngle);
+    const float StartAngle = CalculateStartAngle();
+    
+    // 确保角度在正确范围内
+    float NormalizedAngle = (Angle - StartAngle) / ArcAngleRadians;
+    NormalizedAngle = FMath::Clamp(NormalizedAngle, 0.0f, 1.0f);
+    
+    // 使用简单的线性映射避免扭曲
+    // U坐标：基于角度线性映射
+    const float U = NormalizedAngle; // 0 到 1
+    
+    // V坐标：基于半径线性映射
+    const float RadiusRange = HollowPrism.OuterRadius - HollowPrism.InnerRadius;
+    const float V = RadiusRange > 0.0f ? 
+        FMath::Clamp((Radius - HollowPrism.InnerRadius) / RadiusRange, 0.0f, 1.0f) : 0.5f;
+    
+    // 上下底Caps使用UV区域：[0, 0.2] x [0, 1]
+    // 上底：[0, 0.2] x [0, 0.5]
+    // 下底：[0, 0.2] x [0.5, 1]
+    const float CapU = U * 0.2f; // 0 到 0.2
+    const float CapV = bIsTop ? 
+        V * 0.5f : // 上底：0 到 0.5
+        0.5f + V * 0.5f; // 下底：0.5 到 1
+    
+    return FVector2D(CapU, CapV);
+}
+
+FVector2D FHollowPrismBuilder::CalculateBevelUV(float Angle, float Alpha, bool bIsInner, bool bIsTop) const
+{
+    // 倒角UV映射：U基于角度，V基于倒角参数Alpha
+    const float ArcAngleRadians = FMath::DegreesToRadians(HollowPrism.ArcAngle);
+    const float StartAngle = CalculateStartAngle();
+    
+    // 确保角度在正确范围内
+    float NormalizedAngle = (Angle - StartAngle) / ArcAngleRadians;
+    NormalizedAngle = FMath::Clamp(NormalizedAngle, 0.0f, 1.0f);
+    
+    const float U = NormalizedAngle;
+    const float V = FMath::Clamp(Alpha, 0.0f, 1.0f); // Alpha从0到1
+    
+    // 倒角UV区域分配：[0.5, 0.7] x [0, 1]
+    // 上倒角：[0.5, 0.7] x [0, 0.5]
+    // 下倒角：[0.5, 0.7] x [0.5, 1]
+    const float BevelU = 0.5f + U * 0.2f; // 0.5 到 0.7
+    const float BevelV = bIsTop ? 
+        V * 0.5f : // 上倒角：0 到 0.5
+        0.5f + V * 0.5f; // 下倒角：0.5 到 1
+    
+    return FVector2D(BevelU, BevelV);
+}
+
+FVector2D FHollowPrismBuilder::CalculateEndCapUV(float Angle, float Z, bool bIsStart) const
+{
+    // 端盖面UV映射：基于角度和高度
+    const float ArcAngleRadians = FMath::DegreesToRadians(HollowPrism.ArcAngle);
+    const float StartAngle = CalculateStartAngle();
+    
+    // 确保角度在正确范围内
+    // 对于端盖，角度应该映射到 [0, 1] 范围
+    float NormalizedAngle;
+    if (bIsStart)
+    {
+        // 起始端盖：角度从 -ArcAngle/2 到 -ArcAngle/2，映射到 [0, 1]
+        NormalizedAngle = 0.0f; // 起始端盖始终使用角度0
+    }
+    else
+    {
+        // 结束端盖：角度从 ArcAngle/2 到 ArcAngle/2，映射到 [0, 1]
+        NormalizedAngle = 1.0f; // 结束端盖始终使用角度1
+    }
+    
+    const float HalfHeight = HollowPrism.GetHalfHeight();
+    const float V = FMath::Clamp((Z + HalfHeight) / (2.0f * HalfHeight), 0.0f, 1.0f);
+    
+    // 端盖面UV区域分配：[0.7, 1] x [0, 1] - 重新分配避免重叠
+    // 起始端盖：[0.7, 0.85] x [0, 1] - 基于角度分布U坐标
+    // 结束端盖：[0.85, 1] x [0, 1] - 基于角度分布U坐标
+    const float EndCapU = bIsStart ? 
+        0.7f + (1.0f - NormalizedAngle) * 0.15f : // 起始端盖：镜像映射 0.7 到 0.85
+        0.85f + NormalizedAngle * 0.15f; // 结束端盖：正常映射 0.85 到 1
+    const float EndCapV = V; // 0 到 1
+    
+    return FVector2D(EndCapU, EndCapV);
+}
+
+FVector2D FHollowPrismBuilder::CalculateEndCapUVWithRadius(float Angle, float Z, float Radius, bool bIsStart) const
+{
+    // 端盖面UV映射：基于角度、高度和半径
+    const float ArcAngleRadians = FMath::DegreesToRadians(HollowPrism.ArcAngle);
+    const float StartAngle = CalculateStartAngle();
+    
+    // 确保角度在正确范围内
+    // 对于端盖，角度应该映射到 [0, 1] 范围
+    float NormalizedAngle;
+    if (bIsStart)
+    {
+        // 起始端盖：角度从 -ArcAngle/2 到 -ArcAngle/2，映射到 [0, 1]
+        NormalizedAngle = 0.0f; // 起始端盖始终使用角度0
+    }
+    else
+    {
+        // 结束端盖：角度从 ArcAngle/2 到 ArcAngle/2，映射到 [0, 1]
+        NormalizedAngle = 1.0f; // 结束端盖始终使用角度1
+    }
+    
+    const float HalfHeight = HollowPrism.GetHalfHeight();
+    const float V = FMath::Clamp((Z + HalfHeight) / (2.0f * HalfHeight), 0.0f, 1.0f);
+    
+    // 基于半径计算U坐标的偏移，区分内壁和外壁
+    const float RadiusRange = HollowPrism.OuterRadius - HollowPrism.InnerRadius;
+    const float RadiusOffset = (Radius - HollowPrism.InnerRadius) / FMath::Max(RadiusRange, 0.001f);
+    const float RadiusOffsetClamped = FMath::Clamp(RadiusOffset, 0.0f, 1.0f);
+    
+    // 端盖面UV区域分配：[0.7, 1] x [0, 1] - 重新分配避免重叠
+    // 起始端盖：[0.7, 0.85] x [0, 1] - 基于半径分布U坐标
+    // 结束端盖：[0.85, 1] x [0, 1] - 基于半径分布U坐标
+    
+    // 基于半径计算U坐标，让内壁和外壁有不同的U坐标
+    float BaseU;
+    if (bIsStart)
+    {
+        // 起始端盖：U坐标从0.7到0.85，基于半径分布
+        BaseU = 0.7f + RadiusOffsetClamped * 0.15f;
+    }
+    else
+    {
+        // 结束端盖：U坐标从0.85到1，基于半径分布
+        BaseU = 0.85f + RadiusOffsetClamped * 0.15f;
+    }
+    
+    const float EndCapU = FMath::Clamp(BaseU, 0.0f, 1.0f);
+    const float EndCapV = V; // 0 到 1
+    
+    return FVector2D(EndCapU, EndCapV);
 }

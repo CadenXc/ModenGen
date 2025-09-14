@@ -73,7 +73,8 @@ class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
   void CreateEndCap(float Angle, bool bIsStart);
   void CreateEndCapColumn(float Angle,
                          const FVector& Normal,
-                         TArray<int32>& OutOrderedVertices);
+                         TArray<int32>& OutOrderedVertices,
+                         bool bIsStart);
   void CreateEndCapTriangles(const TArray<int32>& OrderedVertices,
                             bool bIsStart);
   void CreateEndCapFromVertices(const TArray<int32>& RecordedVertices,
@@ -92,6 +93,14 @@ class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
   FVector CalculateVertexPosition(float Radius, float Angle, float Z) const;
   FVector CalculateBevelNormal(float Angle, float Alpha, bool bIsInner, bool bIsTop) const;
   
+  //~ Begin UV Functions
+  FVector2D CalculateWallUV(float Angle, float Z, bool bIsOuter) const;
+  FVector2D CalculateCapUV(float Angle, float Radius, bool bIsTop) const;
+  FVector2D CalculateBevelUV(float Angle, float Alpha, bool bIsInner, bool bIsTop) const;
+  FVector2D CalculateEndCapUV(float Angle, float Z, bool bIsStart) const;
+  FVector2D CalculateEndCapUVWithRadius(float Angle, float Z, float Radius, bool bIsStart) const;
+  
   //~ Begin Vertex Management
   int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal);
+  int32 GetOrAddVertexWithUV(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
 };
