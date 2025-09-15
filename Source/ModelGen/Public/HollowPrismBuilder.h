@@ -39,19 +39,19 @@ class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
   TArray<int32> BottomOuterBevelVertices; // 底部外环倒角连接顶点
   
   //~ Begin Wall Generation
-  void CreateWalls(float Radius, int32 Sides, bool bIsInner);
+  void GenerateWalls(float Radius, int32 Sides, EInnerOuter InnerOuter);
 
   //~ Begin Cap Generation
-  void CreateCapVertices(TArray<int32>& OutInnerVertices, 
+  void GenerateCapVertices(TArray<int32>& OutInnerVertices, 
                         TArray<int32>& OutOuterVertices, 
                         EHeightPosition HeightPosition);
-  void CreateCapTriangles(const TArray<int32>& InnerVertices,
+  void GenerateCapTriangles(const TArray<int32>& InnerVertices,
                          const TArray<int32>& OuterVertices,
                          EHeightPosition HeightPosition);
 
   //~ Begin Bevel Generation
-  void CreateBevelGeometry(EHeightPosition HeightPosition, EInnerOuter InnerOuter);
-  void CreateBevelRing(TArray<int32>& OutCurrentRing,
+  void GenerateBevelGeometry(EHeightPosition HeightPosition, EInnerOuter InnerOuter);
+  void GenerateBevelRing(TArray<int32>& OutCurrentRing,
                       EHeightPosition HeightPosition,
                       EInnerOuter InnerOuter,
                       int32 RingIndex,
@@ -62,14 +62,14 @@ class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
                         EHeightPosition HeightPosition);
 
   //~ Begin End Cap Generation (for partial circles)
-  void CreateEndCapColumn(float Angle,
+  void GenerateEndCapColumn(float Angle,
                          const FVector& Normal,
                          TArray<int32>& OutOrderedVertices,
                          EEndCapType EndCapType);
-  void CreateEndCapTriangles(const TArray<int32>& OrderedVertices,
+  void GenerateEndCapTriangles(const TArray<int32>& OrderedVertices,
                             EEndCapType EndCapType);
-  void CreateEndCapWithBevel(EEndCapType EndCapType);
-  void CreateEndCapWithBevelVertices(const TArray<int32>& RecordedVertices,
+  void GenerateEndCapWithBevel(EEndCapType EndCapType);
+  void GenerateEndCapWithBevelVertices(const TArray<int32>& RecordedVertices,
                                     EEndCapType EndCapType);
   //~ Begin Utility Functions
   float CalculateStartAngle() const;

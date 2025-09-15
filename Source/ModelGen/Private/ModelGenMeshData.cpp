@@ -68,7 +68,6 @@ int32 FModelGenMeshData::AddVertex(const FVector& Position, const FVector& Norma
     return Index;
 }
 
-
 void FModelGenMeshData::AddTriangle(int32 V1, int32 V2, int32 V3)
 {
     // 退化三角形过滤

@@ -20,7 +20,7 @@
  * 可以被所有几何体生成器复用
  */
 USTRUCT(BlueprintType)
-struct MODELGEN_API FModelGenMeshData
+struct FModelGenMeshData
 {
     GENERATED_BODY()
 

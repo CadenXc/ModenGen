@@ -34,37 +34,37 @@ bool FHollowPrismBuilder::Generate(FModelGenMeshData& OutMeshData)
     BottomOuterBevelVertices.Empty();
 
     // 生成主体几何体
-    CreateWalls(HollowPrism.InnerRadius, HollowPrism.InnerSides, true);
-    CreateWalls(HollowPrism.OuterRadius, HollowPrism.OuterSides, false);
+    GenerateWalls(HollowPrism.InnerRadius, HollowPrism.InnerSides, EInnerOuter::Inner);
+    GenerateWalls(HollowPrism.OuterRadius, HollowPrism.OuterSides, EInnerOuter::Outer);
 
     // 生成顶盖和底盖
     TArray<int32> InnerVertices, OuterVertices;
     
     // 生成顶盖
-    CreateCapVertices(InnerVertices, OuterVertices, EHeightPosition::Top);
-    CreateCapTriangles(InnerVertices, OuterVertices, EHeightPosition::Top);
+    GenerateCapVertices(InnerVertices, OuterVertices, EHeightPosition::Top);
+    GenerateCapTriangles(InnerVertices, OuterVertices, EHeightPosition::Top);
     
     // 清空数组并生成底盖
     InnerVertices.Empty();
     OuterVertices.Empty();
-    CreateCapVertices(InnerVertices, OuterVertices, EHeightPosition::Bottom);
-    CreateCapTriangles(InnerVertices, OuterVertices, EHeightPosition::Bottom);
+    GenerateCapVertices(InnerVertices, OuterVertices, EHeightPosition::Bottom);
+    GenerateCapTriangles(InnerVertices, OuterVertices, EHeightPosition::Bottom);
 
     // 生成倒角几何体（如果有倒角）
     if (HollowPrism.BevelRadius > 0.0f)
     {
-        CreateBevelGeometry(EHeightPosition::Top, EInnerOuter::Inner);   // 顶部内环倒角
-        CreateBevelGeometry(EHeightPosition::Top, EInnerOuter::Outer);  // 顶部外环倒角
-        CreateBevelGeometry(EHeightPosition::Bottom, EInnerOuter::Inner);   // 底部内环倒角
-        CreateBevelGeometry(EHeightPosition::Bottom, EInnerOuter::Outer);  // 底部外环倒角
+        GenerateBevelGeometry(EHeightPosition::Top, EInnerOuter::Inner);   // 顶部内环倒角
+        GenerateBevelGeometry(EHeightPosition::Top, EInnerOuter::Outer);  // 顶部外环倒角
+        GenerateBevelGeometry(EHeightPosition::Bottom, EInnerOuter::Inner);   // 底部内环倒角
+        GenerateBevelGeometry(EHeightPosition::Bottom, EInnerOuter::Outer);  // 底部外环倒角
     }
 
     // 如果不是一个完整的360度圆环，则需要生成端盖来封闭开口
     if (!HollowPrism.IsFullCircle())
     {
         // 使用记录的顶点索引生成端盖
-        CreateEndCapWithBevel(EEndCapType::Start);   // 起始端盖
-        CreateEndCapWithBevel(EEndCapType::End);  // 结束端盖
+        GenerateEndCapWithBevel(EEndCapType::Start);   // 起始端盖
+        GenerateEndCapWithBevel(EEndCapType::End);  // 结束端盖
     }
 
     if (!ValidateGeneratedData())
@@ -86,7 +86,7 @@ int32 FHollowPrismBuilder::CalculateTriangleCountEstimate() const
     return HollowPrism.CalculateTriangleCountEstimate();
 }
 
-void FHollowPrismBuilder::CreateWalls(float Radius, int32 Sides, bool bIsInner)
+void FHollowPrismBuilder::GenerateWalls(float Radius, int32 Sides, EInnerOuter InnerOuter)
 {
     const float HalfHeight = HollowPrism.GetHalfHeight();
     const float StartAngle = CalculateStartAngle();
@@ -107,13 +107,13 @@ void FHollowPrismBuilder::CreateWalls(float Radius, int32 Sides, bool bIsInner)
         const FVector BottomPos = CalculateVertexPosition(Radius, Angle, WallBottomZ);
 
         // 法线方向：内壁向内，外壁向外
-        const FVector Normal = bIsInner
+        const FVector Normal = (InnerOuter == EInnerOuter::Inner)
             ? FVector(-FMath::Cos(Angle), -FMath::Sin(Angle), 0.0f).GetSafeNormal()
             : FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.0f).GetSafeNormal();
 
         // 计算内外侧面UV坐标
-        const FVector2D TopUV = CalculateWallUV(Angle, WallTopZ, bIsInner ? EInnerOuter::Inner : EInnerOuter::Outer);
-        const FVector2D BottomUV = CalculateWallUV(Angle, WallBottomZ, bIsInner ? EInnerOuter::Inner : EInnerOuter::Outer);
+        const FVector2D TopUV = CalculateWallUV(Angle, WallTopZ, InnerOuter);
+        const FVector2D BottomUV = CalculateWallUV(Angle, WallBottomZ, InnerOuter);
         
         const int32 TopVertex = GetOrAddVertex(TopPos, Normal, TopUV);
         const int32 BottomVertex = GetOrAddVertex(BottomPos, Normal, BottomUV);
@@ -124,7 +124,7 @@ void FHollowPrismBuilder::CreateWalls(float Radius, int32 Sides, bool bIsInner)
         // 记录与倒角连接的顶点（如果有倒角）
         if (HollowPrism.BevelRadius > 0.0f)
         {
-            if (bIsInner)
+            if (InnerOuter == EInnerOuter::Inner)
             {
                 TopInnerBevelVertices.Add(TopVertex);
                 BottomInnerBevelVertices.Add(BottomVertex);
@@ -141,7 +141,7 @@ void FHollowPrismBuilder::CreateWalls(float Radius, int32 Sides, bool bIsInner)
         {
             if (i == 0) // 起始位置
             {
-                if (bIsInner)
+                if (InnerOuter == EInnerOuter::Inner)
                 {
                     StartInnerCapIndices.Add(TopVertex);    // 内壁顶部
                     StartInnerCapIndices.Add(BottomVertex); // 内壁底部
@@ -154,7 +154,7 @@ void FHollowPrismBuilder::CreateWalls(float Radius, int32 Sides, bool bIsInner)
             }
             else if (i == Sides) // 结束位置
             {
-                if (bIsInner)
+                if (InnerOuter == EInnerOuter::Inner)
                 {
                     EndInnerCapIndices.Add(TopVertex);    // 内壁顶部
                     EndInnerCapIndices.Add(BottomVertex); // 内壁底部
@@ -195,7 +195,7 @@ void FHollowPrismBuilder::CreateWalls(float Radius, int32 Sides, bool bIsInner)
     // 生成四边形面
     for (int32 i = 0; i < Sides; ++i)
     {
-        if (bIsInner)
+        if (InnerOuter == EInnerOuter::Inner)
         {
             // 内壁：逆时针顺序
             AddQuad(TopVertices[i], BottomVertices[i], BottomVertices[i + 1], TopVertices[i + 1]);
@@ -209,7 +209,7 @@ void FHollowPrismBuilder::CreateWalls(float Radius, int32 Sides, bool bIsInner)
 }
 
 
-void FHollowPrismBuilder::CreateCapVertices(TArray<int32>& OutInnerVertices,
+void FHollowPrismBuilder::GenerateCapVertices(TArray<int32>& OutInnerVertices,
     TArray<int32>& OutOuterVertices,
     EHeightPosition HeightPosition)
 {
@@ -287,18 +287,9 @@ void FHollowPrismBuilder::CreateCapVertices(TArray<int32>& OutInnerVertices,
                 EndOuterCapIndices.Add(OutOuterVertices.Last());         // 外壁结束
                 EndInnerCapIndices.Add(OutInnerVertices.Last());         // 内壁结束
             }
-            else
-            {
-                // 底面：记录起始和结束顶点（注意：底面顶点应该添加到相同的数组中，因为端盖需要连接顶面和底面）
-                // 这里不需要重复添加，因为端盖生成时会使用壁面顶点
-                // 底面顶点记录主要用于端盖生成时的连接
-            }
         }
     }
 }
-
-
-
 
 float FHollowPrismBuilder::CalculateStartAngle() const
 {
@@ -323,7 +314,7 @@ FVector FHollowPrismBuilder::CalculateVertexPosition(float Radius, float Angle, 
     );
 }
 
-void FHollowPrismBuilder::CreateCapTriangles(const TArray<int32>& InnerVertices, const TArray<int32>& OuterVertices, EHeightPosition HeightPosition)
+void FHollowPrismBuilder::GenerateCapTriangles(const TArray<int32>& InnerVertices, const TArray<int32>& OuterVertices, EHeightPosition HeightPosition)
 {
     const int32 MaxSides = FMath::Max(HollowPrism.InnerSides, HollowPrism.OuterSides);
     if (MaxSides == 0) return;
@@ -350,19 +341,19 @@ void FHollowPrismBuilder::CreateCapTriangles(const TArray<int32>& InnerVertices,
 }
 
 
-void FHollowPrismBuilder::CreateBevelGeometry(EHeightPosition HeightPosition, EInnerOuter InnerOuter)
+void FHollowPrismBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition, EInnerOuter InnerOuter)
 {
     if (HollowPrism.BevelRadius <= 0.0f || HollowPrism.BevelSegments <= 0) return;
 
     TArray<int32> PrevRing;
     
     // 第一个环重新生成，不共用壁面顶点
-    CreateBevelRing(PrevRing, HeightPosition, InnerOuter, 0, HollowPrism.BevelSegments);
+    GenerateBevelRing(PrevRing, HeightPosition, InnerOuter, 0, HollowPrism.BevelSegments);
     
     for (int32 i = 1; i <= HollowPrism.BevelSegments; ++i)
     {
         TArray<int32> CurrentRing;
-        CreateBevelRing(CurrentRing, HeightPosition, InnerOuter, i, HollowPrism.BevelSegments);
+        GenerateBevelRing(CurrentRing, HeightPosition, InnerOuter, i, HollowPrism.BevelSegments);
 
         // 连接前一个环和当前环
         ConnectBevelRings(PrevRing, CurrentRing, InnerOuter, HeightPosition);
@@ -370,7 +361,7 @@ void FHollowPrismBuilder::CreateBevelGeometry(EHeightPosition HeightPosition, EI
     }
 }
 
-void FHollowPrismBuilder::CreateBevelRing(TArray<int32>& OutCurrentRing,
+void FHollowPrismBuilder::GenerateBevelRing(TArray<int32>& OutCurrentRing,
     EHeightPosition HeightPosition, EInnerOuter InnerOuter,
     int32 RingIndex, int32 TotalRings)
 {
@@ -515,7 +506,7 @@ void FHollowPrismBuilder::ConnectBevelRings(const TArray<int32>& PrevRing,
 
 
 // [FIXED] Correctly generates the end cap vertex column, accounting for bevels.
-void FHollowPrismBuilder::CreateEndCapColumn(float Angle, const FVector& Normal, TArray<int32>& OutOrderedVertices, EEndCapType EndCapType)
+void FHollowPrismBuilder::GenerateEndCapColumn(float Angle, const FVector& Normal, TArray<int32>& OutOrderedVertices, EEndCapType EndCapType)
 {
     const float HalfHeight = HollowPrism.GetHalfHeight();
     const float BevelRadius = HollowPrism.BevelRadius;
@@ -614,7 +605,7 @@ void FHollowPrismBuilder::CreateEndCapColumn(float Angle, const FVector& Normal,
 
 
 // [REFACTORED] -> This function is correct and does not need changes.
-void FHollowPrismBuilder::CreateEndCapTriangles(const TArray<int32>& OrderedVertices, EEndCapType EndCapType)
+void FHollowPrismBuilder::GenerateEndCapTriangles(const TArray<int32>& OrderedVertices, EEndCapType EndCapType)
 {
     // 顶点是以 [Outer0, Inner0, Outer1, Inner1, ...] 的顺序存储的
     for (int32 i = 0; i < OrderedVertices.Num() - 3; i += 2)
@@ -639,7 +630,7 @@ void FHollowPrismBuilder::CreateEndCapTriangles(const TArray<int32>& OrderedVert
 
 
 
-void FHollowPrismBuilder::CreateEndCapWithBevel(EEndCapType EndCapType)
+void FHollowPrismBuilder::GenerateEndCapWithBevel(EEndCapType EndCapType)
 {
     const float ArcAngleRadians = FMath::DegreesToRadians(HollowPrism.ArcAngle);
     const float Angle = (EndCapType == EEndCapType::Start) ? -ArcAngleRadians / 2.0f : ArcAngleRadians / 2.0f;
@@ -648,12 +639,12 @@ void FHollowPrismBuilder::CreateEndCapWithBevel(EEndCapType EndCapType)
         FVector(-FMath::Sin(Angle), FMath::Cos(Angle), 0.0f).GetSafeNormal();
     
     TArray<int32> OrderedVertices;
-    CreateEndCapColumn(Angle, Normal, OrderedVertices, EndCapType);
-    CreateEndCapTriangles(OrderedVertices, EndCapType);
+    GenerateEndCapColumn(Angle, Normal, OrderedVertices, EndCapType);
+    GenerateEndCapTriangles(OrderedVertices, EndCapType);
 }
 
 
-void FHollowPrismBuilder::CreateEndCapWithBevelVertices(const TArray<int32>& RecordedVertices, EEndCapType EndCapType)
+void FHollowPrismBuilder::GenerateEndCapWithBevelVertices(const TArray<int32>& RecordedVertices, EEndCapType EndCapType)
 {
     // 顶点顺序：[上外部倒角, 下外部倒角, 上内部倒角, 下内部倒角, 外壁顶部, 外壁底部, 内壁顶部, 内壁底部]
     const int32 OuterBevelTop = RecordedVertices[0];     // 上外部倒角

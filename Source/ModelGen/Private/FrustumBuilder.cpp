@@ -154,7 +154,7 @@ void FFrustumBuilder::CreateSideGeometry()
 				if (Frustum.BendAmount > KINDA_SMALL_NUMBER)
 				{
 					const float BendFactor = FMath::Sin(HeightRatio * PI);
-					const float NormalZ = -Frustum.BendAmount * FMath::Cos(HeightRatio * PI);
+					const float NormalZ = Frustum.BendAmount * FMath::Cos(HeightRatio * PI); // 移除负号，让法线向Z轴正方向弯曲
 					Normal = (Normal + FVector(0, 0, NormalZ)).GetSafeNormal();
 				}
 
@@ -265,7 +265,7 @@ void FFrustumBuilder::GenerateEndCap(float Angle, EEndCapType EndCapType)
 			const float HeightRatio = (Z + Frustum.GetHalfHeight()) / Frustum.Height;
 			const float BendInfluence = FMath::Sin(HeightRatio * PI);
 
-			FVector BendNormal = FVector(0, 0, -BendInfluence).GetSafeNormal();
+			FVector BendNormal = FVector(0, 0, BendInfluence).GetSafeNormal(); // 移除负号，让端盖法线向Z轴正方向弯曲
 			EndCapNormal = (EndCapNormal + BendNormal * Frustum.BendAmount).GetSafeNormal();
 		}
 
@@ -505,10 +505,10 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition) {
 	}
 }
 
-float FFrustumBuilder::CalculateBentRadius(float BaseRadius, float HeightRatio)
+	float FFrustumBuilder::CalculateBentRadius(float BaseRadius, float HeightRatio)
 	{
 		const float BendFactor = FMath::Sin(HeightRatio * PI);
-		const float BentRadius = BaseRadius + Frustum.BendAmount * BendFactor * BaseRadius;
+		const float BentRadius = BaseRadius - Frustum.BendAmount * BendFactor * BaseRadius; // 改为减法，让半径向内收缩
 
 		if (Frustum.MinBendRadius > KINDA_SMALL_NUMBER)
 		{
