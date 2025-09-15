@@ -5,13 +5,16 @@
 #include "ModelGenMeshData.h"
 
 FPolygonTorusBuilder::FPolygonTorusBuilder(const APolygonTorus& InPolygonTorus)
-    : PolygonTorus(InPolygonTorus) {
+    : PolygonTorus(InPolygonTorus) 
+{
     Clear();
     ValidateAndClampParameters();
 }
 
-bool FPolygonTorusBuilder::Generate(FModelGenMeshData& OutMeshData) {
-    if (!PolygonTorus.IsValid()) {
+bool FPolygonTorusBuilder::Generate(FModelGenMeshData& OutMeshData) 
+{
+    if (!PolygonTorus.IsValid()) 
+    {
         return false;
     }
 
@@ -20,7 +23,8 @@ bool FPolygonTorusBuilder::Generate(FModelGenMeshData& OutMeshData) {
 
     GenerateTriangles();
 
-    if (PolygonTorus.TorusAngle < 360.0f - KINDA_SMALL_NUMBER) {
+    if (PolygonTorus.TorusAngle < 360.0f - KINDA_SMALL_NUMBER) 
+    {
         GenerateEndCaps();
     }
 
@@ -28,19 +32,25 @@ bool FPolygonTorusBuilder::Generate(FModelGenMeshData& OutMeshData) {
         return false;
     }
 
+    // 计算正确的切线（用于法线贴图等）
+    MeshData.CalculateTangents();
+
     OutMeshData = MeshData;
     return true;
 }
 
-int32 FPolygonTorusBuilder::CalculateVertexCountEstimate() const {
+int32 FPolygonTorusBuilder::CalculateVertexCountEstimate() const 
+{
     return PolygonTorus.CalculateVertexCountEstimate();
 }
 
-int32 FPolygonTorusBuilder::CalculateTriangleCountEstimate() const {
+int32 FPolygonTorusBuilder::CalculateTriangleCountEstimate() const 
+{
     return PolygonTorus.CalculateTriangleCountEstimate();
 }
 
-void FPolygonTorusBuilder::GenerateEndCaps() {
+void FPolygonTorusBuilder::GenerateEndCaps() 
+{
     GenerateAdvancedEndCaps();
 }
 

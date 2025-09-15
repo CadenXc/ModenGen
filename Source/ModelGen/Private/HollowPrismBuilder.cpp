@@ -72,6 +72,9 @@ bool FHollowPrismBuilder::Generate(FModelGenMeshData& OutMeshData)
         return false;
     }
 
+    // 计算正确的切线（用于法线贴图等）
+    MeshData.CalculateTangents();
+
     OutMeshData = MeshData;
     return true;
 }
