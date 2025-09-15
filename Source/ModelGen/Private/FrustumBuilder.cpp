@@ -89,16 +89,18 @@ void FFrustumBuilder::CreateSideGeometry()
 	SideBottomRing = BottomRing;
 
 	// 为插值计算原始（未弯曲）的顶点
-	TArray<int32> TopRingOrigin = GenerateVertexRing(Frustum.TopRadius, HalfHeight, Frustum.TopSides);
+	// 中间环的顶点数量应该与下底环相同，但位置是下底到上底的插值
+	TArray<int32> TopRingOrigin = GenerateVertexRing(Frustum.TopRadius, HalfHeight, Frustum.TopSides); // 使用上底边数
 	TArray<int32> BottomRingOrigin = GenerateVertexRing(Frustum.BottomRadius, -HalfHeight, Frustum.BottomSides);
 
+	// 映射下底环的每个顶点到上底环的对应顶点
 	TArray<int32> BottomToTopMapping;
 	BottomToTopMapping.SetNum(BottomRingOrigin.Num());
-	for (int32 BottomIndex = 0; BottomIndex < BottomRingOrigin.Num(); ++BottomIndex)
+	for (int32 i = 0; i < BottomRingOrigin.Num(); ++i)
 	{
-		const float BottomRatio = static_cast<float>(BottomIndex) / BottomRingOrigin.Num();
-		const int32 TopIndex = FMath::Clamp(FMath::RoundToInt(BottomRatio * TopRingOrigin.Num()), 0, TopRingOrigin.Num() - 1);
-		BottomToTopMapping[BottomIndex] = TopIndex;
+		const float BottomRatio = static_cast<float>(i) / (BottomRingOrigin.Num() - 1);
+		const int32 TopIndex = FMath::Clamp(FMath::RoundToInt(BottomRatio * (TopRingOrigin.Num() - 1)), 0, TopRingOrigin.Num() - 1);
+		BottomToTopMapping[i] = TopIndex;
 	}
 
 	TArray<TArray<int32>> VertexRings;
@@ -146,7 +148,7 @@ void FFrustumBuilder::CreateSideGeometry()
 					Normal = (Normal + FVector(0, 0, NormalZ)).GetSafeNormal();
 				}
 
-				// 计算侧边UV坐标 - 使用与GenerateVertexRing相同的计算方式
+				// 计算侧边UV坐标 - 使用下底边数作为基准
 				const float U = static_cast<float>(BottomIndex) / Frustum.BottomSides;
 				const float V = HeightRatio;
 				const FVector2D UV = FVector2D(0.2f + U * 0.5f, V); // 侧边使用[0.2, 0.7] x [0, 1]区域
@@ -170,18 +172,18 @@ void FFrustumBuilder::CreateSideGeometry()
 		TArray<int32> CurrentRing = VertexRings[i];
 		TArray<int32> NextRing = VertexRings[i + 1];
 
+		// 对于相邻环之间的连接，需要根据顶点数量进行映射
 		for (int32 CurrentIndex = 0; CurrentIndex < CurrentRing.Num() - 1; ++CurrentIndex)
 		{
 			const int32 NextCurrentIndex = CurrentIndex + 1;
 
-			// 侧面连接与ArcAngle无关，直接使用下一个顶点
+			// 计算在下一个环中对应的顶点索引
+			// 使用比例映射来确保正确的连接
+			const float CurrentRatio = static_cast<float>(CurrentIndex) / (CurrentRing.Num() - 1);
+			const float NextCurrentRatio = static_cast<float>(NextCurrentIndex) / (CurrentRing.Num() - 1);
 
-			const float CurrentRatio = static_cast<float>(CurrentIndex) / CurrentRing.Num();
-			const float NextCurrentRatio = static_cast<float>(NextCurrentIndex) / CurrentRing.Num();
-
-			const int32 NextRingIndex = FMath::Clamp(FMath::RoundToInt(CurrentRatio * NextRing.Num()), 0, NextRing.Num() - 1);
-			const int32 NextRingNextIndex =
-				FMath::Clamp(FMath::RoundToInt(NextCurrentRatio * NextRing.Num()), 0, NextRing.Num() - 1);
+			const int32 NextRingIndex = FMath::Clamp(FMath::RoundToInt(CurrentRatio * (NextRing.Num() - 1)), 0, NextRing.Num() - 1);
+			const int32 NextRingNextIndex = FMath::Clamp(FMath::RoundToInt(NextCurrentRatio * (NextRing.Num() - 1)), 0, NextRing.Num() - 1);
 
 			AddQuad(CurrentRing[CurrentIndex], NextRing[NextRingIndex], NextRing[NextRingNextIndex], CurrentRing[NextCurrentIndex]);
 		}

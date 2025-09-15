@@ -60,5 +60,5 @@ private:
     const TArray<int32>& GetEndCapConnectionPoints() const;
     void Clear();
 
-    // UV生成已移除 - 让UE4自动处理UV生成
+	int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
 };
