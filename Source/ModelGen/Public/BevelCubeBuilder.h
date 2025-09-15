@@ -91,11 +91,4 @@ private:
     float GetAlphaValue(int32 Index) const;
     bool IsValidAlphaIndex(int32 Index) const;
     bool IsValidCornerGridIndex(int32 Lat, int32 Lon) const;
-    int32 GetCornerGridSize(int32 Lat) const;
-    bool ValidatePrecomputedData() const;
-
-
-    /** 添加顶点 */
-    int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
-
 };

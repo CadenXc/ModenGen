@@ -24,8 +24,6 @@ bool FPolygonTorusBuilder::Generate(FModelGenMeshData& OutMeshData) {
         GenerateEndCaps();
     }
 
-    ApplySmoothing();
-
     if (!ValidateGeneratedData()) {
         return false;
     }
@@ -63,7 +61,7 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     const float StartAngle = -AngleRad / 2.0f;
     const FVector StartCenter = FVector(FMath::Cos(StartAngle) * MajorRad, FMath::Sin(StartAngle) * MajorRad, 0.0f);
     const FVector StartNormal = FVector(FMath::Sin(StartAngle), -FMath::Cos(StartAngle), 0.0f);
-    const FVector2D StartCenterUV(0.25f, 0.75f); // UV空间中的中心点
+    const FVector2D StartCenterUV(0.2f, 0.8f); // UV空间中的中心点，调整位置
     const int32 StartCenterIndex = GetOrAddVertex(StartCenter, StartNormal, StartCenterUV);
 
     TArray<int32> NewStartCapEdgeIndices;
@@ -71,7 +69,7 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     {
         const FVector EdgePos = GetPosByIndex(StartCapIndices[i]);
         const float MinorAngle = (i * MinorAngleStep) - (PI / 2.0f) - (MinorAngleStep / 2.0f);
-        const FVector2D EdgeUV = StartCenterUV + FVector2D(FMath::Cos(MinorAngle) * 0.2f, FMath::Sin(MinorAngle) * 0.2f);
+        const FVector2D EdgeUV = StartCenterUV + FVector2D(FMath::Cos(MinorAngle) * 0.15f, FMath::Sin(MinorAngle) * 0.15f);
         const int32 NewEdgeIndex = GetOrAddVertex(EdgePos, StartNormal, EdgeUV);
         NewStartCapEdgeIndices.Add(NewEdgeIndex);
     }
@@ -87,7 +85,7 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     const float EndAngle = AngleRad / 2.0f;
     const FVector EndCenter = FVector(FMath::Cos(EndAngle) * MajorRad, FMath::Sin(EndAngle) * MajorRad, 0.0f);
     const FVector EndNormal = FVector(-FMath::Sin(EndAngle), FMath::Cos(EndAngle), 0.0f);
-    const FVector2D EndCenterUV(0.75f, 0.75f); // UV空间中的另一个中心点
+    const FVector2D EndCenterUV(0.8f, 0.8f); // UV空间中的另一个中心点，调整位置
     const int32 EndCenterIndex = GetOrAddVertex(EndCenter, EndNormal, EndCenterUV);
 
     TArray<int32> NewEndCapEdgeIndices;
@@ -95,7 +93,7 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     {
         const FVector EdgePos = GetPosByIndex(EndCapIndices[i]);
         const float MinorAngle = (i * MinorAngleStep) - (PI / 2.0f) - (MinorAngleStep / 2.0f);
-        const FVector2D EdgeUV = EndCenterUV + FVector2D(FMath::Cos(MinorAngle) * 0.2f, FMath::Sin(MinorAngle) * 0.2f);
+        const FVector2D EdgeUV = EndCenterUV + FVector2D(FMath::Cos(MinorAngle) * 0.15f, FMath::Sin(MinorAngle) * 0.15f);
         const int32 NewEdgeIndex = GetOrAddVertex(EdgePos, EndNormal, EdgeUV);
         NewEndCapEdgeIndices.Add(NewEdgeIndex);
     }
@@ -133,20 +131,6 @@ void FPolygonTorusBuilder::ValidateAndClampParameters() {
     if (PolygonTorus.TorusAngle < 1.0f || PolygonTorus.TorusAngle > 360.0f) {
         UE_LOG(LogTemp, Warning, TEXT("圆环角度 %f 超出有效范围 [1.0, 360.0]，建议调整"), PolygonTorus.TorusAngle);
     }
-}
-
-void FPolygonTorusBuilder::LogMeshStatistics() {
-    UE_LOG(LogTemp, Log, TEXT("FPolygonTorusBuilder::LogMeshStatistics - Mesh statistics: %d vertices, %d triangles"),
-        MeshData.GetVertexCount(), MeshData.GetTriangleCount());
-}
-
-int32 FPolygonTorusBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV) {
-    return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal, UV);
-}
-
-void FPolygonTorusBuilder::GenerateVertices()
-{
-    // 该函数将与GenerateTriangles协同工作，因此大部分逻辑移至主循环中。
 }
 
 void FPolygonTorusBuilder::GenerateTriangles()
@@ -230,10 +214,10 @@ void FPolygonTorusBuilder::GenerateTriangles()
                         MinorSin_Norm
                     ).GetSafeNormal();
 
-                    // 计算UV (将主体映射到 V [0.0, 0.5])
+                    // 计算UV (将主体映射到 V [0.0, 0.6]，充分利用空间)
                     QuadUVs[CornerIndex] = FVector2D(
                         (static_cast<float>(MajorIndex + i) / MajorSegs),
-                        (static_cast<float>(MinorIndex + j) / MinorSegs) * 0.5f
+                        (static_cast<float>(MinorIndex + j) / MinorSegs) * 0.6f
                     );
                 }
             }
@@ -258,19 +242,4 @@ void FPolygonTorusBuilder::GenerateTriangles()
 
         }
     }
-}
-
-void FPolygonTorusBuilder::ApplySmoothing()
-{
-    // 平滑效果已在顶点生成时通过法线计算处理，此函数不再需要。
-}
-
-void FPolygonTorusBuilder::ApplyHorizontalSmoothing()
-{
-    // 保留为空，逻辑已移至 GenerateTriangles
-}
-
-void FPolygonTorusBuilder::ApplyVerticalSmoothing()
-{
-    // 保留为空，逻辑已移至 GenerateTriangles
 }

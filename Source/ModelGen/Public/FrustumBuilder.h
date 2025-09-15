@@ -30,16 +30,12 @@ private:
     float EndAngle;
     float ArcAngleRadians;
 
-    TArray<int32> SideBottomRing;
-    TArray<int32> SideTopRing;
     TArray<int32> EndCapConnectionPoints;
-
-    // [REVERTED] 移除了 TopCapRing 和 BottomCapRing，因为不再需要共享顶点
 
     TArray<int32> GenerateVertexRing(float Radius, float Z, int32 Sides);
     TArray<int32> GenerateVertexRing(float Radius, float Z, int32 Sides, float VCoord, const FVector2D& UVOffset, const FVector2D& UVScale);
-    void GenerateCapGeometry(float Z, int32 Sides, float Radius, bool bIsTop);
-    void GenerateBevelGeometry(bool bIsTop);
+    void GenerateCapGeometry(float Z, int32 Sides, float Radius, EHeightPosition HeightPosition);
+    void GenerateBevelGeometry(EHeightPosition HeightPosition);
     float CalculateBentRadius(float BaseRadius, float HeightRatio);
     float CalculateBevelHeight(float Radius);
     float CalculateHeightRatio(float Z);
@@ -47,18 +43,13 @@ private:
     void CalculateAngles();
 
     void CreateSideGeometry();
-    void GenerateTopGeometry();
-    void GenerateBottomGeometry();
-    void GenerateTopBevelGeometry();
-    void GenerateBottomBevelGeometry();
     void GenerateEndCaps();
-    void GenerateEndCap(float Angle, bool IsStart);
-    void GenerateEndCapTrianglesFromVertices(const TArray<int32>& OrderedVertices, bool IsStart, float Angle);
+    void GenerateEndCap(float Angle, EEndCapType EndCapType);
+    void GenerateEndCapTrianglesFromVertices(const TArray<int32>& OrderedVertices, EEndCapType EndCapType, float Angle);
 
     void RecordEndCapConnectionPoint(int32 VertexIndex);
     void ClearEndCapConnectionPoints();
     const TArray<int32>& GetEndCapConnectionPoints() const;
     void Clear();
 
-	int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
 };

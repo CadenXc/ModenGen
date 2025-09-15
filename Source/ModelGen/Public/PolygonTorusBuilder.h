@@ -30,16 +30,9 @@ private:
     TArray<int32> StartCapIndices;
     TArray<int32> EndCapIndices;
 
-    void GenerateVertices();
     void GenerateTriangles();
     void GenerateEndCaps();
     void GenerateAdvancedEndCaps();
-    void ApplySmoothing();
-    void ApplyHorizontalSmoothing();
-    void ApplyVerticalSmoothing();
     void ValidateAndClampParameters();
-    void LogMeshStatistics();
 
-    // 统一的顶点添加函数，包含UV
-    int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
 };

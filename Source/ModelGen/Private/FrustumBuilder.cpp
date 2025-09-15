@@ -31,11 +31,23 @@ bool FFrustumBuilder::Generate(FModelGenMeshData& OutMeshData)
 	CreateSideGeometry();
 
 	// 生成顺序可以保持不变，逻辑上依然清晰
-	GenerateTopBevelGeometry();
-	GenerateBottomBevelGeometry();
+	// 内联 GenerateTopBevelGeometry
+	if (Frustum.BevelRadius > 0.0f)
+	{
+		GenerateBevelGeometry(EHeightPosition::Top);
+	}
+	
+	// 内联 GenerateBottomBevelGeometry
+	if (Frustum.BevelRadius > 0.0f)
+	{
+		GenerateBevelGeometry(EHeightPosition::Bottom);
+	}
 
-	GenerateTopGeometry();
-	GenerateBottomGeometry();
+	// 内联 GenerateTopGeometry
+	GenerateCapGeometry(Frustum.GetHalfHeight(), Frustum.TopSides, Frustum.TopRadius, EHeightPosition::Top);
+	
+	// 内联 GenerateBottomGeometry
+	GenerateCapGeometry(-Frustum.GetHalfHeight(), Frustum.BottomSides, Frustum.BottomRadius, EHeightPosition::Bottom);
 
 	GenerateEndCaps();
 
@@ -85,8 +97,6 @@ void FFrustumBuilder::CreateSideGeometry()
 		FVector2D(0.5f, 1.0f)  // UVScale
 	);
 
-	SideTopRing = TopRing;
-	SideBottomRing = BottomRing;
 
 	// 为插值计算原始（未弯曲）的顶点
 	// 中间环的顶点数量应该与下底环相同，但位置是下底到上底的插值
@@ -190,33 +200,6 @@ void FFrustumBuilder::CreateSideGeometry()
 	}
 }
 
-void FFrustumBuilder::GenerateTopGeometry()
-{
-	GenerateCapGeometry(Frustum.GetHalfHeight(), Frustum.TopSides, Frustum.TopRadius, true);
-}
-
-void FFrustumBuilder::GenerateBottomGeometry()
-{
-	GenerateCapGeometry(-Frustum.GetHalfHeight(), Frustum.BottomSides, Frustum.BottomRadius, false);
-}
-
-void FFrustumBuilder::GenerateTopBevelGeometry()
-{
-	if (Frustum.BevelRadius <= 0.0f)
-	{
-		return;
-	}
-	GenerateBevelGeometry(true);
-}
-
-void FFrustumBuilder::GenerateBottomBevelGeometry()
-{
-	if (Frustum.BevelRadius <= 0.0f)
-	{
-		return;
-	}
-	GenerateBevelGeometry(false);
-}
 
 void FFrustumBuilder::GenerateEndCaps()
 {
@@ -226,15 +209,15 @@ void FFrustumBuilder::GenerateEndCaps()
 	}
 
 	// 端面法线应该根据角度计算
-	GenerateEndCap(StartAngle, true);
-	GenerateEndCap(EndAngle, false);
+	GenerateEndCap(StartAngle, EEndCapType::Start);
+	GenerateEndCap(EndAngle, EEndCapType::End);
 }
 
-void FFrustumBuilder::GenerateEndCap(float Angle, bool IsStart)
+void FFrustumBuilder::GenerateEndCap(float Angle, EEndCapType EndCapType)
 {
 	if (EndCapConnectionPoints.Num() < 3)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("GenerateEndCap - %s端面连接点不足，无法生成端面"), IsStart ? TEXT("起始") : TEXT("结束"));
+		UE_LOG(LogTemp, Warning, TEXT("GenerateEndCap - %s端面连接点不足，无法生成端面"), (EndCapType == EEndCapType::Start) ? TEXT("起始") : TEXT("结束"));
 		return;
 	}
 
@@ -245,7 +228,7 @@ void FFrustumBuilder::GenerateEndCap(float Angle, bool IsStart)
 	// 端盖UV区域：[0, 0.2] x [0.4, 1]
 	// 起始端盖：[0, 0.2] x [0.4, 0.7]
 	// 结束端盖：[0, 0.2] x [0.7, 1]
-	const FVector2D UVOffset = IsStart ? FVector2D(0.0f, 0.4f) : FVector2D(0.0f, 0.7f);
+	const FVector2D UVOffset = (EndCapType == EEndCapType::Start) ? FVector2D(0.0f, 0.4f) : FVector2D(0.0f, 0.7f);
 	const FVector2D UVScale(0.2f, 0.3f);
 
 	for (int32 i = 0; i < EndCapConnectionPoints.Num(); ++i)
@@ -254,7 +237,7 @@ void FFrustumBuilder::GenerateEndCap(float Angle, bool IsStart)
 		FVector OriginalPos = GetPosByIndex(VertexIndex);
 
 		FVector EndCapPos;
-		if (IsStart)
+		if ((EndCapType == EEndCapType::Start))
 		{
 			EndCapPos = OriginalPos;
 		}
@@ -274,7 +257,7 @@ void FFrustumBuilder::GenerateEndCap(float Angle, bool IsStart)
 		// 端面法线应该垂直于端面平面
 		// 根据是否为开始端面来确定法线方向
 		FVector BaseNormal = FVector(FMath::Cos(Angle + PI / 2), FMath::Sin(Angle + PI / 2), 0.0f);
-		FVector EndCapNormal = IsStart ? -BaseNormal : BaseNormal;
+		FVector EndCapNormal = (EndCapType == EEndCapType::Start) ? -BaseNormal : BaseNormal;
 
 		if (Frustum.BendAmount > KINDA_SMALL_NUMBER)
 		{
@@ -294,7 +277,7 @@ void FFrustumBuilder::GenerateEndCap(float Angle, bool IsStart)
 
 		// 将角度映射到[0,1]范围 - 修复U值分布问题
 		float NormalizedAngle;
-		if (IsStart)
+		if ((EndCapType == EEndCapType::Start))
 		{
 			NormalizedAngle = (PosAngle - StartAngle) / (EndAngle - StartAngle);
 		}
@@ -312,7 +295,7 @@ void FFrustumBuilder::GenerateEndCap(float Angle, bool IsStart)
 		RotatedConnectionPoints.Add(NewVertexIndex);
 	}
 
-	GenerateEndCapTrianglesFromVertices(RotatedConnectionPoints, IsStart, Angle);
+	GenerateEndCapTrianglesFromVertices(RotatedConnectionPoints, EndCapType, Angle);
 }
 TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 Sides)
 {
@@ -374,14 +357,14 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(
 
 
 // [MODIFIED] 恢复为简单逻辑，总是独立创建自己的顶点
-void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bool bIsTop)
+void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, EHeightPosition HeightPosition)
 {
-	FVector Normal(0.0f, 0.0f, bIsTop ? 1.0f : -1.0f);
+	FVector Normal(0.0f, 0.0f, (HeightPosition == EHeightPosition::Top) ? 1.0f : -1.0f);
 
 	// UV区域定义 - 上下底面，移到左上角，保持正方形
 	// 上底：[0, 0.2] x [0, 0.2]
 	// 下底：[0, 0.2] x [0.2, 0.4]
-	const FVector2D UVOffset = bIsTop ? FVector2D(0.0f, 0.0f) : FVector2D(0.0f, 0.2f);
+	const FVector2D UVOffset = (HeightPosition == EHeightPosition::Top) ? FVector2D(0.0f, 0.0f) : FVector2D(0.0f, 0.2f);
 	const FVector2D UVScale(0.2f, 0.2f); // 正方形区域
 	const FVector2D CenterUV = UVOffset + FVector2D(0.5f * UVScale.X, 0.5f * UVScale.Y);
 
@@ -426,7 +409,7 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bo
 			RecordEndCapConnectionPoint(V1);
 		}
 
-		if (bIsTop)
+		if ((HeightPosition == EHeightPosition::Top))
 		{
 			AddTriangle(CenterVertex, V2, V1);
 		}
@@ -438,7 +421,7 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, bo
 }
 
 // [MODIFIED] 移除顶点缓存逻辑，只负责生成倒角面本身
-void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop) {
+void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition) {
 	const float HalfHeight = Frustum.GetHalfHeight();
 	const float BevelRadius = Frustum.BevelRadius;
 
@@ -446,18 +429,18 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop) {
 		return;
 	}
 
-	const float Radius = bIsTop ? Frustum.TopRadius : Frustum.BottomRadius;
-	const int32 Sides = bIsTop ? Frustum.TopSides : Frustum.BottomSides;
+	const float Radius = (HeightPosition == EHeightPosition::Top) ? Frustum.TopRadius : Frustum.BottomRadius;
+	const int32 Sides = (HeightPosition == EHeightPosition::Top) ? Frustum.TopSides : Frustum.BottomSides;
 
 	// 倒角UV设置 - 调整倒角区域
 	// 倒角UV区域：[0.7, 1] x [0, 1]
 	// 上倒角：[0.7, 1] x [0.5, 1]
 	// 下倒角：[0.7, 1] x [0, 0.5]
-	const FVector2D UVOffset = bIsTop ? FVector2D(0.7f, 0.5f) : FVector2D(0.7f, 0.0f);
+	const FVector2D UVOffset = (HeightPosition == EHeightPosition::Top) ? FVector2D(0.7f, 0.5f) : FVector2D(0.7f, 0.0f);
 	const FVector2D UVScale(0.3f, 0.5f);
 
-	const float EndZ = bIsTop ? HalfHeight : -HalfHeight;
-	const float StartZ = bIsTop ? (HalfHeight - BevelRadius) : (-HalfHeight + BevelRadius);
+	const float EndZ = (HeightPosition == EHeightPosition::Top) ? HalfHeight : -HalfHeight;
+	const float StartZ = (HeightPosition == EHeightPosition::Top) ? (HalfHeight - BevelRadius) : (-HalfHeight + BevelRadius);
 	const float AngleStep = CalculateAngleStep(Sides);
 	const int32 RingSize = Sides + 1; // 与ArcAngle无关
 
@@ -477,7 +460,7 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop) {
 		{
 			SideNormal = FVector(FMath::Cos(angle), FMath::Sin(angle), 0.f);
 		}
-		FVector CapNormal = FVector(0.0f, 0.0f, bIsTop ? 1.0f : -1.0f);
+		FVector CapNormal = FVector(0.0f, 0.0f, (HeightPosition == EHeightPosition::Top) ? 1.0f : -1.0f);
 		FVector BevelNormal = (SideNormal + CapNormal).GetSafeNormal();
 
 		// 计算倒角UV坐标 - 所有顶点都有不同的UV，不重合
@@ -512,7 +495,7 @@ void FFrustumBuilder::GenerateBevelGeometry(bool bIsTop) {
 			const int32 V01 = StartRing[s + 1];
 			const int32 V11 = EndRing[s + 1];
 
-			if (bIsTop) {
+			if ((HeightPosition == EHeightPosition::Top)) {
 				AddQuad(V00, V10, V11, V01);
 			}
 			else {
@@ -551,7 +534,7 @@ float FFrustumBuilder::CalculateBentRadius(float BaseRadius, float HeightRatio)
 		if (Sides == 0) return 0.0f;
 		return ArcAngleRadians / Sides;
 	}
-	void FFrustumBuilder::GenerateEndCapTrianglesFromVertices(const TArray<int32>&OrderedVertices, bool IsStart, float Angle)
+	void FFrustumBuilder::GenerateEndCapTrianglesFromVertices(const TArray<int32>&OrderedVertices, EEndCapType EndCapType, float Angle)
 	{
 		if (OrderedVertices.Num() < 2)
 		{
@@ -571,7 +554,7 @@ float FFrustumBuilder::CalculateBentRadius(float BaseRadius, float HeightRatio)
 		// 端面法线应该垂直于端面平面
 		// 根据是否为开始端面来确定法线方向
 		const FVector BaseNormal = FVector(FMath::Cos(Angle + PI / 2), FMath::Sin(Angle + PI / 2), 0.0f);
-		const FVector EndCapNormal = IsStart ? -BaseNormal : BaseNormal;
+		const FVector EndCapNormal = (EndCapType == EEndCapType::Start) ? -BaseNormal : BaseNormal;
 
 		// 中心线法线应该与端面法线一致，确保渲染方向正确
 		const FVector CenterLineNormal = EndCapNormal;
@@ -580,7 +563,7 @@ float FFrustumBuilder::CalculateBentRadius(float BaseRadius, float HeightRatio)
 		// 端盖UV区域：[0, 0.2] x [0.4, 1]
 		// 起始端盖：[0, 0.2] x [0.4, 0.7]
 		// 结束端盖：[0, 0.2] x [0.7, 1]
-		const FVector2D UVOffset = IsStart ? FVector2D(0.0f, 0.4f) : FVector2D(0.0f, 0.7f);
+		const FVector2D UVOffset = (EndCapType == EEndCapType::Start) ? FVector2D(0.0f, 0.4f) : FVector2D(0.0f, 0.7f);
 		const FVector2D UVScale(0.2f, 0.3f);
 
 		if (SortedVertices.Num() == 2)
@@ -601,7 +584,7 @@ float FFrustumBuilder::CalculateBentRadius(float BaseRadius, float HeightRatio)
 
 			// 将角度映射到[0,1]范围 - 修复U值分布问题
 			float U1, U2;
-			if (IsStart)
+			if ((EndCapType == EEndCapType::Start))
 			{
 				U1 = FMath::Clamp((Angle1 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
 				U2 = FMath::Clamp((Angle2 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
@@ -630,7 +613,7 @@ float FFrustumBuilder::CalculateBentRadius(float BaseRadius, float HeightRatio)
 			const int32 V1_New = GetOrAddVertex(Pos1, EndCapNormal, UV1);
 			const int32 V2_New = GetOrAddVertex(Pos2, EndCapNormal, UV2);
 
-			if (IsStart)
+			if ((EndCapType == EEndCapType::Start))
 			{
 				AddTriangle(V1_New, V2_New, CenterV1);
 				AddTriangle(V2_New, CenterV2, CenterV1);
@@ -661,7 +644,7 @@ float FFrustumBuilder::CalculateBentRadius(float BaseRadius, float HeightRatio)
 
 				// 将角度映射到[0,1]范围 - 修复U值分布问题
 				float U1, U2;
-				if (IsStart)
+				if ((EndCapType == EEndCapType::Start))
 				{
 					U1 = FMath::Clamp((Angle1 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
 					U2 = FMath::Clamp((Angle2 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
@@ -690,7 +673,7 @@ float FFrustumBuilder::CalculateBentRadius(float BaseRadius, float HeightRatio)
 				const int32 V1_New = GetOrAddVertex(Pos1, EndCapNormal, UV1);
 				const int32 V2_New = GetOrAddVertex(Pos2, EndCapNormal, UV2);
 
-				if (IsStart)
+				if ((EndCapType == EEndCapType::Start))
 				{
 					AddTriangle(V1_New, V2_New, CenterV1);
 					AddTriangle(V2_New, CenterV2, CenterV1);
@@ -726,8 +709,3 @@ float FFrustumBuilder::CalculateBentRadius(float BaseRadius, float HeightRatio)
 		StartAngle = -ArcAngleRadians / 2.0f;
 		EndAngle = ArcAngleRadians / 2.0f;
 	}
-
-int32 FFrustumBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
-{
-	return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal, UV);
-}

@@ -12,6 +12,36 @@
 #include "CoreMinimal.h"
 #include "ModelGenMeshData.h"
 
+/**
+ * 端盖类型枚举
+ */
+UENUM(BlueprintType)
+enum class EEndCapType : uint8
+{
+    Start   UMETA(DisplayName = "起始端盖"),
+    End     UMETA(DisplayName = "结束端盖")
+};
+
+/**
+ * 高度位置枚举
+ */
+UENUM(BlueprintType)
+enum class EHeightPosition : uint8
+{
+    Top     UMETA(DisplayName = "顶部"),
+    Bottom  UMETA(DisplayName = "底部")
+};
+
+/**
+ * 内外侧枚举
+ */
+UENUM(BlueprintType)
+enum class EInnerOuter : uint8
+{
+    Inner   UMETA(DisplayName = "内侧"),
+    Outer   UMETA(DisplayName = "外侧")
+};
+
  /**
   * 通用网格构建器基类
   * 提供所有几何体生成器的基础功能
@@ -35,7 +65,6 @@ protected:
 
     int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
 
-
     FVector GetPosByIndex(int32 index) const;
 
     int32 AddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
@@ -50,8 +79,4 @@ protected:
     bool ValidateGeneratedData() const;
 
     void ReserveMemory();
-
-    // 为了适配，在添加完所有模型的UV之后删除。
-    int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal);
-    int32 AddVertex(const FVector& Pos, const FVector& Normal);
 };

@@ -27,27 +27,6 @@ int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& No
     return NewIndex;
 }
 
-int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal)
-{
-    // 使用更高效的复合键生成（不包含UV，让UE4自动生成）
-    FString VertexKey = FString::Printf(TEXT("%.4f,%.4f,%.4f|%.3f,%.3f,%.3f"),
-        Pos.X, Pos.Y, Pos.Z,
-        Normal.X, Normal.Y, Normal.Z);
-
-    // 尝试查找已存在的顶点
-    if (int32* FoundIndex = UniqueVerticesMap.Find(VertexKey))
-    {
-        return *FoundIndex;
-    }
-
-    // 添加新顶点并记录其索引（不传递UV，让UE4自动生成）
-    const int32 NewIndex = AddVertex(Pos, Normal);
-    UniqueVerticesMap.Add(VertexKey, NewIndex);
-
-    IndexToPosMap.Add(NewIndex, Pos);
-    return NewIndex;
-}
-
 FVector FModelGenMeshBuilder::GetPosByIndex(int32 Index) const
 {
     if (const FVector* FoundPos = IndexToPosMap.Find(Index))
@@ -61,12 +40,6 @@ FVector FModelGenMeshBuilder::GetPosByIndex(int32 Index) const
 int32 FModelGenMeshBuilder::AddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
     return MeshData.AddVertex(Pos, Normal, UV);
-}
-
-int32 FModelGenMeshBuilder::AddVertex(const FVector& Pos, const FVector& Normal)
-{
-    // 不传递UV，让UE4自动生成
-    return MeshData.AddVertex(Pos, Normal, FVector2D::ZeroVector);
 }
 
 void FModelGenMeshBuilder::AddTriangle(int32 V0, int32 V1, int32 V2)

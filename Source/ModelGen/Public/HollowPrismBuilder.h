@@ -39,68 +39,47 @@ class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
   TArray<int32> BottomOuterBevelVertices; // 底部外环倒角连接顶点
   
   //~ Begin Wall Generation
-  void CreateInnerWalls();
-  void CreateOuterWalls();
   void CreateWalls(float Radius, int32 Sides, bool bIsInner);
 
   //~ Begin Cap Generation
-  void CreateTopCap();
-  void CreateBottomCap();
   void CreateCapVertices(TArray<int32>& OutInnerVertices, 
                         TArray<int32>& OutOuterVertices, 
-                        bool bIsTopCap);
+                        EHeightPosition HeightPosition);
   void CreateCapTriangles(const TArray<int32>& InnerVertices,
                          const TArray<int32>& OuterVertices,
-                         bool bIsTopCap);
+                         EHeightPosition HeightPosition);
 
   //~ Begin Bevel Generation
-  void CreateTopBevel();
-  void CreateBottomBevel();
-  void CreateBevelGeometry(bool bIsTop, bool bIsInner);
+  void CreateBevelGeometry(EHeightPosition HeightPosition, EInnerOuter InnerOuter);
   void CreateBevelRing(TArray<int32>& OutCurrentRing,
-                      bool bIsTop,
-                      bool bIsInner,
+                      EHeightPosition HeightPosition,
+                      EInnerOuter InnerOuter,
                       int32 RingIndex,
                       int32 TotalRings);
   void ConnectBevelRings(const TArray<int32>& PrevRing,
                         const TArray<int32>& CurrentRing,
-                        bool bIsInner,
-                        bool bIsTop);
+                        EInnerOuter InnerOuter,
+                        EHeightPosition HeightPosition);
 
   //~ Begin End Cap Generation (for partial circles)
-  void CreateEndCaps();
-  void CreateAdvancedEndCaps();
-  void CreateEndCap(float Angle, bool bIsStart);
   void CreateEndCapColumn(float Angle,
                          const FVector& Normal,
                          TArray<int32>& OutOrderedVertices,
-                         bool bIsStart);
+                         EEndCapType EndCapType);
   void CreateEndCapTriangles(const TArray<int32>& OrderedVertices,
-                            bool bIsStart);
-  void CreateEndCapFromVertices(const TArray<int32>& RecordedVertices,
-                               bool bIsStart);
-  void CreateEndCapFromSeparateArrays(const TArray<int32>& OuterVertices,
-                                     const TArray<int32>& InnerVertices,
-                                     bool bIsStart);
-  void CreateEndCapWithBevel(bool bIsStart);
-  void CreateEndCapFromSimpleVertices(const TArray<int32>& RecordedVertices,
-                                     bool bIsStart);
+                            EEndCapType EndCapType);
+  void CreateEndCapWithBevel(EEndCapType EndCapType);
   void CreateEndCapWithBevelVertices(const TArray<int32>& RecordedVertices,
-                                    bool bIsStart);
+                                    EEndCapType EndCapType);
   //~ Begin Utility Functions
   float CalculateStartAngle() const;
   float CalculateAngleStep(int32 Sides) const;
   FVector CalculateVertexPosition(float Radius, float Angle, float Z) const;
-  FVector CalculateBevelNormal(float Angle, float Alpha, bool bIsInner, bool bIsTop) const;
+  FVector CalculateBevelNormal(float Angle, float Alpha, EInnerOuter InnerOuter, EHeightPosition HeightPosition) const;
   
   //~ Begin UV Functions
-  FVector2D CalculateWallUV(float Angle, float Z, bool bIsOuter) const;
-  FVector2D CalculateCapUV(float Angle, float Radius, bool bIsTop) const;
-  FVector2D CalculateBevelUV(float Angle, float Alpha, bool bIsInner, bool bIsTop) const;
-  FVector2D CalculateEndCapUV(float Angle, float Z, bool bIsStart) const;
-  FVector2D CalculateEndCapUVWithRadius(float Angle, float Z, float Radius, bool bIsStart) const;
-  
-  //~ Begin Vertex Management
-  int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal);
-  int32 GetOrAddVertexWithUV(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
+  FVector2D CalculateWallUV(float Angle, float Z, EInnerOuter InnerOuter) const;
+  FVector2D CalculateCapUV(float Angle, float Radius, EHeightPosition HeightPosition) const;
+  FVector2D CalculateBevelUV(float Angle, float Alpha, EInnerOuter InnerOuter, EHeightPosition HeightPosition) const;
+  FVector2D CalculateEndCapUVWithRadius(float Angle, float Z, float Radius, EEndCapType EndCapType) const;
 };

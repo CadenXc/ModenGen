@@ -57,20 +57,4 @@ private:
     void GenerateBaseFace();
     void GenerateBevelSection();
     void GeneratePyramidSides();
-
-    void GeneratePolygonFaceOptimized(const TArray<FVector>& Vertices,
-        const FVector& Normal);
-
-    void GenerateSideStripOptimized(const TArray<FVector>& BottomVerts,
-        const TArray<FVector>& TopVerts,
-        const TArray<FVector2D>& BottomUVs,
-        const TArray<FVector2D>& TopUVs);
-
-    // UV生成已移除 - 让UE4自动处理UV生成
-
-    // 新增：用于直接传入UV
-    int32 GetOrAddVertexWithUV(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
-
-    // 用于棱锥侧面和底面
-    int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal);
 };

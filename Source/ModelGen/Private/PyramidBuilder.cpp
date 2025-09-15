@@ -72,7 +72,7 @@ void FPyramidBuilder::GenerateBaseFace()
         float V = 0.25f + 0.25f * (BaseVertices[i].Y / BaseRadius);
         FVector2D UV(U, V);
 
-        int32 VertexIndex = GetOrAddVertexWithUV(BaseVertices[i], Normal, UV);
+        int32 VertexIndex = GetOrAddVertex(BaseVertices[i], Normal, UV);
         VertexIndices.Add(VertexIndex);
     }
 
@@ -118,10 +118,10 @@ void FPyramidBuilder::GenerateBevelSection()
         FVector2D UV_Top_NextI(U1, V_START + V_HEIGHT);
 
         // 创建顶点
-        int32 V0 = GetOrAddVertexWithUV(BevelBottomVertices[i], Normal_i, UV_Bottom_i);
-        int32 V1 = GetOrAddVertexWithUV(BevelBottomVertices[NextI], Normal_NextI, UV_Bottom_NextI);
-        int32 V2 = GetOrAddVertexWithUV(BevelTopVertices[NextI], Normal_NextI, UV_Top_NextI);
-        int32 V3 = GetOrAddVertexWithUV(BevelTopVertices[i], Normal_i, UV_Top_i);
+        int32 V0 = GetOrAddVertex(BevelBottomVertices[i], Normal_i, UV_Bottom_i);
+        int32 V1 = GetOrAddVertex(BevelBottomVertices[NextI], Normal_NextI, UV_Bottom_NextI);
+        int32 V2 = GetOrAddVertex(BevelTopVertices[NextI], Normal_NextI, UV_Top_NextI);
+        int32 V3 = GetOrAddVertex(BevelTopVertices[i], Normal_i, UV_Top_i);
 
         // 添加两个三角形组成四边形
         AddTriangle(V0, V3, V2);
@@ -158,9 +158,9 @@ void FPyramidBuilder::GeneratePyramidSides()
         FVector2D UV_Base2(U_END, V_START);
 
         // 创建顶点
-        int32 TopVertex = GetOrAddVertexWithUV(PyramidTopPoint, SideNormal, UV_Top);
-        int32 V1 = GetOrAddVertexWithUV(PyramidBaseVertices[i], SideNormal, UV_Base1);
-        int32 V2 = GetOrAddVertexWithUV(PyramidBaseVertices[NextI], SideNormal, UV_Base2);
+        int32 TopVertex = GetOrAddVertex(PyramidTopPoint, SideNormal, UV_Top);
+        int32 V1 = GetOrAddVertex(PyramidBaseVertices[i], SideNormal, UV_Base1);
+        int32 V2 = GetOrAddVertex(PyramidBaseVertices[NextI], SideNormal, UV_Base2);
 
         // 添加三角形
         AddTriangle(V2, V1, TopVertex);
@@ -277,68 +277,3 @@ void FPyramidBuilder::PrecomputeUVs()
     }
 }
 
-void FPyramidBuilder::GeneratePolygonFaceOptimized(const TArray<FVector>& Vertices, const FVector& Normal)
-{
-    if (Vertices.Num() < 3)
-    {
-        return;
-    }
-
-    TArray<int32> VertexIndices;
-    VertexIndices.Reserve(Vertices.Num());
-
-    // 为底部面片使用 GetOrAddVertex（不带UV）
-    for (int32 i = 0; i < Vertices.Num(); ++i)
-    {
-        int32 VertexIndex = GetOrAddVertex(Vertices[i], Normal);
-        VertexIndices.Add(VertexIndex);
-    }
-
-    for (int32 i = 1; i < Vertices.Num() - 1; ++i)
-    {
-        int32 V0 = VertexIndices[0];
-        int32 V1 = VertexIndices[i];
-        int32 V2 = VertexIndices[i + 1];
-
-        AddTriangle(V0, V1, V2);
-    }
-}
-
-void FPyramidBuilder::GenerateSideStripOptimized(const TArray<FVector>& BottomVerts, const TArray<FVector>& TopVerts,
-    const TArray<FVector2D>& BottomUVs, const TArray<FVector2D>& TopUVs)
-{
-    if (BottomVerts.Num() != TopVerts.Num() || BottomUVs.Num() != BottomVerts.Num() || TopUVs.Num() != TopVerts.Num())
-    {
-        return;
-    }
-
-    for (int32 i = 0; i < BottomVerts.Num(); ++i)
-    {
-        const int32 NextI = (i + 1) % BottomVerts.Num();
-
-        // 为每个顶点计算独立的法线
-        FVector Normal_i = (BottomVerts[i] - FVector(0, 0, BottomVerts[i].Z)).GetSafeNormal();
-        FVector Normal_NextI = (BottomVerts[NextI] - FVector(0, 0, BottomVerts[NextI].Z)).GetSafeNormal();
-
-        // 使用带UV的函数
-        int32 V0 = GetOrAddVertexWithUV(BottomVerts[i], Normal_i, BottomUVs[i]);
-        int32 V1 = GetOrAddVertexWithUV(BottomVerts[NextI], Normal_NextI, BottomUVs[NextI]);
-        int32 V2 = GetOrAddVertexWithUV(TopVerts[NextI], Normal_NextI, TopUVs[NextI]);
-        int32 V3 = GetOrAddVertexWithUV(TopVerts[i], Normal_i, TopUVs[i]);
-
-        AddTriangle(V0, V3, V2);
-        AddTriangle(V0, V2, V1);
-    }
-}
-
-int32 FPyramidBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal)
-{
-    // 调用基类方法，不提供UV（让UE4自动生成）
-    return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal);
-}
-
-int32 FPyramidBuilder::GetOrAddVertexWithUV(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
-{
-    // 调用基类方法，提供UV坐标
-    return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal, UV);
-}

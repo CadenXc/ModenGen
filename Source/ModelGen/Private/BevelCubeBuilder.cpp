@@ -8,12 +8,32 @@ FBevelCubeBuilder::FBevelCubeBuilder(const ABevelCube& InBevelCube)
     : BevelCube(InBevelCube)
 {
     Clear();
-    PrecomputeConstants();
+    
+    // 内联 PrecomputeConstants
+    HalfSize = BevelCube.GetHalfSize();
+    InnerOffset = BevelCube.GetInnerOffset();
+    BevelRadius = BevelCube.BevelRadius;
+    BevelSegments = BevelCube.BevelSegments;
+    
     InitializeFaceDefinitions();
     InitializeEdgeBevelDefs();
     CalculateCorePoints();
-    PrecomputeAlphaValues();
-    PrecomputeCornerGridSizes();
+    
+    // 内联 PrecomputeAlphaValues
+    const int32 ArraySize = BevelSegments + 1;
+    AlphaValues.SetNum(ArraySize);
+    for (int32 i = 0; i < ArraySize; ++i)
+    {
+        AlphaValues[i] = static_cast<float>(i) / BevelSegments;
+    }
+    
+    // 内联 PrecomputeCornerGridSizes
+    CornerGridSizes.SetNum(ArraySize);
+    for (int32 Lat = 0; Lat < ArraySize; ++Lat)
+    {
+        const int32 LonCount = ArraySize - Lat;
+        CornerGridSizes[Lat].SetNum(LonCount);
+    }
 }
 
 bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
@@ -49,36 +69,6 @@ int32 FBevelCubeBuilder::CalculateTriangleCountEstimate() const
     return BevelCube.GetTriangleCount();
 }
 
-void FBevelCubeBuilder::PrecomputeConstants()
-{
-    HalfSize = BevelCube.GetHalfSize();
-    InnerOffset = BevelCube.GetInnerOffset();
-    BevelRadius = BevelCube.BevelRadius;
-    BevelSegments = BevelCube.BevelSegments;
-}
-
-void FBevelCubeBuilder::PrecomputeAlphaValues()
-{
-    const int32 ArraySize = BevelSegments + 1;
-    AlphaValues.SetNum(ArraySize);
-
-    for (int32 i = 0; i < ArraySize; ++i)
-    {
-        AlphaValues[i] = static_cast<float>(i) / BevelSegments;
-    }
-}
-
-void FBevelCubeBuilder::PrecomputeCornerGridSizes()
-{
-    const int32 ArraySize = BevelSegments + 1;
-    CornerGridSizes.SetNum(ArraySize);
-
-    for (int32 Lat = 0; Lat < ArraySize; ++Lat)
-    {
-        const int32 LonCount = ArraySize - Lat;
-        CornerGridSizes[Lat].SetNum(LonCount);
-    }
-}
 
 void FBevelCubeBuilder::InitializeFaceDefinitions()
 {
@@ -175,7 +165,7 @@ void FBevelCubeBuilder::CalculateCorePoints()
 
 void FBevelCubeBuilder::GenerateMainFaces()
 {
-    const float U_WIDTH = 1.0f / 4.0f;
+    const float U_WIDTH = 1.0f / 3.0f; // 从1/4改为1/3，充分利用U空间
     const float V_HEIGHT = 1.0f / 6.0f;
 
     for (int32 FaceIndex = 0; FaceIndex < FaceDefinitions.Num(); ++FaceIndex)
@@ -198,7 +188,7 @@ void FBevelCubeBuilder::GenerateMainFaces()
 
 void FBevelCubeBuilder::GenerateEdgeBevels()
 {
-    const float U_WIDTH = 1.0f / 4.0f;
+    const float U_WIDTH = 1.0f / 3.0f; // 从1/4改为1/3，充分利用U空间
     const float V_HEIGHT = 1.0f / 12.0f;
     const float U_OFFSET = U_WIDTH;
 
@@ -220,7 +210,7 @@ void FBevelCubeBuilder::GenerateCornerBevels()
         return;
     }
 
-    const float U_WIDTH = 1.0f / 4.0f;
+    const float U_WIDTH = 1.0f / 3.0f; // 从1/4改为1/3，充分利用U空间
     const float V_HEIGHT = 1.0f / 8.0f;
     const float U_OFFSET = 2.0f * U_WIDTH;
 
@@ -452,35 +442,4 @@ bool FBevelCubeBuilder::IsValidCornerGridIndex(int32 Lat, int32 Lon) const
     return true;
 }
 
-int32 FBevelCubeBuilder::GetCornerGridSize(int32 Lat) const
-{
-    if (Lat >= 0 && Lat < CornerGridSizes.Num())
-    {
-        return CornerGridSizes[Lat].Num();
-    }
-    return 0;
-}
 
-bool FBevelCubeBuilder::ValidatePrecomputedData() const
-{
-    bool bIsValid = true;
-
-    if (AlphaValues.Num() != BevelSegments + 1) bIsValid = false;
-    if (CornerGridSizes.Num() != BevelSegments + 1) bIsValid = false;
-
-    for (int32 Lat = 0; Lat < CornerGridSizes.Num(); ++Lat)
-    {
-        int32 ExpectedSize = BevelSegments + 1 - Lat;
-        if (CornerGridSizes[Lat].Num() != ExpectedSize)
-        {
-            bIsValid = false;
-        }
-    }
-
-    return bIsValid;
-}
-
-int32 FBevelCubeBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
-{
-    return FModelGenMeshBuilder::GetOrAddVertex(Pos, Normal, UV);
-}
