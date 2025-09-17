@@ -76,7 +76,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "PolygonTorus|Parameters")
     void SetSmoothVerticalSection(bool bNewSmoothVerticalSection);
 
-protected:
     virtual void GenerateMesh() override;
 
 public:

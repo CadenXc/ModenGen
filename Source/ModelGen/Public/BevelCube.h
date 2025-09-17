@@ -45,8 +45,8 @@ public:
     UFUNCTION(BlueprintCallable, Category = "BevelCube|Parameters")
     void SetBevelSegments(int32 NewBevelSegments);
 
-protected:
     virtual void GenerateMesh() override;
+
 public:
     float GetHalfSize() const { return CubeSize * 0.5f; }
     float GetInnerOffset() const { return GetHalfSize() - BevelRadius; }

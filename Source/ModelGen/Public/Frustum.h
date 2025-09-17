@@ -93,7 +93,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetArcAngle(float NewArcAngle);
 
-protected:
     virtual void GenerateMesh() override;
 
 public:

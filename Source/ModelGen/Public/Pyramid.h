@@ -51,7 +51,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Pyramid|Parameters")
     void SetBevelRadius(float NewBevelRadius);
 
-protected:
     // 实现父类的纯虚函数
     virtual void GenerateMesh() override;
 

@@ -38,7 +38,6 @@ public:
     void SetPMCCollisionEnabled(bool bEnable);
 
 
-
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Collision")
     bool bGenerateCollision = true;
 
@@ -54,13 +53,18 @@ public:
     UPROPERTY(VisibleAnywhere, Category = "ProceduralMesh|Materials")
     UMaterialInterface* ProceduralDefaultMaterial = nullptr;
 
+     UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
+	UStaticMesh* ConvertProceduralMeshToStaticMesh();
+
    protected:
 
     virtual bool IsValid() const {return true;}
 
-    // 子类计算自己的Mesh
-    virtual void GenerateMesh() { }
-
     // 通用的网格信息获取方法
     UProceduralMeshComponent* GetProceduralMesh() const { return ProceduralMeshComponent; }
+
+public:
+    // 子类计算自己的Mesh
+    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
+    virtual void GenerateMesh() { }
 };

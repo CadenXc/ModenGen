@@ -79,7 +79,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
     void SetBevelSegments(int32 NewBevelSegments);
 
-protected:
     virtual void GenerateMesh() override;
 
 private:
