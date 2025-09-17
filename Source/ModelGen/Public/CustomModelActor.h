@@ -18,6 +18,7 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual void OnConstruction(const FTransform& Transform) override;
 
 public:    
     virtual void Tick(float DeltaTime) override;
@@ -50,9 +51,6 @@ public:
     void SetModelType(const FString& NewModelTypeName);
 
 protected:
-    // 初始化模型
-    void InitializeModel();
-    
     // 更新StaticMesh
     void UpdateStaticMesh();
 };
