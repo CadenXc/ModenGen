@@ -57,6 +57,16 @@ private:
     TArray<float> AlphaValues;
     TArray<TArray<int32>> CornerGridSizes;
 
+    // UV布局相关变量
+    float MainFaceScale;
+    float BevelScale;
+    float V_HEIGHT;
+    float FaceUVSize;
+    float BevelUVWidth;
+    float HalfBevelUVWidth;
+    float InnerUVSize;
+    TArray<FVector2D> FaceUVOffsets;
+
     void PrecomputeConstants();
     void InitializeFaceDefinitions();
     void InitializeEdgeBevelDefs();
@@ -69,7 +79,7 @@ private:
     void GenerateCornerBevels();
     void GenerateEdgeStrip(int32 Core1Idx, int32 Core2Idx,
         const FVector& Normal1, const FVector& Normal2,
-        const FVector2D& UVOffset, const FVector2D& UVScale);
+        const FVector2D& UVOffset, const FVector2D& UVScale, bool ArcAlongU = false, bool reverse = false);
     void GenerateCornerTriangles(const TArray<TArray<int32>>& CornerVerticesGrid,
         int32 Lat, int32 Lon, bool bSpecialOrder);
 
@@ -81,14 +91,24 @@ private:
         const FVector& AxisY, const FVector& AxisZ, int32 Lat, int32 Lon) const;
 
     void GenerateCornerBevel(int32 CornerIndex, const FVector2D& UVOffset, const FVector2D& UVScale);
+    void GenerateCornerBevelWithFlip(int32 CornerIndex, const FVector2D& UVOffset, const FVector2D& UVScale, bool FlipU, bool FlipV, bool bSpecialOrder);
     void GenerateCornerVerticesGrid(int32 CornerIndex, const FVector& CorePoint,
         const FVector& AxisX, const FVector& AxisY, const FVector& AxisZ,
         TArray<TArray<int32>>& CornerVerticesGrid,
         const FVector2D& UVOffset, const FVector2D& UVScale);
+    void GenerateCornerVerticesGrid(int32 CornerIndex, const FVector& CorePoint,
+        const FVector& AxisX, const FVector& AxisY, const FVector& AxisZ,
+        TArray<TArray<int32>>& CornerVerticesGrid,
+        const FVector2D& UVOffset, const FVector2D& UVScale, bool FlipU, bool FlipV);
     void GenerateCornerTrianglesGrid(const TArray<TArray<int32>>& CornerVerticesGrid, bool bSpecialOrder);
     bool IsSpecialCorner(int32 CornerIndex) const;
 
     float GetAlphaValue(int32 Index) const;
     bool IsValidAlphaIndex(int32 Index) const;
     bool IsValidCornerGridIndex(int32 Lat, int32 Lon) const;
+
+    // UV布局辅助函数
+    FVector2D GetEdgeUVOffset(int32 EdgeIndex) const;
+    FVector2D GetCornerUVOffset(int32 CornerIndex) const;
+    int32 GetFaceIndex(const FVector& Normal) const;
 };
