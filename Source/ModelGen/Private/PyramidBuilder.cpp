@@ -67,10 +67,10 @@ void FPyramidBuilder::GenerateBaseFace()
     TArray<int32> VertexIndices;
     VertexIndices.Reserve(BaseVertices.Num());
 
-    // 底面UV映射到 [0, 0] - [0.5, 0.5] 区域
+    // 底面UV映射，根据参数动态分布
     for (int32 i = 0; i < BaseVertices.Num(); ++i)
     {
-        // 将底面顶点映射到UV空间
+        // 将底面顶点映射到UV空间，使用归一化坐标
         float U = 0.25f + 0.25f * (BaseVertices[i].X / BaseRadius);
         float V = 0.25f + 0.25f * (BaseVertices[i].Y / BaseRadius);
         FVector2D UV(U, V);
@@ -97,10 +97,10 @@ void FPyramidBuilder::GenerateBevelSection()
         return;
     }
 
-    // 倒角部分UV映射到 [0.5, 0] - [1, 0.25] 区域
-    const float U_START = 0.5f;
-    const float U_WIDTH = 0.5f;
-    const float V_START = 0.0f;
+    // 倒角部分UV映射，与侧面连续分布
+    // 倒角使用 [0, 0.5] - [1, 0.75] 区域，与侧面连续
+    const float U_WIDTH_PER_SIDE = 1.0f / Sides;
+    const float V_START = 0.5f;
     const float V_HEIGHT = 0.25f;
 
     for (int32 i = 0; i < BevelBottomVertices.Num(); ++i)
@@ -111,14 +111,14 @@ void FPyramidBuilder::GenerateBevelSection()
         FVector Normal_i = (BevelBottomVertices[i] - FVector(0, 0, BevelBottomVertices[i].Z)).GetSafeNormal();
         FVector Normal_NextI = (BevelBottomVertices[NextI] - FVector(0, 0, BevelBottomVertices[NextI].Z)).GetSafeNormal();
 
-        // 计算UV坐标
-        float U0 = U_START + (static_cast<float>(i) / Sides) * U_WIDTH;
-        float U1 = U_START + (static_cast<float>(i + 1) / Sides) * U_WIDTH;
+        // 计算UV坐标，与侧面共享UV空间
+        float U_START = static_cast<float>(i) * U_WIDTH_PER_SIDE;
+        float U_END = U_START + U_WIDTH_PER_SIDE;
 
-        FVector2D UV_Bottom_i(U0, V_START);
-        FVector2D UV_Bottom_NextI(U1, V_START);
-        FVector2D UV_Top_i(U0, V_START + V_HEIGHT);
-        FVector2D UV_Top_NextI(U1, V_START + V_HEIGHT);
+        FVector2D UV_Bottom_i(U_START, V_START);
+        FVector2D UV_Bottom_NextI(U_END, V_START);
+        FVector2D UV_Top_i(U_START, V_START + V_HEIGHT);
+        FVector2D UV_Top_NextI(U_END, V_START + V_HEIGHT);
 
         // 创建顶点
         int32 V0 = GetOrAddVertex(BevelBottomVertices[i], Normal_i, UV_Bottom_i);
@@ -134,12 +134,16 @@ void FPyramidBuilder::GenerateBevelSection()
 
 void FPyramidBuilder::GeneratePyramidSides()
 {
-    // 金字塔侧面UV映射，每个面独立分配UV区域
-    // 使用 [0, 0.5] - [1, 1] 区域，分割给各个侧面
-
+    // 金字塔侧面UV映射，根据周长比例动态分布
+    // 计算底面周长与高度的比例，用于UV坐标调整
+    
+    const float BaseCircumference = 2.0f * PI * BaseRadius;
+    const float SideHeight = Height - BevelRadius;
+    const float CircumferenceRatio = BaseCircumference / SideHeight;
+    
     const float U_WIDTH_PER_SIDE = 1.0f / Sides;
-    const float V_START = 0.5f;
-    const float V_HEIGHT = 0.5f;
+    const float V_START = 0.75f;  // 侧面在倒角上方
+    const float V_HEIGHT = 0.25f;  // 侧面高度
 
     for (int32 i = 0; i < Sides; ++i)
     {
@@ -150,13 +154,13 @@ void FPyramidBuilder::GeneratePyramidSides()
         FVector Edge2 = PyramidTopPoint - PyramidBaseVertices[i];
         FVector SideNormal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
 
-        // 计算UV坐标
+        // 计算UV坐标，根据周长比例调整
         float U_START = static_cast<float>(i) * U_WIDTH_PER_SIDE;
         float U_END = U_START + U_WIDTH_PER_SIDE;
 
         // 顶点UV坐标 - 顶点在中心
         FVector2D UV_Top((U_START + U_END) * 0.5f, V_START + V_HEIGHT);
-        // 底边顶点UV坐标
+        // 底边顶点UV坐标，根据周长比例调整V坐标
         FVector2D UV_Base1(U_START, V_START);
         FVector2D UV_Base2(U_END, V_START);
 
