@@ -63,15 +63,27 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     }
 
     const float MajorRad = PolygonTorus.MajorRadius;
+    const float MinorRad = PolygonTorus.MinorRadius;
     const float AngleRad = FMath::DegreesToRadians(PolygonTorus.TorusAngle);
     const int32 MinorSegs = PolygonTorus.MinorSegments;
     const float MinorAngleStep = 2.0f * PI / FMath::Max(1, MinorSegs);
+    
+    // 计算周长比例，用于端盖UV计算
+    const float MajorCircumference = 2.0f * PI * MajorRad;
+    const float MinorCircumference = 2.0f * PI * MinorRad;
+    const float CircumferenceRatio = MajorCircumference / MinorCircumference;
+    
+    // 计算小圆环一段的长度，用于端盖UV半径计算
+    const float MinorSegmentLength = MinorCircumference / MinorSegs;
+    const float MajorSegmentLength = MajorCircumference / PolygonTorus.MajorSegments;
 
     // --- 起始封盖 (Start Cap) ---
     const float StartAngle = -AngleRad / 2.0f;
     const FVector StartCenter = FVector(FMath::Cos(StartAngle) * MajorRad, FMath::Sin(StartAngle) * MajorRad, 0.0f);
     const FVector StartNormal = FVector(FMath::Sin(StartAngle), -FMath::Cos(StartAngle), 0.0f);
-    const FVector2D StartCenterUV(0.2f, 0.8f); // UV空间中的中心点，调整位置
+    // 根据角度比例动态计算UV中心位置
+    const float AngleRatio = AngleRad / (2.0f * PI);
+    const FVector2D StartCenterUV(0.5f - AngleRatio * 0.4f, 0.5f);
     const int32 StartCenterIndex = GetOrAddVertex(StartCenter, StartNormal, StartCenterUV);
 
     TArray<int32> NewStartCapEdgeIndices;
@@ -79,7 +91,10 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     {
         const FVector EdgePos = GetPosByIndex(StartCapIndices[i]);
         const float MinorAngle = (i * MinorAngleStep) - (PI / 2.0f) - (MinorAngleStep / 2.0f);
-        const FVector2D EdgeUV = StartCenterUV + FVector2D(FMath::Cos(MinorAngle) * 0.15f, FMath::Sin(MinorAngle) * 0.15f);
+        // 端盖的半径应该与小圆环相同，所以UV半径也使用相同的比例
+        // 小圆环半径与主圆环半径的比例
+        const float UVRadius = MinorRad / MajorRad * 0.3f;
+        const FVector2D EdgeUV = StartCenterUV + FVector2D(FMath::Cos(MinorAngle) * UVRadius, FMath::Sin(MinorAngle) * UVRadius);
         const int32 NewEdgeIndex = GetOrAddVertex(EdgePos, StartNormal, EdgeUV);
         NewStartCapEdgeIndices.Add(NewEdgeIndex);
     }
@@ -95,7 +110,8 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     const float EndAngle = AngleRad / 2.0f;
     const FVector EndCenter = FVector(FMath::Cos(EndAngle) * MajorRad, FMath::Sin(EndAngle) * MajorRad, 0.0f);
     const FVector EndNormal = FVector(-FMath::Sin(EndAngle), FMath::Cos(EndAngle), 0.0f);
-    const FVector2D EndCenterUV(0.8f, 0.8f); // UV空间中的另一个中心点，调整位置
+    // 根据角度比例动态计算UV中心位置
+    const FVector2D EndCenterUV(0.5f + AngleRatio * 0.4f, 0.5f);
     const int32 EndCenterIndex = GetOrAddVertex(EndCenter, EndNormal, EndCenterUV);
 
     TArray<int32> NewEndCapEdgeIndices;
@@ -103,7 +119,10 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     {
         const FVector EdgePos = GetPosByIndex(EndCapIndices[i]);
         const float MinorAngle = (i * MinorAngleStep) - (PI / 2.0f) - (MinorAngleStep / 2.0f);
-        const FVector2D EdgeUV = EndCenterUV + FVector2D(FMath::Cos(MinorAngle) * 0.15f, FMath::Sin(MinorAngle) * 0.15f);
+        // 端盖的半径应该与小圆环相同，所以UV半径也使用相同的比例
+        // 小圆环半径与主圆环半径的比例
+        const float UVRadius = MinorRad / MajorRad * 0.3f;
+        const FVector2D EdgeUV = EndCenterUV + FVector2D(FMath::Cos(MinorAngle) * UVRadius, FMath::Sin(MinorAngle) * UVRadius);
         const int32 NewEdgeIndex = GetOrAddVertex(EdgePos, EndNormal, EdgeUV);
         NewEndCapEdgeIndices.Add(NewEdgeIndex);
     }
@@ -224,11 +243,17 @@ void FPolygonTorusBuilder::GenerateTriangles()
                         MinorSin_Norm
                     ).GetSafeNormal();
 
-                    // 计算UV (将主体映射到 V [0.0, 0.6]，充分利用空间)
-                    QuadUVs[CornerIndex] = FVector2D(
-                        (static_cast<float>(MajorIndex + i) / MajorSegs),
-                        (static_cast<float>(MinorIndex + j) / MinorSegs) * 0.6f
-                    );
+                    // 计算UV (根据周长比例动态分布，避免面拉伸)
+                    // 计算大圆环和小圆环的周长比例
+                    const float MajorCircumference = 2.0f * PI * MajorRad;
+                    const float MinorCircumference = 2.0f * PI * MinorRad;
+                    const float CircumferenceRatio = MajorCircumference / MinorCircumference;
+                    
+                    // U坐标：沿主环方向均匀分布
+                    // V坐标：沿次环方向均匀分布，根据周长比例调整
+                    const float UCoord = static_cast<float>(MajorIndex + i) / MajorSegs;
+                    const float VCoord = (static_cast<float>(MinorIndex + j) / MinorSegs) / CircumferenceRatio;
+                    QuadUVs[CornerIndex] = FVector2D(UCoord, VCoord);
                 }
             }
 
