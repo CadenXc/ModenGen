@@ -67,12 +67,19 @@ void FPyramidBuilder::GenerateBaseFace()
     TArray<int32> VertexIndices;
     VertexIndices.Reserve(BaseVertices.Num());
 
-    // 底面UV映射，根据参数动态分布
+    // 计算底面UV区域，使正多边形边长和为1
+    // 正n边形周长 = 2n × 半径 × sin(π/n)
+    const float PolygonPerimeter = 2.0f * Sides * BevelTopRadius * FMath::Sin(PI / Sides);
+    // 使周长归一化为1，计算UV半径
+    const float UVRadius = 1.0f / (2.0f * Sides * FMath::Sin(PI / Sides));
+    const FVector2D BaseCenterUV(0.5f, 0.5f - UVRadius); // 底面中心位置
+
+    // 底面UV映射，使用动态半径
     for (int32 i = 0; i < BaseVertices.Num(); ++i)
     {
-        // 将底面顶点映射到UV空间，使用归一化坐标
-        float U = 0.25f + 0.25f * (BaseVertices[i].X / BaseRadius);
-        float V = 0.25f + 0.25f * (BaseVertices[i].Y / BaseRadius);
+        // 将底面顶点映射到UV空间，使用动态半径
+        float U = BaseCenterUV.X + (BaseVertices[i].X / BevelTopRadius) * UVRadius;
+        float V = BaseCenterUV.Y + (BaseVertices[i].Y / BevelTopRadius) * UVRadius;
         FVector2D UV(U, V);
 
         int32 VertexIndex = GetOrAddVertex(BaseVertices[i], Normal, UV);
@@ -98,10 +105,23 @@ void FPyramidBuilder::GenerateBevelSection()
     }
 
     // 倒角部分UV映射，与侧面连续分布
-    // 倒角使用 [0, 0.5] - [1, 0.75] 区域，与侧面连续
+    // 倒角V值根据倒角高度与底边边长的比例计算，确保UV映射比例正确
     const float U_WIDTH_PER_SIDE = 1.0f / Sides;
-    const float V_START = 0.5f;
-    const float V_HEIGHT = 0.25f;
+    
+    // 计算底面周长：2π × BevelTopRadius
+    const float BaseCircumference = 2.0f * PI * BevelTopRadius;
+    
+    // 计算倒角V值范围：倒角高度 / 底面周长
+    const float BevelVHeight = BevelRadius / BaseCircumference;
+    
+    // 计算侧面V值范围：侧面高度 / 侧面周长
+    const float SideHeight = Height - BevelRadius;
+    const float SideCircumference = 2.0f * PI * BevelTopRadius;
+    const float SideVHeight = SideHeight / SideCircumference;
+    
+    // 使用原始几何比例，不进行归一化
+    const float V_START = 0.0f;  // 倒角从V=0开始
+    const float V_HEIGHT = BevelVHeight;  // 使用原始倒角V高度
 
     for (int32 i = 0; i < BevelBottomVertices.Num(); ++i)
     {
@@ -111,7 +131,7 @@ void FPyramidBuilder::GenerateBevelSection()
         FVector Normal_i = (BevelBottomVertices[i] - FVector(0, 0, BevelBottomVertices[i].Z)).GetSafeNormal();
         FVector Normal_NextI = (BevelBottomVertices[NextI] - FVector(0, 0, BevelBottomVertices[NextI].Z)).GetSafeNormal();
 
-        // 计算UV坐标，与侧面共享UV空间
+        // 计算UV坐标，与侧面共享UV空间，使用原始U值
         float U_START = static_cast<float>(i) * U_WIDTH_PER_SIDE;
         float U_END = U_START + U_WIDTH_PER_SIDE;
 
@@ -142,8 +162,21 @@ void FPyramidBuilder::GeneratePyramidSides()
     const float CircumferenceRatio = BaseCircumference / SideHeight;
     
     const float U_WIDTH_PER_SIDE = 1.0f / Sides;
-    const float V_START = 0.75f;  // 侧面在倒角上方
-    const float V_HEIGHT = 0.25f;  // 侧面高度
+    
+    // 计算倒角V值范围
+    const float BevelTopCircumference = 2.0f * PI * BevelTopRadius;
+    const float BevelVHeight = BevelRadius / BevelTopCircumference;
+    
+    // 计算侧面周长：2π × BevelTopRadius
+    const float SideCircumference = 2.0f * PI * BevelTopRadius;
+    
+    // 计算侧面V值范围：侧面高度 / 侧面周长
+    const float SideVHeight = SideHeight / SideCircumference;
+    
+    // 使用原始几何比例，不进行归一化
+    // 侧面在倒角上方，使用原始V值
+    const float V_START = BevelVHeight;  // 侧面在倒角上方，从倒角结束位置开始
+    const float V_HEIGHT = SideVHeight;  // 使用原始侧面V高度
 
     for (int32 i = 0; i < Sides; ++i)
     {
@@ -154,7 +187,7 @@ void FPyramidBuilder::GeneratePyramidSides()
         FVector Edge2 = PyramidTopPoint - PyramidBaseVertices[i];
         FVector SideNormal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
 
-        // 计算UV坐标，根据周长比例调整
+        // 计算UV坐标，根据周长比例调整，使用原始U值
         float U_START = static_cast<float>(i) * U_WIDTH_PER_SIDE;
         float U_END = U_START + U_WIDTH_PER_SIDE;
 
@@ -257,28 +290,56 @@ void FPyramidBuilder::PrecomputeUVs()
 {
     PrecomputeUVScaleValues();
 
-    // 底部UV - 映射到圆形区域
+    // 底部UV - 使用动态半径计算，参考PolygonTorus端面做法
     BaseUVs.SetNum(Sides);
+    
+    // 计算底面UV区域，使正多边形边长和为1
+    // 使周长归一化为1，计算UV半径
+    const float UVRadius = 1.0f / (2.0f * Sides * FMath::Sin(PI / Sides));
+    const FVector2D BaseCenterUV(0.5f, 0.5f - UVRadius); // 底面中心位置
+    
     for (int32 i = 0; i < Sides; ++i)
     {
-        BaseUVs[i] = FVector2D(0.5f + 0.5f * CosValues[i], 0.5f + 0.5f * SinValues[i]);
+        float U = BaseCenterUV.X + CosValues[i] * UVRadius;
+        float V = BaseCenterUV.Y + SinValues[i] * UVRadius;
+        BaseUVs[i] = FVector2D(U, V);
     }
 
-    // 金字塔侧面UV
+    // 金字塔侧面UV - 使用归一化的V值
     PyramidSideUVs.SetNum(Sides);
+    
+    // 计算侧面高度和侧面周长
+    const float SideHeight = Height - BevelRadius;
+    const float SideCircumference = 2.0f * PI * BevelTopRadius;
+    const float SideVHeight = SideHeight / SideCircumference;
+    
+    // 计算底面周长用于倒角V值计算
+    const float BaseCircumference = 2.0f * PI * BevelTopRadius;
+    
+    // 使用原始几何比例，不进行归一化
     for (int32 i = 0; i < Sides; ++i)
     {
-        PyramidSideUVs[i] = FVector2D(static_cast<float>(i) / Sides, 1.0f);
+        float U = static_cast<float>(i) / Sides;
+        float V = SideVHeight;
+        PyramidSideUVs[i] = FVector2D(U, V);
     }
 
-    // 倒角UV
+    // 倒角UV - 使用倒角高度与底边边长的比例计算V值
     if (BevelRadius > 0.0f)
     {
         BevelUVs.SetNum(Sides);
+        
+        // 计算底面周长和倒角V值范围
+        const float BaseCircumferenceLocal = 2.0f * PI * BevelTopRadius;
+        const float BevelVHeightLocal = BevelRadius / BaseCircumferenceLocal;
+        
+        // 使用原始几何比例，不进行归一化
+        const float V_START = 0.0f;  // 倒角从V=0开始
+        
         for (int32 i = 0; i < Sides; ++i)
         {
             float U = static_cast<float>(i) / Sides;
-            float V = 0.0f; // Bevels bottom
+            float V = V_START; // 倒角底部V值，使用原始比例
             BevelUVs[i] = FVector2D(U, V);
         }
     }
