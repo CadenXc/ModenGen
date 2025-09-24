@@ -109,18 +109,18 @@ void FBevelCubeBuilder::InitializeFaceDefinitions()
 void FBevelCubeBuilder::InitializeEdgeBevelDefs()
 {
     EdgeBevelDefs = {
-        { 0, 1, FVector(0,-1,0), FVector(0,0,-1), TEXT("Edge+X1") }, // 0: Core(-i,-i,-i) to (+i,-i,-i) -> Connects Back and Bottom
-        { 2, 3, FVector(0,0,-1), FVector(0,1,0), TEXT("Edge+X2") }, // 1: Core(-i,+i,-i) to (+i,+i,-i) -> Connects Bottom and Front
-        { 4, 5, FVector(0,0,1), FVector(0,-1,0), TEXT("Edge+X3") }, // 2: Core(-i,-i,+i) to (+i,-i,+i) -> Connects Top and Back
-        { 6, 7, FVector(0,1,0), FVector(0,0,1), TEXT("Edge+X4") }, // 3: Core(-i,+i,+i) to (+i,+i,+i) -> Connects Front and Top
-        { 0, 2, FVector(0,0,-1), FVector(-1,0,0), TEXT("Edge+Y1") }, // 4: Core(-i,-i,-i) to (-i,+i,-i) -> Connects Bottom and Left
-        { 1, 3, FVector(1,0,0), FVector(0,0,-1), TEXT("Edge+Y2") }, // 5: Core(+i,-i,-i) to (+i,+i,-i) -> Connects Right and Bottom
-        { 4, 6, FVector(-1,0,0), FVector(0,0,1), TEXT("Edge+Y3") }, // 6: Core(-i,-i,+i) to (-i,+i,+i) -> Connects Left and Top
-        { 5, 7, FVector(0,0,1), FVector(1,0,0), TEXT("Edge+Y4") }, // 7: Core(+i,-i,+i) to (+i,+i,+i) -> Connects Top and Right
-        { 0, 4, FVector(-1,0,0), FVector(0,-1,0), TEXT("Edge+Z1") }, // 8: Core(-i,-i,-i) to (-i,-i,+i) -> Connects Left and Back
-        { 1, 5, FVector(0,-1,0), FVector(1,0,0), TEXT("Edge+Z2") }, // 9: Core(+i,-i,-i) to (+i,-i,+i) -> Connects Back and Right
-        { 2, 6, FVector(0,1,0), FVector(-1,0,0), TEXT("Edge+Z3") }, // 10: Core(-i,+i,-i) to (-i,+i,+i) -> Connects Front and Left
-        { 3, 7, FVector(1,0,0), FVector(0,1,0), TEXT("Edge+Z4") }  // 11: Core(+i,+i,-i) to (+i,+i,+i) -> Connects Right and Front
+        { 0, 1, FVector(0,-1,0), FVector(0,0,-1), TEXT("Edge+X1") },
+        { 2, 3, FVector(0,0,-1), FVector(0,1,0), TEXT("Edge+X2") },
+        { 4, 5, FVector(0,0,1), FVector(0,-1,0), TEXT("Edge+X3") },
+        { 6, 7, FVector(0,1,0), FVector(0,0,1), TEXT("Edge+X4") },
+        { 0, 2, FVector(0,0,-1), FVector(-1,0,0), TEXT("Edge+Y1") },
+        { 1, 3, FVector(1,0,0), FVector(0,0,-1), TEXT("Edge+Y2") },
+        { 4, 6, FVector(-1,0,0), FVector(0,0,1), TEXT("Edge+Y3") },
+        { 5, 7, FVector(0,0,1), FVector(1,0,0), TEXT("Edge+Y4") },
+        { 0, 4, FVector(-1,0,0), FVector(0,-1,0), TEXT("Edge+Z1") },
+        { 1, 5, FVector(0,-1,0), FVector(1,0,0), TEXT("Edge+Z2") },
+        { 2, 6, FVector(0,1,0), FVector(-1,0,0), TEXT("Edge+Z3") },
+        { 3, 7, FVector(1,0,0), FVector(0,1,0), TEXT("Edge+Z4") }
     };
 }
 
@@ -139,14 +139,14 @@ int32 FBevelCubeBuilder::GetFaceIndex(const FVector& Normal) const
 void FBevelCubeBuilder::CalculateCorePoints()
 {
     CorePoints.Reserve(8);
-    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, -InnerOffset)); // 0: -x -y -z
-    CorePoints.Add(FVector(InnerOffset, -InnerOffset, -InnerOffset)); // 1: +x -y -z
-    CorePoints.Add(FVector(-InnerOffset, InnerOffset, -InnerOffset)); // 2: -x +y -z
-    CorePoints.Add(FVector(InnerOffset, InnerOffset, -InnerOffset)); // 3: +x +y -z
-    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, InnerOffset)); // 4: -x -y +z
-    CorePoints.Add(FVector(InnerOffset, -InnerOffset, InnerOffset)); // 5: +x -y +z
-    CorePoints.Add(FVector(-InnerOffset, InnerOffset, InnerOffset)); // 6: -x +y +z
-    CorePoints.Add(FVector(InnerOffset, InnerOffset, InnerOffset)); // 7: +x +y +z
+    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, -InnerOffset));
+    CorePoints.Add(FVector(InnerOffset, -InnerOffset, -InnerOffset));
+    CorePoints.Add(FVector(-InnerOffset, InnerOffset, -InnerOffset));
+    CorePoints.Add(FVector(InnerOffset, InnerOffset, -InnerOffset));
+    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, InnerOffset));
+    CorePoints.Add(FVector(InnerOffset, -InnerOffset, InnerOffset));
+    CorePoints.Add(FVector(-InnerOffset, InnerOffset, InnerOffset));
+    CorePoints.Add(FVector(InnerOffset, InnerOffset, InnerOffset));
 }
 
 void FBevelCubeBuilder::GenerateMainFaces()
@@ -184,7 +184,7 @@ void FBevelCubeBuilder::GenerateEdgeStrip(int32 Core1Idx, int32 Core2Idx,
         FVector PosStart = CorePoints[Core1Idx] + CurrentNormal * BevelRadius;
         FVector PosEnd = CorePoints[Core2Idx] + CurrentNormal * BevelRadius;
 
-        float U_Alpha = FMath::Sin(Alpha * PI / 2.0f);
+        float U_Alpha = Alpha;
 
         FVector2D UV_Start;
         FVector2D UV_End;
@@ -214,173 +214,80 @@ void FBevelCubeBuilder::GenerateEdgeStrip(int32 Core1Idx, int32 Core2Idx,
 
 void FBevelCubeBuilder::GenerateEdgeBevels()
 {
-    // REFACTORED: Generate each edge bevel twice, once for each adjacent face,
-    // with correctly calculated UVs to place them in the margins of the face's UV block.
     for (int32 EdgeIndex = 0; EdgeIndex < EdgeBevelDefs.Num(); ++EdgeIndex)
     {
         const FEdgeBevelDef& EdgeDef = EdgeBevelDefs[EdgeIndex];
-
-        FVector2D UVOffset1, UVScale1, UVOffset2, UVScale2;
-        bool ArcAlongU1 = false, Reverse1 = false, Swap1 = false;
-        bool ArcAlongU2 = false, Reverse2 = false, Swap2 = false;
+        FVector2D UVOffset, UVScale;
+        bool ArcAlongU = false;
 
         switch (EdgeIndex)
         {
-        case 0: // Edge+X1: back (3), bottom (5)
-            // Back face's bottom edge
-            UVOffset1 = FaceUVOffsets[3] + FVector2D(BevelUVWidth, 0);
-            UVScale1 = FVector2D(InnerUVSize, BevelUVWidth);
-            Reverse1 = false;
-            // Bottom face's back edge
-            UVOffset2 = FaceUVOffsets[5] + FVector2D(BevelUVWidth, 0);
-            UVScale2 = FVector2D(InnerUVSize, BevelUVWidth);
-            Reverse2 = false;
+        case 0: // Back-Bottom
+            UVOffset = FaceUVOffsets[3] + FVector2D(BevelUVWidth, 0);
+            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
             break;
-
-        case 1: // Edge+X2: bottom (5), front (2)
-            // Bottom face's front edge
-            UVOffset1 = FaceUVOffsets[5] + FVector2D(BevelUVWidth, BevelUVWidth + InnerUVSize);
-            UVScale1 = FVector2D(InnerUVSize, BevelUVWidth);
-            Reverse1 = false;
-            // Front face's bottom edge
-            UVOffset2 = FaceUVOffsets[2] + FVector2D(BevelUVWidth, 0);
-            UVScale2 = FVector2D(InnerUVSize, BevelUVWidth);
-            Reverse2 = false;
+        case 1: // Bottom-Front
+            UVOffset = FaceUVOffsets[2] + FVector2D(BevelUVWidth, 0);
+            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
             break;
-
-        case 2: // Edge+X3: top (4), back (3)
-            // Top face's back edge
-            UVOffset1 = FaceUVOffsets[4] + FVector2D(BevelUVWidth, 0);
-            UVScale1 = FVector2D(InnerUVSize, BevelUVWidth);
-            Reverse1 = false;
-            // Back face's top edge
-            UVOffset2 = FaceUVOffsets[3] + FVector2D(BevelUVWidth, BevelUVWidth + InnerUVSize);
-            UVScale2 = FVector2D(InnerUVSize, BevelUVWidth);
-            Reverse2 = false;
+        case 2: // Top-Back
+            UVOffset = FaceUVOffsets[3] + FVector2D(BevelUVWidth, BevelUVWidth + InnerUVSize);
+            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
             break;
-
-        case 3: // Edge+X4: front (2), top (4)
-            // Front face's top edge
-            UVOffset1 = FaceUVOffsets[2] + FVector2D(BevelUVWidth, BevelUVWidth + InnerUVSize);
-            UVScale1 = FVector2D(InnerUVSize, BevelUVWidth);
-            Reverse1 = false;
-            // Top face's front edge
-            UVOffset2 = FaceUVOffsets[4] + FVector2D(BevelUVWidth, BevelUVWidth + InnerUVSize);
-            UVScale2 = FVector2D(InnerUVSize, BevelUVWidth);
-            Reverse2 = false;
+        case 3: // Front-Top
+            UVOffset = FaceUVOffsets[2] + FVector2D(BevelUVWidth, BevelUVWidth + InnerUVSize);
+            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
             break;
-
-        case 4: // Edge+Y1: bottom (5), left (1)
-            // Bottom face's left edge
-            UVOffset1 = FaceUVOffsets[5] + FVector2D(0, BevelUVWidth);
-            UVScale1 = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU1 = true; Reverse1 = false;
-            // Left face's bottom edge
-            UVOffset2 = FaceUVOffsets[1] + FVector2D(BevelUVWidth, 0);
-            UVScale2 = FVector2D(InnerUVSize, BevelUVWidth);
-            Reverse2 = false;
+        case 4: // Bottom-Left
+            UVOffset = FaceUVOffsets[1] + FVector2D(BevelUVWidth, 0);
+            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
             break;
-
-        case 5: // Edge+Y2: right (0), bottom (5)
-            // Right face's bottom edge
-            UVOffset1 = FaceUVOffsets[0] + FVector2D(BevelUVWidth, 0);
-            UVScale1 = FVector2D(InnerUVSize, BevelUVWidth);
-            Reverse1 = false;
-            // Bottom face's right edge
-            UVOffset2 = FaceUVOffsets[5] + FVector2D(BevelUVWidth + InnerUVSize, BevelUVWidth);
-            UVScale2 = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU2 = true; Reverse2 = false;
+        case 5: // Right-Bottom
+            UVOffset = FaceUVOffsets[0] + FVector2D(BevelUVWidth, 0);
+            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
             break;
-
-        case 6: // Edge+Y3: left (1), top (4)
-            // Left face's top edge
-            UVOffset1 = FaceUVOffsets[1] + FVector2D(BevelUVWidth, BevelUVWidth + InnerUVSize);
-            UVScale1 = FVector2D(InnerUVSize, BevelUVWidth);
-            Reverse1 = false;
-            // Top face's left edge
-            UVOffset2 = FaceUVOffsets[4] + FVector2D(0, BevelUVWidth);
-            UVScale2 = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU2 = true; Reverse2 = false;
+        case 6: // Left-Top
+            UVOffset = FaceUVOffsets[1] + FVector2D(BevelUVWidth, BevelUVWidth + InnerUVSize);
+            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
             break;
-
-        case 7: // Edge+Y4: top (4), right (0)
-            // Top face's right edge
-            UVOffset1 = FaceUVOffsets[4] + FVector2D(BevelUVWidth + InnerUVSize, BevelUVWidth);
-            UVScale1 = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU1 = true; Reverse1 = false;
-            // Right face's top edge
-            UVOffset2 = FaceUVOffsets[0] + FVector2D(BevelUVWidth, BevelUVWidth + InnerUVSize);
-            UVScale2 = FVector2D(InnerUVSize, BevelUVWidth);
-            Reverse2 = false;
+        case 7: // Top-Right
+            UVOffset = FaceUVOffsets[0] + FVector2D(BevelUVWidth, BevelUVWidth + InnerUVSize);
+            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
             break;
-
-        case 8: // Edge+Z1: left (1), back (3)
-            // Left face's back edge
-            UVOffset1 = FaceUVOffsets[1] + FVector2D(0, BevelUVWidth);
-            UVScale1 = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU1 = true; Reverse1 = false;
-            // Back face's left edge
-            UVOffset2 = FaceUVOffsets[3] + FVector2D(0, BevelUVWidth);
-            UVScale2 = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU2 = true; Reverse2 = false;
+        case 8: // Left-Back
+            UVOffset = FaceUVOffsets[1] + FVector2D(0, BevelUVWidth);
+            UVScale = FVector2D(BevelUVWidth, InnerUVSize);
+            ArcAlongU = true;
             break;
-
-        case 9: // Edge+Z2: back (3), right (0)
-            // Back face's right edge
-            UVOffset1 = FaceUVOffsets[3] + FVector2D(BevelUVWidth + InnerUVSize, BevelUVWidth);
-            UVScale1 = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU1 = true; Reverse1 = false;
-            // Right face's back edge
-            UVOffset2 = FaceUVOffsets[0] + FVector2D(0, BevelUVWidth);
-            UVScale2 = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU2 = true; Reverse2 = false;
+        case 9: // Back-Right
+            UVOffset = FaceUVOffsets[3] + FVector2D(0, BevelUVWidth);
+            UVScale = FVector2D(BevelUVWidth, InnerUVSize);
+            ArcAlongU = true;
             break;
-
-        case 10: // Edge+Z3: front (2), left (1)
-            // Front face's left edge
-            UVOffset1 = FaceUVOffsets[2] + FVector2D(0, BevelUVWidth);
-            UVScale1 = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU1 = true; Reverse1 = false;
-            // Left face's front edge
-            UVOffset2 = FaceUVOffsets[1] + FVector2D(BevelUVWidth + InnerUVSize, BevelUVWidth);
-            UVScale2 = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU2 = true; Reverse2 = false;
+        case 10: // Front-Left
+            UVOffset = FaceUVOffsets[1] + FVector2D(BevelUVWidth + InnerUVSize, BevelUVWidth);
+            UVScale = FVector2D(BevelUVWidth, InnerUVSize);
+            ArcAlongU = true;
             break;
-
-        case 11: // Edge+Z4: right (0), front (2)
-            // Right face's front edge
-            UVOffset1 = FaceUVOffsets[0] + FVector2D(BevelUVWidth + InnerUVSize, BevelUVWidth);
-            UVScale1 = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU1 = true; Reverse1 = false;
-            // Front face's right edge
-            UVOffset2 = FaceUVOffsets[2] + FVector2D(BevelUVWidth + InnerUVSize, BevelUVWidth);
-            UVScale2 = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU2 = true; Reverse2 = false;
+        case 11: // Right-Front
+            UVOffset = FaceUVOffsets[0] + FVector2D(0, BevelUVWidth);
+            UVScale = FVector2D(BevelUVWidth, InnerUVSize);
+            ArcAlongU = true;
             break;
         }
 
-        int32 Core1Idx = EdgeDef.Core1Idx, Core2Idx = EdgeDef.Core2Idx;
-        FVector Normal1 = EdgeDef.Normal1, Normal2 = EdgeDef.Normal2;
-
-        if (Swap1) { Swap(Core1Idx, Core2Idx); }
-        GenerateEdgeStrip(Core1Idx, Core2Idx, Normal1, Normal2, UVOffset1, UVScale1, ArcAlongU1, Reverse1);
-
-        Core1Idx = EdgeDef.Core1Idx; Core2Idx = EdgeDef.Core2Idx;
-        if (Swap2) { Swap(Core1Idx, Core2Idx); }
-        GenerateEdgeStrip(Core1Idx, Core2Idx, Normal2, Normal1, UVOffset2, UVScale2, ArcAlongU2, Reverse2);
+        GenerateEdgeStrip(EdgeDef.Core1Idx, EdgeDef.Core2Idx, EdgeDef.Normal1, EdgeDef.Normal2, 
+                         UVOffset, UVScale, ArcAlongU, false);
     }
 }
 
 
 void FBevelCubeBuilder::GenerateCornerBevels()
 {
-    // REFACTORED: Generate each corner fan three times, once for each adjacent face,
-    // with correctly calculated UVs to place them in the corners of the face's UV block.
     for (int32 CornerIndex = 0; CornerIndex < 8; ++CornerIndex)
     {
-        FVector2D UVOffsetX, UVOffsetY, UVOffsetZ;
-        bool FlipUX = false, FlipUY = false, FlipUZ = false;
-        bool FlipVX = false, FlipVY = false, FlipVZ = false;
+        FVector2D UVOffset;
+        bool FlipU = false, FlipV = false;
         bool bSpecialOrder = IsSpecialCorner(CornerIndex);
 
         float B = BevelUVWidth;
@@ -388,71 +295,40 @@ void FBevelCubeBuilder::GenerateCornerBevels()
 
         switch (CornerIndex)
         {
-        case 0: // -x -y -z: left (1), back (3), bottom (5)
-            UVOffsetX = FaceUVOffsets[1]; // Left face, bottom-back corner -> UV bottom-left
-            UVOffsetY = FaceUVOffsets[3]; // Back face, bottom-left corner -> UV bottom-left
-            UVOffsetZ = FaceUVOffsets[5]; // Bottom face, back-left corner -> UV bottom-left
+        case 0: // Left-Back-Bottom
+            UVOffset = FaceUVOffsets[1];
             break;
-
-        case 1: // +x -y -z: right (0), back (3), bottom (5)
-            UVOffsetX = FaceUVOffsets[0] + FVector2D(B + I, 0); // Right face, bottom-back corner -> UV bottom-right
-            UVOffsetY = FaceUVOffsets[3] + FVector2D(B + I, 0); // Back face, bottom-right corner -> UV bottom-right
-            UVOffsetZ = FaceUVOffsets[5] + FVector2D(B + I, 0); // Bottom face, back-right corner -> UV bottom-right
-            FlipUX = FlipUY = FlipUZ = true;
+        case 1: // Right-Back-Bottom
+            UVOffset = FaceUVOffsets[0] + FVector2D(B + I, 0);
+            FlipU = true;
             break;
-
-        case 2: // -x +y -z: left (1), front (2), bottom (5)
-            UVOffsetX = FaceUVOffsets[1] + FVector2D(0, B + I); // Left face, bottom-front corner -> UV top-left
-            UVOffsetY = FaceUVOffsets[2];                       // Front face, bottom-left corner -> UV bottom-left
-            UVOffsetZ = FaceUVOffsets[5] + FVector2D(0, B + I);   // Bottom face, front-left corner -> UV top-left
-            FlipVX = FlipVZ = true;
+        case 2: // Left-Front-Bottom
+            UVOffset = FaceUVOffsets[1] + FVector2D(0, B + I);
+            FlipV = true;
             break;
-
-        case 3: // +x +y -z: right (0), front (2), bottom (5)
-            UVOffsetX = FaceUVOffsets[0] + FVector2D(B + I, B + I); // Right face, bottom-front corner -> UV top-right
-            UVOffsetY = FaceUVOffsets[2] + FVector2D(B + I, 0);   // Front face, bottom-right corner -> UV bottom-right
-            UVOffsetZ = FaceUVOffsets[5] + FVector2D(B + I, B + I); // Bottom face, front-right corner -> UV top-right
-            FlipUX = FlipUY = FlipUZ = true;
-            FlipVX = FlipVZ = true;
+        case 3: // Right-Front-Bottom
+            UVOffset = FaceUVOffsets[0] + FVector2D(B + I, B + I);
+            FlipU = FlipV = true;
             break;
-
-        case 4: // -x -y +z: left (1), back (3), top (4)
-            UVOffsetX = FaceUVOffsets[1] + FVector2D(B + I, 0);   // Left face, top-back corner -> UV bottom-right
-            UVOffsetY = FaceUVOffsets[3] + FVector2D(0, B + I);   // Back face, top-left corner -> UV top-left
-            UVOffsetZ = FaceUVOffsets[4];                       // Top face, back-left corner -> UV bottom-left
-            FlipUX = true;
-            FlipVY = true;
+        case 4: // Left-Back-Top
+            UVOffset = FaceUVOffsets[1] + FVector2D(B + I, 0);
+            FlipU = true;
             break;
-
-        case 5: // +x -y +z: right (0), back (3), top (4)
-            UVOffsetX = FaceUVOffsets[0];                       // Right face, top-back corner -> UV bottom-left
-            UVOffsetY = FaceUVOffsets[3] + FVector2D(B + I, B + I); // Back face, top-right corner -> UV top-right
-            UVOffsetZ = FaceUVOffsets[4] + FVector2D(B + I, 0);   // Top face, back-right corner -> UV bottom-right
-            FlipUY = FlipUZ = true;
-            FlipVY = true;
+        case 5: // Right-Back-Top
+            UVOffset = FaceUVOffsets[0];
             break;
-
-        case 6: // -x +y +z: left (1), front (2), top (4)
-            UVOffsetX = FaceUVOffsets[1] + FVector2D(B + I, B + I); // Left face, top-front corner -> UV top-right
-            UVOffsetY = FaceUVOffsets[2] + FVector2D(0, B + I);   // Front face, top-left corner -> UV top-left
-            UVOffsetZ = FaceUVOffsets[4] + FVector2D(0, B + I);   // Top face, front-left corner -> UV top-left
-            FlipUX = true;
-            FlipVX = FlipVY = FlipVZ = true;
+        case 6: // Left-Front-Top
+            UVOffset = FaceUVOffsets[1] + FVector2D(B + I, B + I);
+            FlipU = FlipV = true;
             break;
-
-        case 7: // +x +y +z: right (0), front (2), top (4)
-            UVOffsetX = FaceUVOffsets[0] + FVector2D(0, B + I);   // Right face, top-front corner -> UV top-left
-            UVOffsetY = FaceUVOffsets[2] + FVector2D(B + I, B + I); // Front face, top-right corner -> UV top-right
-            UVOffsetZ = FaceUVOffsets[4] + FVector2D(B + I, B + I); // Top face, front-right corner -> UV top-right
-            FlipUY = FlipUZ = true;
-            FlipVX = FlipVY = FlipVZ = true;
+        case 7: // Right-Front-Top
+            UVOffset = FaceUVOffsets[0] + FVector2D(0, B + I);
+            FlipV = true;
             break;
         }
 
         FVector2D UVScale = FVector2D(BevelUVWidth, BevelUVWidth);
-        GenerateCornerBevelWithFlip(CornerIndex, UVOffsetX, UVScale, FlipUX, FlipVX, bSpecialOrder);
-        GenerateCornerBevelWithFlip(CornerIndex, UVOffsetY, UVScale, FlipUY, FlipVY, bSpecialOrder);
-        GenerateCornerBevelWithFlip(CornerIndex, UVOffsetZ, UVScale, FlipUZ, FlipVZ, bSpecialOrder);
+        GenerateCornerBevelWithFlip(CornerIndex, UVOffset, UVScale, FlipU, FlipV, bSpecialOrder);
     }
 }
 
