@@ -81,32 +81,36 @@ void FFrustumBuilder::CreateSideGeometry()
 	const float TopBevelStartZ = HalfHeight - CalculateBevelHeight(Frustum.TopRadius);
 	const float BottomBevelStartZ = -HalfHeight + CalculateBevelHeight(Frustum.BottomRadius);
 
-	// 侧边UV映射，根据高度比例动态计算V值占比
-	// 计算各部分高度占比
+	// 侧边UV映射，使用周长比例计算V值
+	// 计算各部分高度和周长
 	const float TotalHeight = Frustum.Height;
 	const float TopBevelHeight = CalculateBevelHeight(Frustum.TopRadius);
 	const float BottomBevelHeight = CalculateBevelHeight(Frustum.BottomRadius);
 	const float SideHeight = TotalHeight - TopBevelHeight - BottomBevelHeight;
 	
-	// 计算V值占比（三个部分加起来为1）
-	const float BottomBevelVScale = BottomBevelHeight / TotalHeight;
-	const float SideVScale = SideHeight / TotalHeight;
-	const float TopBevelVScale = TopBevelHeight / TotalHeight;
+	// 计算平均周长用于V值计算
+	const float AvgRadius = (Frustum.TopRadius + Frustum.BottomRadius) * 0.5f;
+	const float AvgCircumference = 2.0f * PI * AvgRadius;
+	
+	// 计算V值占比（基于周长比例）
+	const float BottomBevelVScale = BottomBevelHeight / AvgCircumference;
+	const float SideVScale = SideHeight / AvgCircumference;
+	const float TopBevelVScale = TopBevelHeight / AvgCircumference;
 	
 	// 计算周长比例，用于U值调整
 	const float BottomCircumference = 2.0f * PI * Frustum.BottomRadius;
-	const float AvgCircumference = (2.0f * PI * Frustum.TopRadius + BottomCircumference) * 0.5f;
 	const float CircumferenceRatio = AvgCircumference / TotalHeight;
 	
 	// 侧面UV区域：[0.25, 0.75] x [动态V范围] - 根据高度比例动态调整
-	const float SideVStart = BottomBevelVScale;
-	const float SideVEnd = BottomBevelVScale + SideVScale;
+	// 当没有倒角时，侧面从V=0开始；有倒角时，从倒角结束后开始
+	const float SideVStart = (BottomBevelVScale > 0.0f) ? (BottomBevelVScale + 0.001f) : 0.0f;
+	const float SideVEnd = SideVStart + SideVScale;
 	
 	TArray<int32> TopRing = GenerateVertexRing(
 		Frustum.TopRadius,
 		TopBevelStartZ,
 		Frustum.TopSides,
-		SideVEnd, // V坐标 - 连接上倒角
+		1.0f, // V坐标 - 使用1.0确保在UV图边缘
 		FVector2D(0.25f, SideVStart), // UVOffset - 动态V范围
 		FVector2D(0.5f, SideVScale)  // UVScale - 动态V范围
 	);
@@ -195,9 +199,15 @@ void FFrustumBuilder::CreateSideGeometry()
 	}
 	VertexRings.Add(TopRing);
 
-	for (int32 i = VertexRings.Num() - 1; i >= 0; i--)
+	// 只收集端盖边界连接点，确保正确的端盖几何
+	// 从低到高收集，确保上底顶点在UV边缘
+	for (int32 i = 0; i < VertexRings.Num(); i++)
 	{
-		RecordEndCapConnectionPoint(VertexRings[i][0]);
+		if (VertexRings[i].Num() > 0)
+		{
+			// 只收集每个环的第一个顶点，形成端盖边界
+			RecordEndCapConnectionPoint(VertexRings[i][0]);
+		}
 	}
 
 	for (int i = 0; i < VertexRings.Num() - 1; i++)
@@ -240,19 +250,20 @@ void FFrustumBuilder::GenerateEndCap(float Angle, EEndCapType EndCapType)
 {
 	if (EndCapConnectionPoints.Num() < 3)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("GenerateEndCap - %s端面连接点不足，无法生成端面"), (EndCapType == EEndCapType::Start) ? TEXT("起始") : TEXT("结束"));
+		UE_LOG(LogTemp, Warning, TEXT("GenerateEndCap - %s端面连接点不足，无法生成端面"),
+			(EndCapType == EEndCapType::Start) ? TEXT("起始") : TEXT("结束"));
 		return;
 	}
 
 	TArray<int32> RotatedConnectionPoints;
 	RotatedConnectionPoints.Reserve(EndCapConnectionPoints.Num());
 
-	// 端盖UV映射，根据半径比动态分布
-	// 端盖UV区域：[0, 0.25] x [0, 1] - 上方区域
-	// 起始端盖：[0, 0.25] x [0, 0.5]
-	// 结束端盖：[0, 0.25] x [0.5, 1]
-	const FVector2D UVOffset = (EndCapType == EEndCapType::Start) ? FVector2D(0.0f, 0.0f) : FVector2D(0.0f, 0.5f);
-	const FVector2D UVScale(0.25f, 0.5f);
+	// 重新分配端盖UV区域：
+	// - 起始端盖：使用纹理左半部分 [0.0, 0.5] x [0.0, 1.0]
+	// - 结束端盖：使用纹理右半部分 [0.5, 1.0] x [0.0, 1.0]
+	const FVector2D UVOffset = (EndCapType == EEndCapType::Start) ?
+		FVector2D(0.0f, 0.0f) : FVector2D(0.5f, 0.0f);
+	const FVector2D UVScale(0.5f, 1.0f);
 
 	for (int32 i = 0; i < EndCapConnectionPoints.Num(); ++i)
 	{
@@ -260,7 +271,7 @@ void FFrustumBuilder::GenerateEndCap(float Angle, EEndCapType EndCapType)
 		FVector OriginalPos = GetPosByIndex(VertexIndex);
 
 		FVector EndCapPos;
-		if ((EndCapType == EEndCapType::Start))
+		if (EndCapType == EEndCapType::Start)
 		{
 			EndCapPos = OriginalPos;
 		}
@@ -268,17 +279,12 @@ void FFrustumBuilder::GenerateEndCap(float Angle, EEndCapType EndCapType)
 		{
 			const float Radius = FMath::Sqrt(OriginalPos.X * OriginalPos.X + OriginalPos.Y * OriginalPos.Y);
 			const float CurrentAngle = FMath::Atan2(OriginalPos.Y, OriginalPos.X);
-
 			const float RotationAngle = EndAngle - StartAngle;
 			const float NewAngle = CurrentAngle + RotationAngle;
-
-			const float NewX = Radius * FMath::Cos(NewAngle);
-			const float NewY = Radius * FMath::Sin(NewAngle);
-			EndCapPos = FVector(NewX, NewY, OriginalPos.Z);
+			EndCapPos = FVector(Radius * FMath::Cos(NewAngle), Radius * FMath::Sin(NewAngle), OriginalPos.Z);
 		}
 
-		// 端面法线应该垂直于端面平面
-		// 根据是否为开始端面来确定法线方向
+		// 端面法线
 		FVector BaseNormal = FVector(FMath::Cos(Angle + PI / 2), FMath::Sin(Angle + PI / 2), 0.0f);
 		FVector EndCapNormal = (EndCapType == EEndCapType::Start) ? -BaseNormal : BaseNormal;
 
@@ -287,30 +293,20 @@ void FFrustumBuilder::GenerateEndCap(float Angle, EEndCapType EndCapType)
 			const float Z = EndCapPos.Z;
 			const float HeightRatio = (Z + Frustum.GetHalfHeight()) / Frustum.Height;
 			const float BendInfluence = FMath::Sin(HeightRatio * PI);
-
-			FVector BendNormal = FVector(0, 0, BendInfluence).GetSafeNormal(); // 移除负号，让端盖法线向Z轴正方向弯曲
+			FVector BendNormal = FVector(0, 0, BendInfluence).GetSafeNormal();
 			EndCapNormal = (EndCapNormal + BendNormal * Frustum.BendAmount).GetSafeNormal();
 		}
 
-		// 计算端盖UV坐标，根据半径比动态调整
+		// U坐标基于半径，V坐标基于高度
 		const float Radius = FMath::Sqrt(EndCapPos.X * EndCapPos.X + EndCapPos.Y * EndCapPos.Y);
 		const float MaxRadius = FMath::Max(Frustum.TopRadius, Frustum.BottomRadius);
-		const float NormalizedRadius = FMath::Clamp(Radius / MaxRadius, 0.0f, 1.0f);
-		const float PosAngle = FMath::Atan2(EndCapPos.Y, EndCapPos.X);
+		const float U = FMath::Clamp(Radius / MaxRadius, 0.0f, 1.0f);
+		
+		// 使用简单的线性映射，基于端盖的实际Z值范围
+		// 直接使用Z值相对于Frustum高度的比例
 
-		// 将角度映射到[0,1]范围 - 修复U值分布问题
-		float NormalizedAngle;
-		if ((EndCapType == EEndCapType::Start))
-		{
-			NormalizedAngle = (PosAngle - StartAngle) / (EndAngle - StartAngle);
-		}
-		else
-		{
-			// 对于结束端盖，需要反转角度方向以确保UV正确分布
-			NormalizedAngle = 1.0f - (PosAngle - StartAngle) / (EndAngle - StartAngle);
-		}
-		const float U = FMath::Clamp(NormalizedAngle, 0.0f, 1.0f);
-		const float V = (EndCapPos.Z + Frustum.GetHalfHeight()) / Frustum.Height;
+		float V = (EndCapPos.Z + Frustum.GetHalfHeight()) / Frustum.Height;
+
 
 		const FVector2D UV = UVOffset + FVector2D(U * UVScale.X, V * UVScale.Y);
 
@@ -320,6 +316,7 @@ void FFrustumBuilder::GenerateEndCap(float Angle, EEndCapType EndCapType)
 
 	GenerateEndCapTrianglesFromVertices(RotatedConnectionPoints, EndCapType, Angle);
 }
+
 TArray<int32> FFrustumBuilder::GenerateVertexRing(float Radius, float Z, int32 Sides)
 {
 	TArray<int32> VertexRing;
@@ -384,27 +381,25 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, EH
 {
 	FVector Normal(0.0f, 0.0f, (HeightPosition == EHeightPosition::Top) ? 1.0f : -1.0f);
 
-	// UV区域定义 - 上下底面，参考Pyramid的底，根据半径动态调整
-	// 计算端盖半径比例，用于UV坐标调整
+	// 计算实际半径（考虑倒角）
 	const float CapRadius = FMath::Max(0.0f, Radius - Frustum.BevelRadius);
-	const float MaxRadius = FMath::Max(Frustum.TopRadius, Frustum.BottomRadius);
-	const float RadiusRatio = CapRadius / MaxRadius;
-	
-	// 端盖UV区域：[0, 0.25] x [动态范围] - 根据半径比例动态调整
-	const FVector2D UVOffset = (HeightPosition == EHeightPosition::Top) ? FVector2D(0.0f, 0.0f) : FVector2D(0.0f, 0.5f);
-	const FVector2D UVScale(0.25f, 0.25f * RadiusRatio); // 根据半径比例动态调整
+
+	// 重新分配UV区域，避免重叠：
+	// - 上底：使用纹理上半部分 [0.5, 1.0] x [0.5, 1.0]
+	// - 下底：使用纹理下半部分 [0.5, 1.0] x [0.0, 0.5]
+	const FVector2D UVOffset = (HeightPosition == EHeightPosition::Top) ?
+		FVector2D(0.5f, 0.5f) : FVector2D(0.5f, 0.0f);
+	const FVector2D UVScale(0.5f, 0.5f);
+
+	// 中心点UV
 	const FVector2D CenterUV = UVOffset + FVector2D(0.5f * UVScale.X, 0.5f * UVScale.Y);
 
 	const FVector CenterPos(0.0f, 0.0f, Z);
 	const int32 CenterVertex = GetOrAddVertex(CenterPos, Normal, CenterUV);
 
-	// 如果没有倒角，顶/底面半径就是它本身；如果有，半径要向内收缩。
-	// CapRadius已经在上面定义过了
-
 	const float AngleStep = CalculateAngleStep(Sides);
-	const int32 LoopCount = Sides; // 与ArcAngle无关
 
-	for (int32 SideIndex = 0; SideIndex < LoopCount; ++SideIndex)
+	for (int32 SideIndex = 0; SideIndex < Sides; ++SideIndex)
 	{
 		const float CurrentAngle = StartAngle + (SideIndex * AngleStep);
 		const float NextAngle = StartAngle + ((SideIndex + 1) * AngleStep);
@@ -412,31 +407,33 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, EH
 		const FVector CurrentPos(CapRadius * FMath::Cos(CurrentAngle), CapRadius * FMath::Sin(CurrentAngle), Z);
 		const FVector NextPos(CapRadius * FMath::Cos(NextAngle), CapRadius * FMath::Sin(NextAngle), Z);
 
-		// 计算UV坐标 - 参考Pyramid的底，根据半径动态调整
-		// 将角度标准化到[0, 2π]范围，然后映射到UV坐标
-		const float FullCircleAngle = 2.0f * PI;
-		const float NormalizedCurrentAngle = FMath::Fmod(CurrentAngle + 2.0f * PI, 2.0f * PI);
-		const float NormalizedNextAngle = FMath::Fmod(NextAngle + 2.0f * PI, 2.0f * PI);
+		// 改进的UV计算：使用圆形映射
+		const float CurrentAngleNormalized = (CurrentAngle - StartAngle) / (EndAngle - StartAngle);
+		const float NextAngleNormalized = (NextAngle - StartAngle) / (EndAngle - StartAngle);
 
-		// 参考Pyramid的底UV计算方式，根据半径比例动态调整
-		const float U_Current = 0.5f + 0.5f * FMath::Cos(NormalizedCurrentAngle);
-		const float U_Next = 0.5f + 0.5f * FMath::Cos(NormalizedNextAngle);
-		const float V_Current = 0.5f + 0.5f * FMath::Sin(NormalizedCurrentAngle) * RadiusRatio; // 根据半径比例调整
-		const float V_Next = 0.5f + 0.5f * FMath::Sin(NormalizedNextAngle) * RadiusRatio; // 根据半径比例调整
+		// 将角度映射到圆形UV
+		const FVector2D CurrentCircleUV = FVector2D(
+			0.5f + 0.5f * FMath::Cos(CurrentAngle) * (CapRadius / Radius),
+			0.5f + 0.5f * FMath::Sin(CurrentAngle) * (CapRadius / Radius)
+		);
+		const FVector2D NextCircleUV = FVector2D(
+			0.5f + 0.5f * FMath::Cos(NextAngle) * (CapRadius / Radius),
+			0.5f + 0.5f * FMath::Sin(NextAngle) * (CapRadius / Radius)
+		);
 
-		const FVector2D CurrentUV = UVOffset + FVector2D(U_Current, V_Current) * UVScale;
-		const FVector2D NextUV = UVOffset + FVector2D(U_Next, V_Next) * UVScale;
+		const FVector2D CurrentUV = UVOffset + CurrentCircleUV * UVScale;
+		const FVector2D NextUV = UVOffset + NextCircleUV * UVScale;
 
 		const int32 V1 = GetOrAddVertex(CurrentPos, Normal, CurrentUV);
 		const int32 V2 = GetOrAddVertex(NextPos, Normal, NextUV);
 
-		// 记录端盖连接点（只记录开始点，i=0的那个）
+		// 记录端盖连接点
 		if (SideIndex == 0)
 		{
 			RecordEndCapConnectionPoint(V1);
 		}
 
-		if ((HeightPosition == EHeightPosition::Top))
+		if (HeightPosition == EHeightPosition::Top)
 		{
 			AddTriangle(CenterVertex, V2, V1);
 		}
@@ -459,22 +456,27 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition) {
 	const float Radius = (HeightPosition == EHeightPosition::Top) ? Frustum.TopRadius : Frustum.BottomRadius;
 	const int32 Sides = (HeightPosition == EHeightPosition::Top) ? Frustum.TopSides : Frustum.BottomSides;
 
-	// 倒角UV映射，使用动态V值占比
-	// 计算各部分高度占比
+	// 倒角UV映射，使用周长比例计算V值
+	// 计算各部分高度和周长
 	const float TotalHeight = Frustum.Height;
 	const float TopBevelHeight = CalculateBevelHeight(Frustum.TopRadius);
 	const float BottomBevelHeight = CalculateBevelHeight(Frustum.BottomRadius);
 	const float SideHeight = TotalHeight - TopBevelHeight - BottomBevelHeight;
 	
-	// 计算V值占比
-	const float BottomBevelVScale = BottomBevelHeight / TotalHeight;
-	const float SideVScale = SideHeight / TotalHeight;
-	const float TopBevelVScale = TopBevelHeight / TotalHeight;
+	// 计算平均周长用于V值计算
+	const float AvgRadius = (Frustum.TopRadius + Frustum.BottomRadius) * 0.5f;
+	const float AvgCircumference = 2.0f * PI * AvgRadius;
+	
+	// 计算V值占比（基于周长比例）
+	const float BottomBevelVScale = BottomBevelHeight / AvgCircumference;
+	const float SideVScale = SideHeight / AvgCircumference;
+	const float TopBevelVScale = TopBevelHeight / AvgCircumference;
 	
 	// 倒角UV区域：[0.25, 0.75] x [动态V范围] - 一头连接边界，一头连接侧面
-	// 计算与侧面相同的V值范围
-	const float SideVStart = BottomBevelVScale;
-	const float SideVEnd = BottomBevelVScale + SideVScale;
+	// 计算与侧面相同的V值范围，避免重叠
+	// 当没有倒角时，侧面从V=0开始；有倒角时，从倒角结束后开始
+	const float SideVStart = (BottomBevelVScale > 0.0f) ? (BottomBevelVScale + 0.001f) : 0.0f;
+	const float SideVEnd = SideVStart + SideVScale;
 	
 	// 倒角UV区域设置
 	FVector2D UVOffset, UVScale;
@@ -484,6 +486,7 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition) {
 		UVScale = FVector2D(0.5f, TopBevelVScale);
 	} else {
 		// 下倒角：从边界开始，到侧面底部结束
+		// 确保下倒角结束位置与侧面开始位置不重叠
 		UVOffset = FVector2D(0.25f, 0.0f);
 		UVScale = FVector2D(0.5f, BottomBevelVScale);
 	}
@@ -546,12 +549,6 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition) {
 
 	// 倒角面生成与ArcAngle无关，总是生成倒角面
 	if (EndRing.Num() > 0) {
-		// 记录倒角开始点到端盖连接点（只记录开始点，i=0的那个）
-		// 倒角有自己的顶点，位置相同但顶点不同
-		if (StartRing.Num() > 0)
-		{
-			RecordEndCapConnectionPoint(StartRing[0]);
-		}
 
 		// 连接内外环形成倒角面 - 与ArcAngle无关
 		for (int32 s = 0; s < Sides; ++s) {
@@ -624,13 +621,32 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition) {
 		// 中心线法线应该与端面法线一致，确保渲染方向正确
 		const FVector CenterLineNormal = EndCapNormal;
 
-		// 端盖UV设置 - 参考Pyramid的底，根据半径动态调整
+		// 端盖UV设置 - 放在侧边左右两侧
+		// 重新计算侧边V值范围，与CreateSideGeometry保持一致
+		const float TotalHeight = Frustum.Height;
+		const float TopBevelHeight = CalculateBevelHeight(Frustum.TopRadius);
+		const float BottomBevelHeight = CalculateBevelHeight(Frustum.BottomRadius);
+		const float SideHeight = TotalHeight - TopBevelHeight - BottomBevelHeight;
+		const float AvgRadius = (Frustum.TopRadius + Frustum.BottomRadius) * 0.5f;
+		const float AvgCircumference = 2.0f * PI * AvgRadius;
+		const float BottomBevelVScale = BottomBevelHeight / AvgCircumference;
+		const float SideVScale = SideHeight / AvgCircumference;
+		const float SideVStart = (BottomBevelVScale > 0.0f) ? (BottomBevelVScale + 0.001f) : 0.0f;
+		
 		// 计算端盖半径比例，用于UV坐标调整
 		const float MaxRadius = FMath::Max(Frustum.TopRadius, Frustum.BottomRadius);
 		
-		// 端盖UV区域：[0, 0.25] x [动态范围] - 根据半径比例动态调整
-		const FVector2D UVOffset = (EndCapType == EEndCapType::Start) ? FVector2D(0.0f, 0.0f) : FVector2D(0.0f, 0.5f);
-		const FVector2D UVScale(0.25f, 0.25f); // 使用固定比例，在具体计算中动态调整
+		// 端盖UV区域：侧边左右两侧
+		// 当有倒角时，端盖V值应该包含倒角+侧面的完整V范围
+		const float TopBevelVScale = TopBevelHeight / AvgCircumference;
+		const float TotalVScale = BottomBevelVScale + 0.001f + SideVScale + TopBevelVScale; // 下倒角+偏移+侧面+上倒角的完整V范围
+		const float TotalVStart = 0.0f; // 从V=0开始
+		
+		// 起始端盖：[0, 0.25] x [完整V范围] - 左侧
+		// 结束端盖：[0.75, 1.0] x [完整V范围] - 右侧
+		const FVector2D UVOffset = (EndCapType == EEndCapType::Start) ? FVector2D(0.0f, TotalVStart) : FVector2D(0.75f, TotalVStart);
+		const FVector2D UVScale(0.25f, TotalVScale);
+
 
 		if (SortedVertices.Num() == 2)
 		{
@@ -640,40 +656,28 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition) {
 			FVector Pos1 = GetPosByIndex(V1);
 			FVector Pos2 = GetPosByIndex(V2);
 
-			// 计算UV坐标，根据半径比例调整
+			// 计算UV坐标，使用与GenerateEndCap相同的逻辑
 			const float Radius1 = FMath::Sqrt(Pos1.X * Pos1.X + Pos1.Y * Pos1.Y);
 			const float Radius2 = FMath::Sqrt(Pos2.X * Pos2.X + Pos2.Y * Pos2.Y);
-			const float RadiusRatio1 = Radius1 / MaxRadius;
-			const float RadiusRatio2 = Radius2 / MaxRadius;
+			
+			// U坐标基于半径，与GenerateEndCap保持一致
+			const float U1 = FMath::Clamp(Radius1 / MaxRadius, 0.0f, 1.0f);
+			const float U2 = FMath::Clamp(Radius2 / MaxRadius, 0.0f, 1.0f);
 
-			const float Angle1 = FMath::Atan2(Pos1.Y, Pos1.X);
-			const float Angle2 = FMath::Atan2(Pos2.Y, Pos2.X);
+			// 在GenerateEndCapTrianglesFromVertices函数中，修改UV计算部分：
 
-			// 将角度映射到[0,1]范围 - 修复U值分布问题
-			float U1, U2;
-			if ((EndCapType == EEndCapType::Start))
-			{
-				U1 = FMath::Clamp((Angle1 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
-				U2 = FMath::Clamp((Angle2 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
-			}
-			else
-			{
-				// 对于结束端盖，反转角度方向
-				U1 = 1.0f - FMath::Clamp((Angle1 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
-				U2 = 1.0f - FMath::Clamp((Angle2 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
-			}
-
-			// 参考Pyramid的底UV计算方式，根据半径比例动态调整
-			const float V1_UV = (Pos1.Z + Frustum.GetHalfHeight()) / Frustum.Height * RadiusRatio1;
-			const float V2_UV = (Pos2.Z + Frustum.GetHalfHeight()) / Frustum.Height * RadiusRatio2;
+			// 使用简单的线性映射，基于端盖的实际Z值范围
+			const float V1_UV = (Pos1.Z + Frustum.GetHalfHeight()) / Frustum.Height;
+			const float V2_UV = (Pos2.Z + Frustum.GetHalfHeight()) / Frustum.Height;
 
 			const FVector2D UV1 = UVOffset + FVector2D(U1 * UVScale.X, V1_UV * UVScale.Y);
 			const FVector2D UV2 = UVOffset + FVector2D(U2 * UVScale.X, V2_UV * UVScale.Y);
 
-			// 中心点的UV坐标
+			// 中心点的UV坐标（基于高度）
 			const FVector2D CenterUV1 = UVOffset + FVector2D(0.5f * UVScale.X, V1_UV * UVScale.Y);
 			const FVector2D CenterUV2 = UVOffset + FVector2D(0.5f * UVScale.X, V2_UV * UVScale.Y);
 
+			// 创建中心顶点
 			const int32 CenterV1 = GetOrAddVertex(FVector(0, 0, Pos1.Z), CenterLineNormal, CenterUV1);
 			const int32 CenterV2 = GetOrAddVertex(FVector(0, 0, Pos2.Z), CenterLineNormal, CenterUV2);
 
@@ -702,32 +706,17 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition) {
 				FVector Pos1 = GetPosByIndex(V1);
 				FVector Pos2 = GetPosByIndex(V2);
 
-				// 计算UV坐标，根据半径比例调整
+				// 计算UV坐标，使用与GenerateEndCap相同的逻辑
 				const float Radius1 = FMath::Sqrt(Pos1.X * Pos1.X + Pos1.Y * Pos1.Y);
 				const float Radius2 = FMath::Sqrt(Pos2.X * Pos2.X + Pos2.Y * Pos2.Y);
-				const float RadiusRatio1 = Radius1 / MaxRadius;
-				const float RadiusRatio2 = Radius2 / MaxRadius;
+				
+				// U坐标基于半径，与GenerateEndCap保持一致
+				const float U1 = FMath::Clamp(Radius1 / MaxRadius, 0.0f, 1.0f);
+				const float U2 = FMath::Clamp(Radius2 / MaxRadius, 0.0f, 1.0f);
 
-				const float Angle1 = FMath::Atan2(Pos1.Y, Pos1.X);
-				const float Angle2 = FMath::Atan2(Pos2.Y, Pos2.X);
-
-				// 将角度映射到[0,1]范围 - 修复U值分布问题
-				float U1, U2;
-				if ((EndCapType == EEndCapType::Start))
-				{
-					U1 = FMath::Clamp((Angle1 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
-					U2 = FMath::Clamp((Angle2 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
-				}
-				else
-				{
-					// 对于结束端盖，反转角度方向
-					U1 = 1.0f - FMath::Clamp((Angle1 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
-					U2 = 1.0f - FMath::Clamp((Angle2 - StartAngle) / (EndAngle - StartAngle), 0.0f, 1.0f);
-				}
-
-				// 参考Pyramid的底UV计算方式，根据半径比例动态调整
-				const float V1_UV = (Pos1.Z + Frustum.GetHalfHeight()) / Frustum.Height * RadiusRatio1;
-				const float V2_UV = (Pos2.Z + Frustum.GetHalfHeight()) / Frustum.Height * RadiusRatio2;
+				// V坐标基于高度，与GenerateEndCap保持一致
+				const float V1_UV = (Pos1.Z + Frustum.GetHalfHeight()) / Frustum.Height;
+				const float V2_UV = (Pos2.Z + Frustum.GetHalfHeight()) / Frustum.Height;
 
 				const FVector2D UV1 = UVOffset + FVector2D(U1 * UVScale.X, V1_UV * UVScale.Y);
 				const FVector2D UV2 = UVOffset + FVector2D(U2 * UVScale.X, V2_UV * UVScale.Y);
