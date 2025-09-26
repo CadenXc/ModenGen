@@ -77,9 +77,6 @@ public:
     void Merge(const FModelGenMeshData& Other);
     
     void ToProceduralMesh(UProceduralMeshComponent* MeshComponent, int32 SectionIndex = 0) const;
-    
-    /** 复制主UV通道到指定通道（用于多UV通道支持） */
-    void CopyUVToChannel(int32 TargetChannel) const;
 
     void CalculateTangents();
 

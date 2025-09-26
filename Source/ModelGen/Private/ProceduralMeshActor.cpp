@@ -17,74 +17,88 @@
 #include "StaticMeshResources.h"
 #include "UObject/ConstructorHelpers.h"
 
-AProceduralMeshActor::AProceduralMeshActor() {
-  UE_LOG(LogTemp, Log, TEXT("=== ProceduralMeshActor 构造函数被调用 ==="));
+AProceduralMeshActor::AProceduralMeshActor()
+{
+    UE_LOG(LogTemp, Log, TEXT("=== ProceduralMeshActor 构造函数被调用 ==="));
 
-  PrimaryActorTick.bCanEverTick = false;
+    PrimaryActorTick.bCanEverTick = false;
 
-  ProceduralMeshComponent =
-      CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProceduralMesh"));
-  RootComponent = ProceduralMeshComponent;
+    ProceduralMeshComponent =
+        CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProceduralMesh"));
+    RootComponent = ProceduralMeshComponent;
 
-  static ConstructorHelpers::FObjectFinder<UMaterialInterface> DefaultMatFinder(
-      TEXT("Material'/Engine/BasicShapes/"
-           "BasicShapeMaterial.BasicShapeMaterial'"));
-  if (DefaultMatFinder.Succeeded()) {
-    ProceduralDefaultMaterial = DefaultMatFinder.Object;
-    UE_LOG(LogTemp, Warning,
-           TEXT("MW默认材质预加载失败，回退到引擎默认材质: %s"),
-           *ProceduralDefaultMaterial->GetName());
-  } else {
-    UE_LOG(LogTemp, Error, TEXT("所有默认材质预加载失败"));
-  }
-
-  if (ProceduralMeshComponent) {
-    UE_LOG(LogTemp, Log, TEXT("ProceduralMeshComponent 创建成功"));
-    ProceduralMeshComponent->SetVisibility(bShowProceduralComponent);
-    ProceduralMeshComponent->bUseAsyncCooking = bUseAsyncCooking;
-
-    // 在构造时为PMC设置一个默认材质槽（后续生成段后会应用到各段）
-    if (ProceduralDefaultMaterial) {
-      ProceduralMeshComponent->SetMaterial(0, ProceduralDefaultMaterial);
+    static ConstructorHelpers::FObjectFinder<UMaterialInterface> DefaultMatFinder(
+        TEXT("Material'/Engine/BasicShapes/"
+             "BasicShapeMaterial.BasicShapeMaterial'"));
+    if (DefaultMatFinder.Succeeded())
+    {
+        ProceduralDefaultMaterial = DefaultMatFinder.Object;
+        UE_LOG(LogTemp, Warning,
+               TEXT("MW默认材质预加载失败，回退到引擎默认材质: %s"),
+               *ProceduralDefaultMaterial->GetName());
     }
-  } else {
-    UE_LOG(LogTemp, Error, TEXT("ProceduralMeshComponent 创建失败"));
-  }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("所有默认材质预加载失败"));
+    }
 
-  // 构造阶段已尝试预加载并设置默认材质
-  UE_LOG(LogTemp, Log, TEXT("=== ProceduralMeshActor 构造函数完成 ==="));
+    if (ProceduralMeshComponent)
+    {
+        UE_LOG(LogTemp, Log, TEXT("ProceduralMeshComponent 创建成功"));
+        ProceduralMeshComponent->SetVisibility(bShowProceduralComponent);
+        ProceduralMeshComponent->bUseAsyncCooking = bUseAsyncCooking;
+
+        // 在构造时为PMC设置一个默认材质槽（后续生成段后会应用到各段）
+        if (ProceduralDefaultMaterial)
+        {
+            ProceduralMeshComponent->SetMaterial(0, ProceduralDefaultMaterial);
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("ProceduralMeshComponent 创建失败"));
+    }
+
+    // 构造阶段已尝试预加载并设置默认材质
+    UE_LOG(LogTemp, Log, TEXT("=== ProceduralMeshActor 构造函数完成 ==="));
 }
 
-void AProceduralMeshActor::OnConstruction(const FTransform& Transform) {
-  Super::OnConstruction(Transform);  // 添加这行
+void AProceduralMeshActor::OnConstruction(const FTransform& Transform)
+{
+    Super::OnConstruction(Transform);  // 添加这行
 
-  // 生成ProceduralMesh - 子类需要自己实现清理和生成逻辑
-  if (ProceduralMeshComponent && IsValid()) {
-    ProceduralMeshComponent->ClearAllMeshSections();
-    GenerateMesh();
-    ProceduralMeshComponent->SetVisibility(true);
-    // 生成完段后再为每个Section设置默认材质
-  }
+    // 生成ProceduralMesh - 子类需要自己实现清理和生成逻辑
+    if (ProceduralMeshComponent && IsValid())
+    {
+        ProceduralMeshComponent->ClearAllMeshSections();
+        GenerateMesh();
+        ProceduralMeshComponent->SetVisibility(true);
+        // 生成完段后再为每个Section设置默认材质
+    }
 }
 
-void AProceduralMeshActor::SetPMCCollisionEnabled(bool bEnable) {
-  bGenerateCollision = bEnable;
-  if (ProceduralMeshComponent) {
-    ProceduralMeshComponent->SetCollisionEnabled(
-        bGenerateCollision ? ECollisionEnabled::QueryAndPhysics
-                           : ECollisionEnabled::NoCollision);
-  }
+void AProceduralMeshActor::SetPMCCollisionEnabled(bool bEnable)
+{
+    bGenerateCollision = bEnable;
+    if (ProceduralMeshComponent)
+    {
+        ProceduralMeshComponent->SetCollisionEnabled(
+            bGenerateCollision ? ECollisionEnabled::QueryAndPhysics
+                               : ECollisionEnabled::NoCollision);
+    }
 }
 
 UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
 {
     // 1. 验证输入参数
-    if (!ProceduralMeshComponent) {
+    if (!ProceduralMeshComponent)
+    {
         return nullptr;
     }
 
     const int32 NumSections = ProceduralMeshComponent->GetNumSections();
-    if (NumSections == 0) {
+    if (NumSections == 0)
+    {
         return nullptr;
     }
 
@@ -92,7 +106,8 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
     UStaticMesh* StaticMesh = NewObject<UStaticMesh>(
         GetTransientPackage(), NAME_None, RF_Public | RF_Standalone);
 
-    if (!StaticMesh) {
+    if (!StaticMesh)
+    {
         return nullptr;
     }
 
@@ -114,11 +129,13 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
     // 4. 从PMC数据填充 FMeshDescription
     TMap<FVector, FVertexID> VertexMap;
 
-    for (int32 SectionIdx = 0; SectionIdx < NumSections; ++SectionIdx) {
+    for (int32 SectionIdx = 0; SectionIdx < NumSections; ++SectionIdx)
+    {
         FProcMeshSection* SectionData =
             ProceduralMeshComponent->GetProcMeshSection(SectionIdx);
         if (!SectionData || SectionData->ProcVertexBuffer.Num() < 3 ||
-            SectionData->ProcIndexBuffer.Num() < 3) {
+            SectionData->ProcIndexBuffer.Num() < 3)
+        {
             continue;
         }
 
@@ -179,13 +196,16 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
 
         TArray<FVertexInstanceID> VertexInstanceIDs;
 
-        for (const FProcMeshVertex& ProcVertex : SectionData->ProcVertexBuffer) {
+        for (const FProcMeshVertex& ProcVertex : SectionData->ProcVertexBuffer)
+        {
             FVertexID VertexID;
 
-            if (FVertexID* FoundID = VertexMap.Find(ProcVertex.Position)) {
+            if (FVertexID* FoundID = VertexMap.Find(ProcVertex.Position))
+            {
                 VertexID = *FoundID;
             }
-            else {
+            else
+            {
                 VertexID = MeshDescBuilder.AppendVertex(ProcVertex.Position);
                 VertexMap.Add(ProcVertex.Position, VertexID);
             }
@@ -237,9 +257,11 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
     {
         StaticMesh->CreateBodySetup();
         UBodySetup* NewBodySetup = StaticMesh->BodySetup;
-        if (NewBodySetup) {
+        if (NewBodySetup)
+        {
             // 如果PMC有BodySetup，复制其碰撞数据
-            if (ProceduralMeshComponent->ProcMeshBodySetup) {
+            if (ProceduralMeshComponent->ProcMeshBodySetup)
+            {
                 NewBodySetup->AggGeom.ConvexElems =
                     ProceduralMeshComponent->ProcMeshBodySetup->AggGeom.ConvexElems;
             }
@@ -257,8 +279,10 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
     return StaticMesh;
 }
 
-void AProceduralMeshActor::SetProceduralMeshVisibility(bool bVisible) {
-  if (ProceduralMeshComponent) {
-    ProceduralMeshComponent->SetVisibility(bVisible);
-  }
+void AProceduralMeshActor::SetProceduralMeshVisibility(bool bVisible)
+{
+    if (ProceduralMeshComponent)
+    {
+        ProceduralMeshComponent->SetVisibility(bVisible);
+    }
 }

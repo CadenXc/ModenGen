@@ -5,62 +5,62 @@
 #include "ModelGenMeshData.h"
 
 FFrustumBuilder::FFrustumBuilder(const AFrustum& InFrustum)
-	: Frustum(InFrustum)
+    : Frustum(InFrustum)
 {
-	Clear();
-	CalculateAngles();
+    Clear();
+    CalculateAngles();
 }
 
 void FFrustumBuilder::Clear()
 {
-	FModelGenMeshBuilder::Clear();
-	ClearEndCapConnectionPoints();
-	// [REVERTED] 不再需要清理顶点缓存
+    FModelGenMeshBuilder::Clear();
+    ClearEndCapConnectionPoints();
+    // [REVERTED] 不再需要清理顶点缓存
 }
 
 bool FFrustumBuilder::Generate(FModelGenMeshData& OutMeshData)
 {
-	if (!Frustum.IsValid())
-	{
-		return false;
-	}
+    if (!Frustum.IsValid())
+    {
+        return false;
+    }
 
-	Clear();
-	ReserveMemory();
+    Clear();
+    ReserveMemory();
 
-	CreateSideGeometry();
+    CreateSideGeometry();
 
-	// 生成顺序可以保持不变，逻辑上依然清晰
-	// 内联 GenerateTopBevelGeometry
-	if (Frustum.BevelRadius > 0.0f)
-	{
-		GenerateBevelGeometry(EHeightPosition::Top);
-	}
-	
-	// 内联 GenerateBottomBevelGeometry
-	if (Frustum.BevelRadius > 0.0f)
-	{
-		GenerateBevelGeometry(EHeightPosition::Bottom);
-	}
+    // 生成顺序可以保持不变，逻辑上依然清晰
+    // 内联 GenerateTopBevelGeometry
+    if (Frustum.BevelRadius > 0.0f)
+    {
+        GenerateBevelGeometry(EHeightPosition::Top);
+    }
+    
+    // 内联 GenerateBottomBevelGeometry
+    if (Frustum.BevelRadius > 0.0f)
+    {
+        GenerateBevelGeometry(EHeightPosition::Bottom);
+    }
 
-	// 内联 GenerateTopGeometry
-	GenerateCapGeometry(Frustum.GetHalfHeight(), Frustum.TopSides, Frustum.TopRadius, EHeightPosition::Top);
-	
-	// 内联 GenerateBottomGeometry
-	GenerateCapGeometry(-Frustum.GetHalfHeight(), Frustum.BottomSides, Frustum.BottomRadius, EHeightPosition::Bottom);
+    // 内联 GenerateTopGeometry
+    GenerateCapGeometry(Frustum.GetHalfHeight(), Frustum.TopSides, Frustum.TopRadius, EHeightPosition::Top);
+    
+    // 内联 GenerateBottomGeometry
+    GenerateCapGeometry(-Frustum.GetHalfHeight(), Frustum.BottomSides, Frustum.BottomRadius, EHeightPosition::Bottom);
 
-	GenerateEndCaps();
+    GenerateEndCaps();
 
-	if (!ValidateGeneratedData())
-	{
-		return false;
-	}
+    if (!ValidateGeneratedData())
+    {
+        return false;
+    }
 
-	// 计算正确的切线（用于法线贴图等）
-	MeshData.CalculateTangents();
+    // 计算正确的切线（用于法线贴图等）
+    MeshData.CalculateTangents();
 
-	OutMeshData = MeshData;
-	return true;
+    OutMeshData = MeshData;
+    return true;
 }
 
 // ... (其他未修改的函数保持不变) ...
@@ -449,7 +449,8 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition) {
 	const float HalfHeight = Frustum.GetHalfHeight();
 	const float BevelRadius = Frustum.BevelRadius;
 
-	if (BevelRadius <= 0.0f) {
+	if (BevelRadius <= 0.0f)
+	{
 		return;
 	}
 
@@ -480,11 +481,14 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition) {
 	
 	// 倒角UV区域设置
 	FVector2D UVOffset, UVScale;
-	if (HeightPosition == EHeightPosition::Top) {
+	if (HeightPosition == EHeightPosition::Top)
+	{
 		// 上倒角：从侧面顶部开始，到边界结束
 		UVOffset = FVector2D(0.25f, SideVEnd);
 		UVScale = FVector2D(0.5f, TopBevelVScale);
-	} else {
+	}
+	else
+	{
 		// 下倒角：从边界开始，到侧面底部结束
 		// 确保下倒角结束位置与侧面开始位置不重叠
 		UVOffset = FVector2D(0.25f, 0.0f);
@@ -501,7 +505,8 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition) {
 	StartRing.Reserve(RingSize);
 	EndRing.Reserve(RingSize);
 
-	for (int32 s = 0; s < RingSize; ++s) {
+	for (int32 s = 0; s < RingSize; ++s)
+	{
 		const float angle = StartAngle + (s * AngleStep);
 
 		// 直接计算倒角顶点位置，不依赖侧边顶点环
@@ -522,11 +527,14 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition) {
 		// 倒角UV坐标计算 - 一头连接边界，一头连接侧面
 		// 根据倒角位置计算V坐标，确保与侧面无缝连接
 		float V_Side, V_Cap;
-		if (HeightPosition == EHeightPosition::Top) {
+		if (HeightPosition == EHeightPosition::Top)
+		{
 			// 上倒角：侧边连接到侧面顶部，端盖连接到边界
 			V_Side = 0.0f; // 侧边部分（连接到侧面顶部）
 			V_Cap = 1.0f;  // 端盖部分（连接到边界）
-		} else {
+		}
+		else
+		{
 			// 下倒角：侧边连接到边界，端盖连接到侧面底部
 			V_Side = 0.0f; // 侧边部分（连接到边界）
 			V_Cap = 1.0f;  // 端盖部分（连接到侧面底部）
@@ -548,10 +556,12 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition) {
 	}
 
 	// 倒角面生成与ArcAngle无关，总是生成倒角面
-	if (EndRing.Num() > 0) {
+	if (EndRing.Num() > 0)
+	{
 
 		// 连接内外环形成倒角面 - 与ArcAngle无关
-		for (int32 s = 0; s < Sides; ++s) {
+		for (int32 s = 0; s < Sides; ++s)
+		{
 			const int32 V00 = StartRing[s];
 			const int32 V10 = EndRing[s];
 			const int32 V01 = StartRing[s + 1];

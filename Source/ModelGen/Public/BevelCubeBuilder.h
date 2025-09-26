@@ -12,7 +12,7 @@
 #include "CoreMinimal.h"
 #include "ModelGenMeshBuilder.h"
 
- // Forward declarations
+// Forward declarations
 class ABevelCube;
 
 /**

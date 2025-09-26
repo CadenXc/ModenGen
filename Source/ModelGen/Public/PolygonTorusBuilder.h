@@ -15,7 +15,7 @@ class APolygonTorus;
 class MODELGEN_API FPolygonTorusBuilder : public FModelGenMeshBuilder
 {
 public:
-    FPolygonTorusBuilder(const APolygonTorus& InPolygonTorus);
+    explicit FPolygonTorusBuilder(const APolygonTorus& InPolygonTorus);
 
     //~ Begin FModelGenMeshBuilder Interface
     virtual bool Generate(FModelGenMeshData& OutMeshData) override;

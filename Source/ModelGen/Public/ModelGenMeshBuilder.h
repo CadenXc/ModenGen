@@ -61,7 +61,6 @@ protected:
     FModelGenMeshData MeshData;
 
     TMap<FString, int32> UniqueVerticesMap;
-    TMap<int32, FVector> IndexToPosMap;
 
     int32 GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV);
 

@@ -119,7 +119,8 @@ void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
             FVector VertexPos = CorePoint + SurfaceNormal * BevelRadius;
 
             // 6. 添加顶点到网格数据，并记录其索引
-            VertexGrid[v_idx][u_idx] = GetOrAddVertex(VertexPos, SurfaceNormal, UV);
+            // 硬边模式：每个面都创建独立的顶点，不进行去重
+            VertexGrid[v_idx][u_idx] = AddVertex(VertexPos, SurfaceNormal, UV);
         }
     }
 

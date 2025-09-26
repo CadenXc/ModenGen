@@ -10,7 +10,8 @@ FModelGenMeshBuilder::FModelGenMeshBuilder()
 int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& Normal, const FVector2D& UV)
 {
     // 复合键包含位置、法线和UV，因为同一位置在UV接缝处可能是不同的顶点
-    FString VertexKey = FString::Printf(TEXT("%.4f,%.4f,%.4f|%.3f,%.3f,%.3f|%.4f,%.4f"),
+    // 使用更高精度避免浮点误差导致的误判
+    FString VertexKey = FString::Printf(TEXT("%.6f,%.6f,%.6f|%.6f,%.6f,%.6f|%.6f,%.6f"),
         Pos.X, Pos.Y, Pos.Z,
         Normal.X, Normal.Y, Normal.Z,
         UV.X, UV.Y);
@@ -22,16 +23,17 @@ int32 FModelGenMeshBuilder::GetOrAddVertex(const FVector& Pos, const FVector& No
 
     const int32 NewIndex = AddVertex(Pos, Normal, UV);
     UniqueVerticesMap.Add(VertexKey, NewIndex);
-    IndexToPosMap.Add(NewIndex, Pos);
+    // 移除重复存储，直接使用MeshData中的位置数据
+    // IndexToPosMap.Add(NewIndex, Pos);
 
     return NewIndex;
 }
 
 FVector FModelGenMeshBuilder::GetPosByIndex(int32 Index) const
 {
-    if (const FVector* FoundPos = IndexToPosMap.Find(Index))
+    if (Index >= 0 && Index < MeshData.Vertices.Num())
     {
-        return *FoundPos;
+        return MeshData.Vertices[Index];
     }
 
     return FVector::ZeroVector;

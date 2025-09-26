@@ -160,13 +160,6 @@ void FModelGenMeshData::ToProceduralMesh(UProceduralMeshComponent* MeshComponent
     MeshComponent->CreateMeshSection_LinearColor(SectionIndex, Vertices, Triangles, Normals, UVs, VertexColors, Tangents, false);
 }
 
-void FModelGenMeshData::CopyUVToChannel(int32 TargetChannel) const
-{
-    // 这个方法用于将来如果需要复制UV到其他通道
-    // 目前我们只使用第一个UV通道，所以暂时不需要实现
-    UE_LOG(LogTemp, Log, TEXT("FModelGenMeshData::CopyUVToChannel - 复制UV到通道 %d (暂未实现)"), TargetChannel);
-}
-
 void FModelGenMeshData::CalculateTangents()
 {
     if (Vertices.Num() == 0 || Triangles.Num() == 0 || UVs.Num() != Vertices.Num())
@@ -174,10 +167,16 @@ void FModelGenMeshData::CalculateTangents()
         return;
     }
 
-    // 使用引擎提供的切线计算，遵循 MikkTSpace
-    TArray<FVector> OutNormals = Normals; // 可由函数覆盖
+    // 硬边模式：保持原始法线，不进行平滑处理
+    // 只重新计算切线，保持法线不变
+    TArray<FVector> OutNormals = Normals; // 保持原始法线
     TArray<FProcMeshTangent> OutTangents = Tangents;
+    
+    // 使用引擎提供的切线计算，但保持原始法线不变
     UKismetProceduralMeshLibrary::CalculateTangentsForMesh(Vertices, Triangles, UVs, OutNormals, OutTangents);
+    
+    // 恢复原始法线，只更新切线
+    OutNormals = Normals; // 强制恢复原始法线
     Normals = MoveTemp(OutNormals);
     Tangents = MoveTemp(OutTangents);
 }

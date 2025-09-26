@@ -5,7 +5,7 @@
 #include "ModelGenMeshData.h"
 
 FPolygonTorusBuilder::FPolygonTorusBuilder(const APolygonTorus& InPolygonTorus)
-    : PolygonTorus(InPolygonTorus) 
+    : PolygonTorus(InPolygonTorus)
 {
     Clear();
     ValidateAndClampParameters();
@@ -28,7 +28,8 @@ bool FPolygonTorusBuilder::Generate(FModelGenMeshData& OutMeshData)
         GenerateEndCaps();
     }
 
-    if (!ValidateGeneratedData()) {
+    if (!ValidateGeneratedData()) 
+    {
         return false;
     }
 
@@ -135,29 +136,36 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     }
 }
 
-void FPolygonTorusBuilder::ValidateAndClampParameters() {
-    if (PolygonTorus.MajorSegments < 3 || PolygonTorus.MajorSegments > 256) {
+void FPolygonTorusBuilder::ValidateAndClampParameters()
+{
+    if (PolygonTorus.MajorSegments < 3 || PolygonTorus.MajorSegments > 256)
+    {
         UE_LOG(LogTemp, Warning, TEXT("主分段数 %d 超出有效范围 [3, 256]，建议调整"), PolygonTorus.MajorSegments);
     }
 
-    if (PolygonTorus.MinorSegments < 3 || PolygonTorus.MinorSegments > 256) {
+    if (PolygonTorus.MinorSegments < 3 || PolygonTorus.MinorSegments > 256)
+    {
         UE_LOG(LogTemp, Warning, TEXT("次分段数 %d 超出有效范围 [3, 256]，建议调整"), PolygonTorus.MinorSegments);
     }
 
-    if (PolygonTorus.MajorRadius < 1.0f) {
+    if (PolygonTorus.MajorRadius < 1.0f)
+    {
         UE_LOG(LogTemp, Warning, TEXT("主半径 %f 小于最小值 1.0，建议调整"), PolygonTorus.MajorRadius);
     }
 
-    if (PolygonTorus.MinorRadius < 1.0f) {
+    if (PolygonTorus.MinorRadius < 1.0f)
+    {
         UE_LOG(LogTemp, Warning, TEXT("次半径 %f 小于最小值 1.0，建议调整"), PolygonTorus.MinorRadius);
     }
 
-    if (PolygonTorus.MinorRadius > PolygonTorus.MajorRadius * 0.9f) {
+    if (PolygonTorus.MinorRadius > PolygonTorus.MajorRadius * 0.9f)
+    {
         UE_LOG(LogTemp, Warning, TEXT("次半径 %f 超过主半径的 90%% (%f)，建议调整"),
             PolygonTorus.MinorRadius, PolygonTorus.MajorRadius * 0.9f);
     }
 
-    if (PolygonTorus.TorusAngle < 1.0f || PolygonTorus.TorusAngle > 360.0f) {
+    if (PolygonTorus.TorusAngle < 1.0f || PolygonTorus.TorusAngle > 360.0f)
+    {
         UE_LOG(LogTemp, Warning, TEXT("圆环角度 %f 超出有效范围 [1.0, 360.0]，建议调整"), PolygonTorus.TorusAngle);
     }
 }
