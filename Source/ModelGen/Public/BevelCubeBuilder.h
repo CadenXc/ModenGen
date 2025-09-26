@@ -4,7 +4,7 @@
  * @file BevelCubeBuilder.h
  * @brief 圆角立方体网格构建器
  * * 该类负责生成圆角立方体的几何数据，继承自FModelGenMeshBuilder。
- * 提供了完整的圆角立方体生成功能，包括主要面、边缘倒角和角落倒角。
+ * * 经过重构，该构建器将每个带倒角的面作为一个整体生成，以创建连续的、可展开的UV坐标。
  */
 
 #pragma once
@@ -15,21 +15,20 @@
  // Forward declarations
 class ABevelCube;
 
-struct FFaceData
+/**
+ * @struct FUnfoldedFace
+ * @brief 描述一个可展开的、带倒角的面，包含其空间朝向和UV布局信息。
+ */
+struct FUnfoldedFace
 {
-    FVector Center;
-    FVector SizeX;
-    FVector SizeY;
-    FVector Normal;
-    FString Name;
-};
+    // 空间定义
+    FVector Normal;      // 面的法线方向 (e.g., +X, -X, +Y...)
+    FVector U_Axis;      // 面空间中的U轴（对应纹理的横向）
+    FVector V_Axis;      // 面空间中的V轴（对应纹理的纵向）
 
-struct FEdgeBevelDef
-{
-    int32 Core1Idx;
-    int32 Core2Idx;
-    FVector Normal1;
-    FVector Normal2;
+    // UV布局定义
+    FIntPoint UV_Grid_Offset; // 该面在展开图网格中的坐标 (e.g., {1, 1} 代表十字架的中心)
+
     FString Name;
 };
 
@@ -45,70 +44,15 @@ public:
 private:
     const ABevelCube& BevelCube;
 
-    TArray<FVector> CorePoints;
+    // 几何参数
     float HalfSize;
     float InnerOffset;
     float BevelRadius;
     int32 BevelSegments;
 
-    TArray<FFaceData> FaceDefinitions;
-    TArray<FEdgeBevelDef> EdgeBevelDefs;
-
-    TArray<float> AlphaValues;
-    TArray<TArray<int32>> CornerGridSizes;
-
-    // UV布局相关变量
-    float MainFaceScale;
-    float BevelScale;
-    float V_HEIGHT;
-    float FaceUVSize;
-    float BevelUVWidth;
-    float HalfBevelUVWidth;
-    float InnerUVSize;
-    TArray<FVector2D> FaceUVOffsets;
-
-    void PrecomputeConstants();
-    void InitializeFaceDefinitions();
-    void InitializeEdgeBevelDefs();
-    void CalculateCorePoints();
-    void PrecomputeAlphaValues();
-    void PrecomputeCornerGridSizes();
-
-    void GenerateMainFaces();
-    void GenerateEdgeBevels();
-    void GenerateCornerBevels();
-    void GenerateEdgeStrip(int32 Core1Idx, int32 Core2Idx,
-        const FVector& Normal1, const FVector& Normal2,
-        const FVector2D& UVOffset, const FVector2D& UVScale, bool ArcAlongU = false, bool reverse = false);
-    void GenerateCornerTriangles(const TArray<TArray<int32>>& CornerVerticesGrid,
-        int32 Lat, int32 Lon, bool bSpecialOrder);
-
-    TArray<FVector> GenerateRectangleVertices(const FVector& Center, const FVector& SizeX, const FVector& SizeY) const;
-    void GenerateQuadSides(const TArray<FVector>& Verts, const FVector& Normal, const TArray<FVector2D>& UVs);
-    TArray<FVector> GenerateEdgeVertices(const FVector& CorePoint1, const FVector& CorePoint2,
-        const FVector& Normal1, const FVector& Normal2, float Alpha) const;
-    TArray<FVector> GenerateCornerVertices(const FVector& CorePoint, const FVector& AxisX,
-        const FVector& AxisY, const FVector& AxisZ, int32 Lat, int32 Lon) const;
-
-    void GenerateCornerBevel(int32 CornerIndex, const FVector2D& UVOffset, const FVector2D& UVScale);
-    void GenerateCornerBevelWithFlip(int32 CornerIndex, const FVector2D& UVOffset, const FVector2D& UVScale, bool FlipU, bool FlipV, bool bSpecialOrder);
-    void GenerateCornerVerticesGrid(int32 CornerIndex, const FVector& CorePoint,
-        const FVector& AxisX, const FVector& AxisY, const FVector& AxisZ,
-        TArray<TArray<int32>>& CornerVerticesGrid,
-        const FVector2D& UVOffset, const FVector2D& UVScale);
-    void GenerateCornerVerticesGrid(int32 CornerIndex, const FVector& CorePoint,
-        const FVector& AxisX, const FVector& AxisY, const FVector& AxisZ,
-        TArray<TArray<int32>>& CornerVerticesGrid,
-        const FVector2D& UVOffset, const FVector2D& UVScale, bool FlipU, bool FlipV);
-    void GenerateCornerTrianglesGrid(const TArray<TArray<int32>>& CornerVerticesGrid, bool bSpecialOrder);
-    bool IsSpecialCorner(int32 CornerIndex) const;
-
-    float GetAlphaValue(int32 Index) const;
-    bool IsValidAlphaIndex(int32 Index) const;
-    bool IsValidCornerGridIndex(int32 Lat, int32 Lon) const;
-
-    // UV布局辅助函数
-    FVector2D GetEdgeUVOffset(int32 EdgeIndex) const;
-    FVector2D GetCornerUVOffset(int32 CornerIndex) const;
-    int32 GetFaceIndex(const FVector& Normal) const;
+    /**
+     * @brief 为单个展开的面生成完整的网格（主平面+边缘+角落）。
+     * @param FaceDef 描述面的空间朝向和UV布局的结构体。
+     */
+    void GenerateUnfoldedFace(const FUnfoldedFace& FaceDef);
 };

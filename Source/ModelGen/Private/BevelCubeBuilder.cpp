@@ -9,47 +9,11 @@ FBevelCubeBuilder::FBevelCubeBuilder(const ABevelCube& InBevelCube)
 {
     Clear();
 
-    // 内联 PrecomputeConstants
+    // 缓存来自BevelCube的几何参数
     HalfSize = BevelCube.GetHalfSize();
     InnerOffset = BevelCube.GetInnerOffset();
     BevelRadius = BevelCube.BevelRadius;
     BevelSegments = BevelCube.BevelSegments;
-
-    InitializeFaceDefinitions();
-    InitializeEdgeBevelDefs();
-    CalculateCorePoints();
-
-    // 内联 PrecomputeAlphaValues
-    const int32 ArraySize = BevelSegments + 1;
-    AlphaValues.SetNum(ArraySize);
-    for (int32 i = 0; i < ArraySize; ++i)
-    {
-        AlphaValues[i] = static_cast<float>(i) / BevelSegments;
-    }
-
-    // 内联 PrecomputeCornerGridSizes
-    CornerGridSizes.SetNum(ArraySize);
-    for (int32 Lat = 0; Lat < ArraySize; ++Lat)
-    {
-        const int32 LonCount = ArraySize - Lat;
-        CornerGridSizes[Lat].SetNum(LonCount);
-    }
-
-    FaceUVSize = 0.25f;
-    BevelUVWidth = (BevelRadius / HalfSize) * FaceUVSize;
-    InnerUVSize = FaceUVSize - 2 * BevelUVWidth;
-
-    // UV Offsets for a standard cross layout
-    //      [Top]
-    // [Left][Front][Right][Back]
-    //      [Bottom]
-    FaceUVOffsets.SetNum(6);
-    FaceUVOffsets[0] = FVector2D(0.5f, 0.25f);   // Right (+X)
-    FaceUVOffsets[1] = FVector2D(0.0f, 0.25f);   // Left (-X)
-    FaceUVOffsets[2] = FVector2D(0.25f, 0.25f);  // Front (+Y)
-    FaceUVOffsets[3] = FVector2D(0.75f, 0.25f);  // Back (-Y)
-    FaceUVOffsets[4] = FVector2D(0.25f, 0.5f);   // Top (+Z)
-    FaceUVOffsets[5] = FVector2D(0.25f, 0.0f);   // Bottom (-Z)
 }
 
 bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
@@ -62,9 +26,25 @@ bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
     Clear();
     ReserveMemory();
 
-    GenerateMainFaces();
-    GenerateEdgeBevels();
-    GenerateCornerBevels();
+    // 定义6个面的展开信息，构成一个4x3的UV网格布局（十字架形）
+    //      [Top]
+    // [Left][Front][Right][Back]
+    //      [Bottom]
+    TArray<FUnfoldedFace> FacesToGenerate = {
+        // U/V轴的定义确保了在UV展开图中所有面的方向是一致的
+        { FVector(0, 1, 0),  FVector(1, 0, 0), FVector(0, 0, -1), FIntPoint(1, 1), TEXT("Front") }, // +Y
+        { FVector(0, -1, 0), FVector(-1, 0, 0),FVector(0, 0, -1), FIntPoint(3, 1), TEXT("Back") },  // -Y
+        { FVector(0, 0, 1),  FVector(1, 0, 0), FVector(0, 1, 0),  FIntPoint(1, 0), TEXT("Top") },   // +Z
+        { FVector(0, 0, -1), FVector(1, 0, 0), FVector(0, -1, 0), FIntPoint(1, 2), TEXT("Bottom")},// -Z
+        { FVector(1, 0, 0),  FVector(0, -1, 0),FVector(0, 0, -1), FIntPoint(2, 1), TEXT("Right") }, // +X
+        { FVector(-1, 0, 0), FVector(0, 1, 0), FVector(0, 0, -1), FIntPoint(0, 1), TEXT("Left") }  // -X
+    };
+
+    // 循环为每个面生成网格
+    for (const FUnfoldedFace& FaceDef : FacesToGenerate)
+    {
+        GenerateUnfoldedFace(FaceDef);
+    }
 
     if (!ValidateGeneratedData())
     {
@@ -88,436 +68,72 @@ int32 FBevelCubeBuilder::CalculateTriangleCountEstimate() const
     return BevelCube.GetTriangleCount();
 }
 
-void FBevelCubeBuilder::InitializeFaceDefinitions()
+void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
 {
-    FaceDefinitions = {
-        // 0 +X面（右面）
-        { FVector(HalfSize, 0, 0), FVector(0, 0, -InnerOffset), FVector(0, InnerOffset, 0), FVector(1, 0, 0), TEXT("Right") },
-        // 1 -X面（左面）
-        { FVector(-HalfSize, 0, 0), FVector(0, 0, InnerOffset), FVector(0, InnerOffset, 0), FVector(-1, 0, 0), TEXT("Left") },
-        // 2 +Y面（前面）
-        { FVector(0, HalfSize, 0), FVector(-InnerOffset, 0, 0), FVector(0, 0, InnerOffset), FVector(0, 1, 0), TEXT("Front") },
-        // 3 -Y面（后面）
-        { FVector(0, -HalfSize, 0), FVector(InnerOffset, 0, 0), FVector(0, 0, InnerOffset), FVector(0, -1, 0), TEXT("Back") },
-        // 4 +Z面（上面）
-        { FVector(0, 0, HalfSize), FVector(InnerOffset, 0, 0), FVector(0, InnerOffset, 0), FVector(0, 0, 1), TEXT("Top") },
-        // 5 -Z面（下面）
-        { FVector(0, 0, -HalfSize), FVector(InnerOffset, 0, 0), FVector(0, -InnerOffset, 0), FVector(0, 0, -1), TEXT("Bottom") }
-    };
-}
+    // 网格分辨率，覆盖主面+两侧倒角。每条边有 (2 + 2*BevelSegments) 个顶点。
+    const int32 GridSize = 2 + 2 * BevelSegments;
 
-void FBevelCubeBuilder::InitializeEdgeBevelDefs()
-{
-    EdgeBevelDefs = {
-        { 0, 1, FVector(0,-1,0), FVector(0,0,-1), TEXT("Edge+X1") },
-        { 2, 3, FVector(0,0,-1), FVector(0,1,0), TEXT("Edge+X2") },
-        { 4, 5, FVector(0,0,1), FVector(0,-1,0), TEXT("Edge+X3") },
-        { 6, 7, FVector(0,1,0), FVector(0,0,1), TEXT("Edge+X4") },
-        { 0, 2, FVector(0,0,-1), FVector(-1,0,0), TEXT("Edge+Y1") },
-        { 1, 3, FVector(1,0,0), FVector(0,0,-1), TEXT("Edge+Y2") },
-        { 4, 6, FVector(-1,0,0), FVector(0,0,1), TEXT("Edge+Y3") },
-        { 5, 7, FVector(0,0,1), FVector(1,0,0), TEXT("Edge+Y4") },
-        { 0, 4, FVector(-1,0,0), FVector(0,-1,0), TEXT("Edge+Z1") },
-        { 1, 5, FVector(0,-1,0), FVector(1,0,0), TEXT("Edge+Z2") },
-        { 2, 6, FVector(0,1,0), FVector(-1,0,0), TEXT("Edge+Z3") },
-        { 3, 7, FVector(1,0,0), FVector(0,1,0), TEXT("Edge+Z4") }
-    };
-}
-
-int32 FBevelCubeBuilder::GetFaceIndex(const FVector& Normal) const
-{
-    for (int32 Index = 0; Index < FaceDefinitions.Num(); ++Index)
+    // 创建一个二维数组来存储生成的顶点索引，方便后续连接成面
+    TArray<TArray<int32>> VertexGrid;
+    VertexGrid.SetNum(GridSize);
+    for (int32 i = 0; i < GridSize; ++i)
     {
-        if (FaceDefinitions[Index].Normal.Equals(Normal, 0.001f))
+        VertexGrid[i].SetNum(GridSize);
+    }
+
+    // UV布局计算，假设整个UV空间被划分为4x3的网格
+    const FVector2D UVBlockSize(1.0f / 4.0f, 1.0f / 4.0f);
+    const FVector2D UVBaseOffset(FaceDef.UV_Grid_Offset.X * UVBlockSize.X, FaceDef.UV_Grid_Offset.Y * UVBlockSize.Y);
+
+    // 遍历网格上的每个点，计算其 3D位置、法线 和 UV坐标
+    for (int32 v_idx = 0; v_idx < GridSize; ++v_idx)
+    {
+        for (int32 u_idx = 0; u_idx < GridSize; ++u_idx)
         {
-            return Index;
+            // 1. 计算当前点在 [0,1] 区间内的标准化坐标 (alpha)
+            const float u_alpha = static_cast<float>(u_idx) / (GridSize - 1);
+            const float v_alpha = static_cast<float>(v_idx) / (GridSize - 1);
+
+            // 2. 将 alpha 映射到面的局部2D坐标系 [-HalfSize, HalfSize]
+            const float u = FMath::Lerp(-HalfSize, HalfSize, u_alpha);
+            const float v = FMath::Lerp(-HalfSize, HalfSize, v_alpha);
+
+            // 3. 计算UV坐标：基于alpha和面的网格偏移
+            // V方向(v_alpha)需要翻转 (1.0f - ...)，以匹配常见的从上到下的纹理坐标系
+            FVector2D UV(u_alpha * UVBlockSize.X + UVBaseOffset.X, (1.0f - v_alpha) * UVBlockSize.Y + UVBaseOffset.Y);
+
+            // 4. 计算核心点 (CorePoint) 和表面法线 (SurfaceNormal)
+            // CorePoint 位于内部未倒角的立方体表面。通过将(u,v)坐标钳制在内部范围来找到它。
+            FVector CorePoint = FaceDef.Normal * InnerOffset +
+                FaceDef.U_Axis * FMath::Clamp(u, -InnerOffset, InnerOffset) +
+                FaceDef.V_Axis * FMath::Clamp(v, -InnerOffset, InnerOffset);
+
+            // PointOnOuterPlane 位于外部未倒角的立方体表面。
+            FVector PointOnOuterPlane = FaceDef.Normal * HalfSize + FaceDef.U_Axis * u + FaceDef.V_Axis * v;
+
+            // 从 CorePoint 指向 PointOnOuterPlane 的单位向量，就是最终表面的法线
+            FVector SurfaceNormal = (PointOnOuterPlane - CorePoint).GetSafeNormal();
+
+            // 5. 计算最终的顶点3D位置
+            // 从核心点沿着法线方向延伸 BevelRadius 的距离
+            FVector VertexPos = CorePoint + SurfaceNormal * BevelRadius;
+
+            // 6. 添加顶点到网格数据，并记录其索引
+            VertexGrid[v_idx][u_idx] = GetOrAddVertex(VertexPos, SurfaceNormal, UV);
         }
     }
-    return -1;
-}
 
-void FBevelCubeBuilder::CalculateCorePoints()
-{
-    CorePoints.Reserve(8);
-    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, -InnerOffset));
-    CorePoints.Add(FVector(InnerOffset, -InnerOffset, -InnerOffset));
-    CorePoints.Add(FVector(-InnerOffset, InnerOffset, -InnerOffset));
-    CorePoints.Add(FVector(InnerOffset, InnerOffset, -InnerOffset));
-    CorePoints.Add(FVector(-InnerOffset, -InnerOffset, InnerOffset));
-    CorePoints.Add(FVector(InnerOffset, -InnerOffset, InnerOffset));
-    CorePoints.Add(FVector(-InnerOffset, InnerOffset, InnerOffset));
-    CorePoints.Add(FVector(InnerOffset, InnerOffset, InnerOffset));
-}
-
-void FBevelCubeBuilder::GenerateMainFaces()
-{
-    for (int32 FaceIndex = 0; FaceIndex < FaceDefinitions.Num(); ++FaceIndex)
+    // 再次遍历网格，使用存储的顶点索引来生成四边形（两个三角形）
+    for (int32 v_idx = 0; v_idx < GridSize - 1; ++v_idx)
     {
-        const FFaceData& Face = FaceDefinitions[FaceIndex];
-        TArray<FVector> FaceVerts = GenerateRectangleVertices(Face.Center, Face.SizeX, Face.SizeY);
-
-        FVector2D UVOffset = FaceUVOffsets[FaceIndex] + FVector2D(BevelUVWidth, BevelUVWidth);
-
-        TArray<FVector2D> FaceUVs;
-        FaceUVs.Add(UVOffset + FVector2D(0, 0));
-        FaceUVs.Add(UVOffset + FVector2D(0, InnerUVSize));
-        FaceUVs.Add(UVOffset + FVector2D(InnerUVSize, InnerUVSize));
-        FaceUVs.Add(UVOffset + FVector2D(InnerUVSize, 0));
-
-        GenerateQuadSides(FaceVerts, Face.Normal, FaceUVs);
-    }
-}
-
-void FBevelCubeBuilder::GenerateEdgeStrip(int32 Core1Idx, int32 Core2Idx,
-    const FVector& Normal1, const FVector& Normal2,
-    const FVector2D& UVOffset, const FVector2D& UVScale, bool ArcAlongU, bool reverse)
-{
-    TArray<int32> PrevStripStartIndices;
-    TArray<int32> PrevStripEndIndices;
-
-    for (int32 s = 0; s <= BevelSegments; ++s)
-    {
-        float Alpha = GetAlphaValue(s);
-        if (reverse) Alpha = 1.0f - Alpha;
-        FVector CurrentNormal = FMath::Lerp(Normal1, Normal2, Alpha).GetSafeNormal();
-
-        FVector PosStart = CorePoints[Core1Idx] + CurrentNormal * BevelRadius;
-        FVector PosEnd = CorePoints[Core2Idx] + CurrentNormal * BevelRadius;
-
-        float U_Alpha = Alpha;
-
-        FVector2D UV_Start;
-        FVector2D UV_End;
-        if (ArcAlongU)
+        for (int32 u_idx = 0; u_idx < GridSize - 1; ++u_idx)
         {
-            UV_Start = UVOffset + FVector2D(U_Alpha * UVScale.X, 0.0f);
-            UV_End = UVOffset + FVector2D(U_Alpha * UVScale.X, UVScale.Y);
-        }
-        else
-        {
-            UV_Start = UVOffset + FVector2D(0.0f, U_Alpha * UVScale.Y);
-            UV_End = UVOffset + FVector2D(UVScale.X, U_Alpha * UVScale.Y);
-        }
+            const int32 V00 = VertexGrid[v_idx][u_idx];
+            const int32 V10 = VertexGrid[v_idx + 1][u_idx];
+            const int32 V01 = VertexGrid[v_idx][u_idx + 1];
+            const int32 V11 = VertexGrid[v_idx + 1][u_idx + 1];
 
-        int32 VtxStart = GetOrAddVertex(PosStart, CurrentNormal, UV_Start);
-        int32 VtxEnd = GetOrAddVertex(PosEnd, CurrentNormal, UV_End);
-
-        if (s > 0)
-        {
-            AddQuad(PrevStripStartIndices[0], PrevStripEndIndices[0], VtxEnd, VtxStart);
-        }
-
-        PrevStripStartIndices = { VtxStart };
-        PrevStripEndIndices = { VtxEnd };
-    }
-}
-
-void FBevelCubeBuilder::GenerateEdgeBevels()
-{
-    for (int32 EdgeIndex = 0; EdgeIndex < EdgeBevelDefs.Num(); ++EdgeIndex)
-    {
-        const FEdgeBevelDef& EdgeDef = EdgeBevelDefs[EdgeIndex];
-        FVector2D UVOffset, UVScale;
-        bool ArcAlongU = false;
-
-        switch (EdgeIndex)
-        {
-        case 0: // Back-Bottom
-            UVOffset = FaceUVOffsets[3] + FVector2D(BevelUVWidth, 0);
-            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
-            break;
-        case 1: // Bottom-Front
-            UVOffset = FaceUVOffsets[2] + FVector2D(BevelUVWidth, 0);
-            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
-            break;
-        case 2: // Top-Back
-            UVOffset = FaceUVOffsets[3] + FVector2D(BevelUVWidth, BevelUVWidth + InnerUVSize);
-            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
-            break;
-        case 3: // Front-Top
-            UVOffset = FaceUVOffsets[2] + FVector2D(BevelUVWidth, BevelUVWidth + InnerUVSize);
-            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
-            break;
-        case 4: // Bottom-Left
-            UVOffset = FaceUVOffsets[1] + FVector2D(BevelUVWidth, 0);
-            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
-            break;
-        case 5: // Right-Bottom
-            UVOffset = FaceUVOffsets[0] + FVector2D(BevelUVWidth, 0);
-            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
-            break;
-        case 6: // Left-Top
-            UVOffset = FaceUVOffsets[1] + FVector2D(BevelUVWidth, BevelUVWidth + InnerUVSize);
-            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
-            break;
-        case 7: // Top-Right
-            UVOffset = FaceUVOffsets[0] + FVector2D(BevelUVWidth, BevelUVWidth + InnerUVSize);
-            UVScale = FVector2D(InnerUVSize, BevelUVWidth);
-            break;
-        case 8: // Left-Back
-            UVOffset = FaceUVOffsets[1] + FVector2D(0, BevelUVWidth);
-            UVScale = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU = true;
-            break;
-        case 9: // Back-Right
-            UVOffset = FaceUVOffsets[3] + FVector2D(0, BevelUVWidth);
-            UVScale = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU = true;
-            break;
-        case 10: // Front-Left
-            UVOffset = FaceUVOffsets[1] + FVector2D(BevelUVWidth + InnerUVSize, BevelUVWidth);
-            UVScale = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU = true;
-            break;
-        case 11: // Right-Front
-            UVOffset = FaceUVOffsets[0] + FVector2D(0, BevelUVWidth);
-            UVScale = FVector2D(BevelUVWidth, InnerUVSize);
-            ArcAlongU = true;
-            break;
-        }
-
-        GenerateEdgeStrip(EdgeDef.Core1Idx, EdgeDef.Core2Idx, EdgeDef.Normal1, EdgeDef.Normal2, 
-                         UVOffset, UVScale, ArcAlongU, false);
-    }
-}
-
-
-void FBevelCubeBuilder::GenerateCornerBevels()
-{
-    for (int32 CornerIndex = 0; CornerIndex < 8; ++CornerIndex)
-    {
-        FVector2D UVOffset;
-        bool FlipU = false, FlipV = false;
-        bool bSpecialOrder = IsSpecialCorner(CornerIndex);
-
-        float B = BevelUVWidth;
-        float I = InnerUVSize;
-
-        switch (CornerIndex)
-        {
-        case 0: // Left-Back-Bottom
-            UVOffset = FaceUVOffsets[1];
-            break;
-        case 1: // Right-Back-Bottom
-            UVOffset = FaceUVOffsets[0] + FVector2D(B + I, 0);
-            FlipU = true;
-            break;
-        case 2: // Left-Front-Bottom
-            UVOffset = FaceUVOffsets[1] + FVector2D(0, B + I);
-            FlipV = true;
-            break;
-        case 3: // Right-Front-Bottom
-            UVOffset = FaceUVOffsets[0] + FVector2D(B + I, B + I);
-            FlipU = FlipV = true;
-            break;
-        case 4: // Left-Back-Top
-            UVOffset = FaceUVOffsets[1] + FVector2D(B + I, 0);
-            FlipU = true;
-            break;
-        case 5: // Right-Back-Top
-            UVOffset = FaceUVOffsets[0];
-            break;
-        case 6: // Left-Front-Top
-            UVOffset = FaceUVOffsets[1] + FVector2D(B + I, B + I);
-            FlipU = FlipV = true;
-            break;
-        case 7: // Right-Front-Top
-            UVOffset = FaceUVOffsets[0] + FVector2D(0, B + I);
-            FlipV = true;
-            break;
-        }
-
-        FVector2D UVScale = FVector2D(BevelUVWidth, BevelUVWidth);
-        GenerateCornerBevelWithFlip(CornerIndex, UVOffset, UVScale, FlipU, FlipV, bSpecialOrder);
-    }
-}
-
-
-void FBevelCubeBuilder::GenerateCornerBevelWithFlip(int32 CornerIndex, const FVector2D& UVOffset, const FVector2D& UVScale, bool FlipU, bool FlipV, bool bSpecialOrder)
-{
-    const FVector& CurrentCorePoint = CorePoints[CornerIndex];
-
-    const FVector AxisX = FVector(FMath::Sign(CurrentCorePoint.X), 0.0f, 0.0f);
-    const FVector AxisY = FVector(0.0f, FMath::Sign(CurrentCorePoint.Y), 0.0f);
-    const FVector AxisZ = FVector(0.0f, 0.0f, FMath::Sign(CurrentCorePoint.Z));
-
-    TArray<TArray<int32>> CornerVerticesGrid = CornerGridSizes;
-
-    GenerateCornerVerticesGrid(CornerIndex, CurrentCorePoint, AxisX, AxisY, AxisZ, CornerVerticesGrid, UVOffset, UVScale, FlipU, FlipV);
-
-    GenerateCornerTrianglesGrid(CornerVerticesGrid, bSpecialOrder);
-}
-
-void FBevelCubeBuilder::GenerateCornerVerticesGrid(int32 CornerIndex, const FVector& CorePoint,
-    const FVector& AxisX, const FVector& AxisY, const FVector& AxisZ,
-    TArray<TArray<int32>>& CornerVerticesGrid,
-    const FVector2D& UVOffset, const FVector2D& UVScale, bool FlipU, bool FlipV)
-{
-    for (int32 Lat = 0; Lat < CornerVerticesGrid.Num(); ++Lat)
-    {
-        if (!IsValidCornerGridIndex(Lat, 0)) continue;
-
-        float LatAlpha = GetAlphaValue(Lat);
-        for (int32 Lon = 0; Lon < CornerVerticesGrid[Lat].Num(); ++Lon)
-        {
-            if (!IsValidCornerGridIndex(Lat, Lon)) continue;
-
-            float LonAlpha = GetAlphaValue(Lon);
-
-            float u = LonAlpha;
-            float v = LatAlpha;
-
-            if (FlipU) u = 1.0f - u;
-            if (FlipV) v = 1.0f - v;
-
-            FVector2D UV = UVOffset + FVector2D(u * UVScale.X, v * UVScale.Y);
-
-            TArray<FVector> Vertices = GenerateCornerVertices(CorePoint, AxisX, AxisY, AxisZ, Lat, Lon);
-            if (Vertices.Num() > 0)
-            {
-                FVector CurrentNormal = (Vertices[0] - CorePoint).GetSafeNormal();
-
-                CornerVerticesGrid[Lat][Lon] = GetOrAddVertex(Vertices[0], CurrentNormal, UV);
-            }
+            AddQuad(V00, V10, V11, V01); // 注意顶点顺序以保证法线朝外
         }
     }
-}
-
-void FBevelCubeBuilder::GenerateCornerTrianglesGrid(const TArray<TArray<int32>>& CornerVerticesGrid, bool bSpecialOrder)
-{
-    for (int32 Lat = 0; Lat < CornerVerticesGrid.Num() - 1; ++Lat)
-    {
-        if (!IsValidCornerGridIndex(Lat, 0)) continue;
-
-        for (int32 Lon = 0; Lon < CornerVerticesGrid[Lat].Num() - 1; ++Lon)
-        {
-            if (!IsValidCornerGridIndex(Lat, Lon)) continue;
-
-            GenerateCornerTriangles(CornerVerticesGrid, Lat, Lon, bSpecialOrder);
-        }
-    }
-}
-
-bool FBevelCubeBuilder::IsSpecialCorner(int32 CornerIndex) const
-{
-    static const TArray<int32> SpecialCornerIndices = { 4, 7, 2, 1 };
-    return SpecialCornerIndices.Contains(CornerIndex);
-}
-
-float FBevelCubeBuilder::GetAlphaValue(int32 Index) const
-{
-    if (IsValidAlphaIndex(Index))
-    {
-        return AlphaValues[Index];
-    }
-
-    return FMath::Clamp(static_cast<float>(Index) / BevelSegments, 0.0f, 1.0f);
-}
-
-bool FBevelCubeBuilder::IsValidAlphaIndex(int32 Index) const
-{
-    return Index >= 0 && Index < AlphaValues.Num();
-}
-
-bool FBevelCubeBuilder::IsValidCornerGridIndex(int32 Lat, int32 Lon) const
-{
-    if (Lat < 0 || Lat >= CornerGridSizes.Num()) return false;
-    if (Lon < 0 || Lon >= CornerGridSizes[Lat].Num()) return false;
-    return true;
-}
-
-void FBevelCubeBuilder::GenerateCornerTriangles(const TArray<TArray<int32>>& CornerVerticesGrid,
-    int32 Lat, int32 Lon, bool bSpecialOrder)
-{
-    const int32 V00 = CornerVerticesGrid[Lat][Lon];
-    const int32 V10 = CornerVerticesGrid[Lat + 1][Lon];
-    const int32 V01 = CornerVerticesGrid[Lat][Lon + 1];
-
-    if (bSpecialOrder)
-    {
-        AddTriangle(V00, V01, V10);
-    }
-    else
-    {
-        AddTriangle(V00, V10, V01);
-    }
-
-    if (Lon + 1 < CornerVerticesGrid[Lat + 1].Num())
-    {
-        const int32 V11 = CornerVerticesGrid[Lat + 1][Lon + 1];
-
-        if (bSpecialOrder)
-        {
-            AddTriangle(V10, V01, V11);
-        }
-        else
-        {
-            AddTriangle(V10, V11, V01);
-        }
-    }
-}
-
-TArray<FVector> FBevelCubeBuilder::GenerateRectangleVertices(const FVector& Center, const FVector& SizeX, const FVector& SizeY) const
-{
-    TArray<FVector> Vertices;
-    Vertices.Reserve(4);
-
-    Vertices.Add(Center - SizeX - SizeY);
-    Vertices.Add(Center - SizeX + SizeY);
-    Vertices.Add(Center + SizeX + SizeY);
-    Vertices.Add(Center + SizeX - SizeY);
-
-    return Vertices;
-}
-
-void FBevelCubeBuilder::GenerateQuadSides(const TArray<FVector>& Verts, const FVector& Normal, const TArray<FVector2D>& UVs)
-{
-    if (Verts.Num() != 4 || UVs.Num() != 4)
-    {
-        return;
-    }
-
-    int32 V0 = GetOrAddVertex(Verts[0], Normal, UVs[0]);
-    int32 V1 = GetOrAddVertex(Verts[1], Normal, UVs[1]);
-    int32 V2 = GetOrAddVertex(Verts[2], Normal, UVs[2]);
-    int32 V3 = GetOrAddVertex(Verts[3], Normal, UVs[3]);
-
-    AddQuad(V0, V1, V2, V3);
-}
-
-TArray<FVector> FBevelCubeBuilder::GenerateEdgeVertices(const FVector& CorePoint1, const FVector& CorePoint2,
-    const FVector& Normal1, const FVector& Normal2, float Alpha) const
-{
-    TArray<FVector> Vertices;
-    Vertices.Reserve(2);
-
-    FVector CurrentNormal = FMath::Lerp(Normal1, Normal2, Alpha).GetSafeNormal();
-
-    FVector PosStart = CorePoint1 + CurrentNormal * BevelRadius;
-    FVector PosEnd = CorePoint2 + CurrentNormal * BevelRadius;
-
-    Vertices.Add(PosStart);
-    Vertices.Add(PosEnd);
-
-    return Vertices;
-}
-
-TArray<FVector> FBevelCubeBuilder::GenerateCornerVertices(const FVector& CorePoint, const FVector& AxisX,
-    const FVector& AxisY, const FVector& AxisZ, int32 Lat, int32 Lon) const
-{
-    TArray<FVector> Vertices;
-    Vertices.Reserve(1);
-
-    const float LatAlpha = GetAlphaValue(Lat);
-    const float LonAlpha = GetAlphaValue(Lon);
-
-    FVector CurrentNormal = (AxisX * (1.0f - LatAlpha - LonAlpha) +
-        AxisY * LatAlpha +
-        AxisZ * LonAlpha);
-    CurrentNormal.Normalize();
-
-    FVector CurrentPos = CorePoint + CurrentNormal * BevelRadius;
-    Vertices.Add(CurrentPos);
-
-    return Vertices;
 }
