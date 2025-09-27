@@ -70,79 +70,111 @@ int32 FBevelCubeBuilder::CalculateTriangleCountEstimate() const
 
 void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
 {
-    // 网格分辨率，覆盖主面+两侧倒角。每条边有 (2 + 2*BevelSegments) 个顶点。
-    const int32 GridSize = 2 + 2 * BevelSegments;
+    // 处理特殊情况：无倒角时，只生成主面的4个顶点（一个大正方形）
+    TArray<float> UPositions;
+    TArray<float> VPositions;
+    if (BevelSegments <= 0 || HalfSize <= InnerOffset)
+    {
+        UPositions = { -HalfSize, HalfSize };
+        VPositions = { -HalfSize, HalfSize };
+    }
+    else
+    {
+        const float Step = (HalfSize - InnerOffset) / static_cast<float>(BevelSegments);
+        for (int32 i = 0; i <= BevelSegments; ++i)
+        {
+            const float PosU = -HalfSize + static_cast<float>(i) * Step;
+            UPositions.Add(PosU);
+        }
+        for (int32 i = 0; i <= BevelSegments; ++i)
+        {
+            const float PosU = InnerOffset + static_cast<float>(i) * Step;
+            UPositions.Add(PosU);
+        }
+
+        // V方向使用相同的非均匀分布
+        for (int32 i = 0; i <= BevelSegments; ++i)
+        {
+            const float PosV = -HalfSize + static_cast<float>(i) * Step;
+            VPositions.Add(PosV);
+        }
+        for (int32 i = 0; i <= BevelSegments; ++i)
+        {
+            const float PosV = InnerOffset + static_cast<float>(i) * Step;
+            VPositions.Add(PosV);
+        }
+    }
+
+    const int32 NumU = UPositions.Num();
+    const int32 NumV = VPositions.Num();
 
     // 创建一个二维数组来存储生成的顶点索引，方便后续连接成面
     TArray<TArray<int32>> VertexGrid;
-    VertexGrid.SetNum(GridSize);
-    for (int32 i = 0; i < GridSize; ++i)
+    VertexGrid.SetNum(NumV);
+    for (int32 i = 0; i < NumV; ++i)
     {
-        VertexGrid[i].SetNum(GridSize);
+        VertexGrid[i].SetNum(NumU);
     }
 
     // UV布局计算，假设整个UV空间被划分为4x4的网格
     const FVector2D UVBlockSize(1.0f / 4.0f, 1.0f / 4.0f);
     const FVector2D UVBaseOffset(FaceDef.UV_Grid_Offset.X * UVBlockSize.X, FaceDef.UV_Grid_Offset.Y * UVBlockSize.Y);
 
-    // 遍历网格上的每个点，计算其 3D位置、法线 和 UV坐标
-    for (int32 v_idx = 0; v_idx < GridSize; ++v_idx)
+    // 遍历非均匀网格上的每个点，计算其 3D位置、法线 和 UV坐标
+    for (int32 v_idx = 0; v_idx < NumV; ++v_idx)
     {
-        for (int32 u_idx = 0; u_idx < GridSize; ++u_idx)
+        const float local_v = VPositions[v_idx];
+        const float v_alpha = (local_v + HalfSize) / (2.0f * HalfSize);
+
+        for (int32 u_idx = 0; u_idx < NumU; ++u_idx)
         {
-            // 1. 计算当前点在 [0,1] 区间内的标准化坐标 (alpha)
-            const float u_alpha = static_cast<float>(u_idx) / (GridSize - 1);
-            const float v_alpha = static_cast<float>(v_idx) / (GridSize - 1);
+            const float local_u = UPositions[u_idx];
+            const float u_alpha = (local_u + HalfSize) / (2.0f * HalfSize);
 
-            // 2. 将 alpha 映射到面的局部2D坐标系 [-HalfSize, HalfSize]
-            const float u = FMath::Lerp(-HalfSize, HalfSize, u_alpha);
-            const float v = FMath::Lerp(-HalfSize, HalfSize, v_alpha);
-
-            // 3. 计算UV坐标：基于alpha和面的网格偏移
+            // 计算UV坐标：基于物理位置的alpha，确保纹理均匀分布
             // V方向(v_alpha)需要翻转 (1.0f - ...)，以匹配常见的从上到下的纹理坐标系
             FVector2D UV(u_alpha * UVBlockSize.X + UVBaseOffset.X, (1.0f - v_alpha) * UVBlockSize.Y + UVBaseOffset.Y);
 
-            // 4. 计算核心点 (CorePoint) 和表面法线 (SurfaceNormal)
-            FVector CorePoint;
+            // 计算核心点 (CorePoint) 和表面法线 (SurfaceNormal)
             FVector SurfaceNormal;
             FVector VertexPos;
 
             // 硬边模式：始终使用面的原始法线，只调整位置
             SurfaceNormal = FaceDef.Normal;
-            
+
             // 判断当前点是否在主平面区域内
-            const bool bInMainPlane = (FMath::Abs(u) <= InnerOffset) && (FMath::Abs(v) <= InnerOffset);
-            
+            const bool bInMainPlane = (FMath::Abs(local_u) <= InnerOffset) && (FMath::Abs(local_v) <= InnerOffset);
+
             if (bInMainPlane)
             {
                 // 主平面区域：直接在立方体表面
-                VertexPos = FaceDef.Normal * HalfSize + FaceDef.U_Axis * u + FaceDef.V_Axis * v;
+                VertexPos = FaceDef.Normal * HalfSize + FaceDef.U_Axis * local_u + FaceDef.V_Axis * local_v;
             }
             else
             {
                 // 倒角区域：计算倒角位置
                 // 使用简单的倒角算法：从内部核心点向外延伸
                 const FVector InnerPoint = FaceDef.Normal * InnerOffset +
-                    FaceDef.U_Axis * FMath::Clamp(u, -InnerOffset, InnerOffset) +
-                    FaceDef.V_Axis * FMath::Clamp(v, -InnerOffset, InnerOffset);
-                
+                    FaceDef.U_Axis * FMath::Clamp(local_u, -InnerOffset, InnerOffset) +
+                    FaceDef.V_Axis * FMath::Clamp(local_v, -InnerOffset, InnerOffset);
+
                 // 计算从内部点到外部点的方向
-                const FVector OuterPoint = FaceDef.Normal * HalfSize + FaceDef.U_Axis * u + FaceDef.V_Axis * v;
+                const FVector OuterPoint = FaceDef.Normal * HalfSize + FaceDef.U_Axis * local_u + FaceDef.V_Axis * local_v;
                 const FVector Direction = (OuterPoint - InnerPoint).GetSafeNormal();
-                
+
                 // 沿着方向延伸BevelRadius距离
                 VertexPos = InnerPoint + Direction * BevelRadius;
             }
 
-            // 6. 添加顶点到网格数据，并记录其索引
+            // 添加顶点到网格数据，并记录其索引
             VertexGrid[v_idx][u_idx] = AddVertex(VertexPos, SurfaceNormal, UV);
         }
     }
 
     // 再次遍历网格，使用存储的顶点索引来生成四边形（两个三角形）
-    for (int32 v_idx = 0; v_idx < GridSize - 1; ++v_idx)
+    for (int32 v_idx = 0; v_idx < NumV - 1; ++v_idx)
     {
-        for (int32 u_idx = 0; u_idx < GridSize - 1; ++u_idx)
+        for (int32 u_idx = 0; u_idx < NumU - 1; ++u_idx)
         {
             const int32 V00 = VertexGrid[v_idx][u_idx];
             const int32 V10 = VertexGrid[v_idx + 1][u_idx];
