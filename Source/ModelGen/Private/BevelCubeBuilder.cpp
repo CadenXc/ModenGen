@@ -26,7 +26,7 @@ bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
     Clear();
     ReserveMemory();
 
-    // 定义6个面的展开信息，构成一个4x3的UV网格布局（十字架形）
+    // 定义6个面的展开信息，构成一个4x4的UV网格布局（十字架形）
     //      [Top]
     // [Left][Front][Right][Back]
     //      [Bottom]
@@ -81,7 +81,7 @@ void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
         VertexGrid[i].SetNum(GridSize);
     }
 
-    // UV布局计算，假设整个UV空间被划分为4x3的网格
+    // UV布局计算，假设整个UV空间被划分为4x4的网格
     const FVector2D UVBlockSize(1.0f / 4.0f, 1.0f / 4.0f);
     const FVector2D UVBaseOffset(FaceDef.UV_Grid_Offset.X * UVBlockSize.X, FaceDef.UV_Grid_Offset.Y * UVBlockSize.Y);
 
@@ -103,23 +103,38 @@ void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
             FVector2D UV(u_alpha * UVBlockSize.X + UVBaseOffset.X, (1.0f - v_alpha) * UVBlockSize.Y + UVBaseOffset.Y);
 
             // 4. 计算核心点 (CorePoint) 和表面法线 (SurfaceNormal)
-            // CorePoint 位于内部未倒角的立方体表面。通过将(u,v)坐标钳制在内部范围来找到它。
-            FVector CorePoint = FaceDef.Normal * InnerOffset +
-                FaceDef.U_Axis * FMath::Clamp(u, -InnerOffset, InnerOffset) +
-                FaceDef.V_Axis * FMath::Clamp(v, -InnerOffset, InnerOffset);
+            FVector CorePoint;
+            FVector SurfaceNormal;
+            FVector VertexPos;
 
-            // PointOnOuterPlane 位于外部未倒角的立方体表面。
-            FVector PointOnOuterPlane = FaceDef.Normal * HalfSize + FaceDef.U_Axis * u + FaceDef.V_Axis * v;
-
-            // 从 CorePoint 指向 PointOnOuterPlane 的单位向量，就是最终表面的法线
-            FVector SurfaceNormal = (PointOnOuterPlane - CorePoint).GetSafeNormal();
-
-            // 5. 计算最终的顶点3D位置
-            // 从核心点沿着法线方向延伸 BevelRadius 的距离
-            FVector VertexPos = CorePoint + SurfaceNormal * BevelRadius;
+            // 硬边模式：始终使用面的原始法线，只调整位置
+            SurfaceNormal = FaceDef.Normal;
+            
+            // 判断当前点是否在主平面区域内
+            const bool bInMainPlane = (FMath::Abs(u) <= InnerOffset) && (FMath::Abs(v) <= InnerOffset);
+            
+            if (bInMainPlane)
+            {
+                // 主平面区域：直接在立方体表面
+                VertexPos = FaceDef.Normal * HalfSize + FaceDef.U_Axis * u + FaceDef.V_Axis * v;
+            }
+            else
+            {
+                // 倒角区域：计算倒角位置
+                // 使用简单的倒角算法：从内部核心点向外延伸
+                const FVector InnerPoint = FaceDef.Normal * InnerOffset +
+                    FaceDef.U_Axis * FMath::Clamp(u, -InnerOffset, InnerOffset) +
+                    FaceDef.V_Axis * FMath::Clamp(v, -InnerOffset, InnerOffset);
+                
+                // 计算从内部点到外部点的方向
+                const FVector OuterPoint = FaceDef.Normal * HalfSize + FaceDef.U_Axis * u + FaceDef.V_Axis * v;
+                const FVector Direction = (OuterPoint - InnerPoint).GetSafeNormal();
+                
+                // 沿着方向延伸BevelRadius距离
+                VertexPos = InnerPoint + Direction * BevelRadius;
+            }
 
             // 6. 添加顶点到网格数据，并记录其索引
-            // 硬边模式：每个面都创建独立的顶点，不进行去重
             VertexGrid[v_idx][u_idx] = AddVertex(VertexPos, SurfaceNormal, UV);
         }
     }
