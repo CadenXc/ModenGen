@@ -139,31 +139,37 @@ void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
             FVector SurfaceNormal;
             FVector VertexPos;
 
-            // 硬边模式：始终使用面的原始法线，只调整位置
-            SurfaceNormal = FaceDef.Normal;
-
-            // 判断当前点是否在主平面区域内
+            // 判断是否有倒角：BevelRadius > 0 时为软边，BevelRadius = 0 时为硬边
+            const bool bHasBevel = BevelRadius > 0.0f;
             const bool bInMainPlane = (FMath::Abs(local_u) <= InnerOffset) && (FMath::Abs(local_v) <= InnerOffset);
 
             if (bInMainPlane)
             {
-                // 主平面区域：直接在立方体表面
+                // 主平面区域：始终使用面的原始法线
+                SurfaceNormal = FaceDef.Normal;
                 VertexPos = FaceDef.Normal * HalfSize + FaceDef.U_Axis * local_u + FaceDef.V_Axis * local_v;
             }
             else
             {
-                // 倒角区域：计算倒角位置
-                // 使用简单的倒角算法：从内部核心点向外延伸
-                const FVector InnerPoint = FaceDef.Normal * InnerOffset +
-                    FaceDef.U_Axis * FMath::Clamp(local_u, -InnerOffset, InnerOffset) +
-                    FaceDef.V_Axis * FMath::Clamp(local_v, -InnerOffset, InnerOffset);
+                if (bHasBevel)
+                {
+                    // 有倒角时：软边，使用平滑法线
+                    const FVector InnerPoint = FaceDef.Normal * InnerOffset +
+                        FaceDef.U_Axis * FMath::Clamp(local_u, -InnerOffset, InnerOffset) +
+                        FaceDef.V_Axis * FMath::Clamp(local_v, -InnerOffset, InnerOffset);
 
-                // 计算从内部点到外部点的方向
-                const FVector OuterPoint = FaceDef.Normal * HalfSize + FaceDef.U_Axis * local_u + FaceDef.V_Axis * local_v;
-                const FVector Direction = (OuterPoint - InnerPoint).GetSafeNormal();
+                    const FVector OuterPoint = FaceDef.Normal * HalfSize + FaceDef.U_Axis * local_u + FaceDef.V_Axis * local_v;
+                    const FVector Direction = (OuterPoint - InnerPoint).GetSafeNormal();
 
-                // 沿着方向延伸BevelRadius距离
-                VertexPos = InnerPoint + Direction * BevelRadius;
+                    VertexPos = InnerPoint + Direction * BevelRadius;
+                    SurfaceNormal = Direction;
+                }
+                else
+                {
+                    // 无倒角时：硬边，使用面的原始法线
+                    SurfaceNormal = FaceDef.Normal;
+                    VertexPos = FaceDef.Normal * HalfSize + FaceDef.U_Axis * local_u + FaceDef.V_Axis * local_v;
+                }
             }
 
             // 添加顶点到网格数据，并记录其索引
