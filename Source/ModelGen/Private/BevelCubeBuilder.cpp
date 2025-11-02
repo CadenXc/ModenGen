@@ -172,6 +172,9 @@ void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
                 }
             }
 
+            // 将原点移动到最底面（底部Z=0）：所有顶点向上偏移HalfSize
+            VertexPos += FVector(0, 0, HalfSize);
+
             // 添加顶点到网格数据，并记录其索引
             VertexGrid[v_idx][u_idx] = AddVertex(VertexPos, SurfaceNormal, UV);
         }

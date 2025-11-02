@@ -31,6 +31,14 @@ private:
     float ArcAngleRadians;
 
     TArray<int32> EndCapConnectionPoints;
+    
+    // 保存侧边顶点环索引，用于倒角顶点复用
+    TArray<int32> TopSideRing;      // 顶部侧边环（倒角连接点）
+    TArray<int32> BottomSideRing;    // 底部侧边环（倒角连接点）
+    
+    // 保存端盖边缘顶点环索引，用于倒角顶点复用
+    TArray<int32> TopCapRing;       // 顶部端盖边缘环（倒角连接点）
+    TArray<int32> BottomCapRing;    // 底部端盖边缘环（倒角连接点）
 
     TArray<int32> GenerateVertexRing(float Radius, float Z, int32 Sides);
     TArray<int32> GenerateVertexRing(float Radius, float Z, int32 Sides, float VCoord, const FVector2D& UVOffset, const FVector2D& UVScale);

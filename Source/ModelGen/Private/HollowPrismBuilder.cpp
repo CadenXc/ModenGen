@@ -261,10 +261,12 @@ float FHollowPrismBuilder::CalculateAngleStep(int32 Sides) const
 
 FVector FHollowPrismBuilder::CalculateVertexPosition(float Radius, float Angle, float Z) const
 {
+    // 将原点移动到最底面（底部Z=0）：所有顶点向上偏移HalfHeight
+    const float HalfHeight = HollowPrism.GetHalfHeight();
     return FVector(
         Radius * FMath::Cos(Angle),
         Radius * FMath::Sin(Angle),
-        Z
+        Z + HalfHeight
     );
 }
 
