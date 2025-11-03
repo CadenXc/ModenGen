@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Components/StaticMeshComponent.h"
 #include "ProceduralMeshComponent.h"
 
 #include "ProceduralMeshActor.generated.h"
@@ -25,8 +26,12 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Component")
     UProceduralMeshComponent* ProceduralMeshComponent;
 
+    // StaticMesh相关
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|StaticMesh")
-    bool bShowProceduralComponent = false;
+    UStaticMeshComponent* StaticMeshComponent;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|StaticMesh")
+    bool bShowProceduralComponent = true;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Collision")
     bool bUseAsyncCooking = true;
@@ -41,9 +46,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Collision")
     bool bGenerateCollision = true;
 
+    // 碰撞类型：true=复杂碰撞（精确但性能较低）, false=简单碰撞（快速但不够精确）
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Collision",
+        meta = (DisplayName = "使用复杂碰撞"))
+    bool bUseComplexCollision = true;
+
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|StaticMesh")
-    bool bShowStaticMeshComponent = false;
+    bool bShowStaticMeshComponent = true;
 
     // 材质设置
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Materials")
@@ -53,8 +63,13 @@ public:
     UPROPERTY(VisibleAnywhere, Category = "ProceduralMesh|Materials")
     UMaterialInterface* ProceduralDefaultMaterial = nullptr;
 
-     UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
-	UStaticMesh* ConvertProceduralMeshToStaticMesh();
+    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
+    UStaticMesh* ConvertProceduralMeshToStaticMesh();
+
+    // 更新StaticMeshComponent的方法（在细节面板中显示为按钮）
+    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|StaticMesh",
+        meta = (CallInEditor = "true", DisplayName = "转换到 StaticMesh"))
+    void UpdateStaticMeshComponent();
 
    protected:
 
