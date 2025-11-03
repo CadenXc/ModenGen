@@ -48,6 +48,12 @@ AProceduralMeshActor::AProceduralMeshActor()
         ProceduralMeshComponent->SetVisibility(bShowProceduralComponent);
         ProceduralMeshComponent->bUseAsyncCooking = bUseAsyncCooking;
 
+        // 设置碰撞 - 默认使用 QueryAndPhysics
+        ProceduralMeshComponent->SetCollisionEnabled(
+            bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+        ProceduralMeshComponent->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
+        UE_LOG(LogTemp, Log, TEXT("碰撞设置完成: QueryAndPhysics"));
+
         // 在构造时为PMC设置一个默认材质槽（后续生成段后会应用到各段）
         if (ProceduralDefaultMaterial)
         {
@@ -71,6 +77,12 @@ void AProceduralMeshActor::OnConstruction(const FTransform& Transform)
     if (ProceduralMeshComponent && IsValid())
     {
         ProceduralMeshComponent->ClearAllMeshSections();
+        
+        // 确保碰撞设置正确应用 - 默认使用 QueryAndPhysics
+        ProceduralMeshComponent->SetCollisionEnabled(
+            bGenerateCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+        ProceduralMeshComponent->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
+        
         GenerateMesh();
         ProceduralMeshComponent->SetVisibility(true);
         // 生成完段后再为每个Section设置默认材质

@@ -156,8 +156,13 @@ void FModelGenMeshData::ToProceduralMesh(UProceduralMeshComponent* MeshComponent
     UE_LOG(LogTemp, Log, TEXT("FModelGenMeshData::ToProceduralMesh - Creating mesh section with %d vertices, %d triangles"),
         Vertices.Num(), TriangleCount);
 
+    // 检查组件是否启用了碰撞，如果启用了则创建碰撞几何体
+    bool bCreateCollision = MeshComponent->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
+    UE_LOG(LogTemp, Log, TEXT("FModelGenMeshData::ToProceduralMesh - 碰撞设置: %s"), 
+        bCreateCollision ? TEXT("创建碰撞几何体") : TEXT("不创建碰撞几何体"));
+
     // 传递我们手动生成的UV数据，而不是一个空数组
-    MeshComponent->CreateMeshSection_LinearColor(SectionIndex, Vertices, Triangles, Normals, UVs, VertexColors, Tangents, false);
+    MeshComponent->CreateMeshSection_LinearColor(SectionIndex, Vertices, Triangles, Normals, UVs, VertexColors, Tangents, bCreateCollision);
 }
 
 void FModelGenMeshData::CalculateTangents()
