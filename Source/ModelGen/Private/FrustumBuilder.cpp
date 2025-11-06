@@ -136,7 +136,9 @@ void FFrustumBuilder::CreateSideGeometry()
 		for (int32 h = Frustum.HeightSegments; h > 0; --h)
 		{
 			const float CurrentHeight = HalfHeight - h * HeightStep;
-			const float HeightRatio = static_cast<float>(ActualHeightSegments - h) / ActualHeightSegments;
+			// 当 BendAmount = 0 时，HeightRatio 应该基于实际高度位置计算，确保顶点环在原先的棱上等距分布
+			// HeightRatio 从底部（-HalfHeight）到顶部（HalfHeight）的线性映射：[0, 1]
+			const float HeightRatio = (CurrentHeight + HalfHeight) / Frustum.Height;
 
 			TArray<int32> CurrentRing;
 

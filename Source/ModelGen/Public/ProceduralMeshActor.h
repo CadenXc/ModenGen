@@ -55,7 +55,7 @@ public:
     // 默认使用简单碰撞以获得更好的性能
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Collision",
         meta = (DisplayName = "使用复杂碰撞"))
-    bool bUseComplexCollision = false;
+    bool bUseComplexCollision = true;
 
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|StaticMesh")
