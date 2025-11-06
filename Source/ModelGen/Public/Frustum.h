@@ -24,49 +24,50 @@ public:
 
     //~ Begin Geometry Parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Geometry", 
-        meta = (ClampMin = "0.01", DisplayName = "Top Radius"))
+        meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Top Radius"))
     float TopRadius = 50.0f;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetTopRadius(float NewTopRadius);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Geometry", 
-        meta = (ClampMin = "0.01", DisplayName = "Bottom Radius"))
+        meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Bottom Radius"))
     float BottomRadius = 100.0f;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetBottomRadius(float NewBottomRadius);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Geometry", 
-        meta = (ClampMin = "0.01", DisplayName = "Height"))
+        meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Height"))
     float Height = 200.0f;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetHeight(float NewHeight);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Tessellation", 
-        meta = (ClampMin = "3", ClampMax = "16", DisplayName = "Top Sides"))
+        meta = (ClampMin = "3", ClampMax = "25", UIMin = "3", UIMax = "25", DisplayName = "Top Sides"))
     int32 TopSides = 8;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetTopSides(int32 NewTopSides);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Tessellation", 
-        meta = (ClampMin = "3", ClampMax = "16", DisplayName = "Bottom Sides"))
+        meta = (ClampMin = "3", ClampMax = "25", UIMin = "3", UIMax = "25", DisplayName = "Bottom Sides"))
     int32 BottomSides = 12;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetBottomSides(int32 NewBottomSides);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Tessellation", 
-        meta = (ClampMin = "1", DisplayName = "Height Segments"))
-    int32 HeightSegments = 4;
+        meta = (ClampMin = "0", ClampMax = "12", UIMin = "0", UIMax = "12", DisplayName = "Height Segments", 
+        ToolTip = "高度分段数。0表示只有顶部和底部两个分段，实际分段数 = 此值 + 1"))
+    int32 HeightSegments = 0;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetHeightSegments(int32 NewHeightSegments);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Bevel", 
-        meta = (ClampMin = "0.0", DisplayName = "Bevel Radius"))
+        meta = (ClampMin = "0.0", ClampMax = "250", UIMin = "0.0", UIMax = "250", DisplayName = "Bevel Radius"))
     float BevelRadius = 5.0f;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
@@ -80,14 +81,14 @@ public:
     void SetBendAmount(float NewBendAmount);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Bending", 
-        meta = (ClampMin = "0.0", DisplayName = "Min Bend Radius"))
+        meta = (ClampMin = "0.0", ClampMax = "1000", UIMin = "0.0", UIMax = "1000", DisplayName = "Min Bend Radius"))
     float MinBendRadius = 1.0f;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetMinBendRadius(float NewMinBendRadius);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Angular", 
-        meta = (ClampMin = "0.0", ClampMax = "360.0", DisplayName = "Arc Angle"))
+        meta = (ClampMin = "0.0", ClampMax = "360.0", UIMin = "0.0", UIMax = "360.0", DisplayName = "Arc Angle"))
     float ArcAngle = 360.0f;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")

@@ -125,14 +125,18 @@ void FFrustumBuilder::CreateSideGeometry()
 	TArray<TArray<int32>> VertexRings;
 	VertexRings.Add(BottomRing);
 
-	if (Frustum.HeightSegments > 1)
+	// 实际分段数 = HeightSegments + 1（0表示只有顶部和底部，1表示顶部+底部+0个中间分段）
+	// 中间分段数 = HeightSegments
+	if (Frustum.HeightSegments > 0)
 	{
-		const float HeightStep = Frustum.Height / Frustum.HeightSegments;
+		// 实际分段数 = HeightSegments + 1，所以需要 HeightSegments 个中间分段
+		const int32 ActualHeightSegments = Frustum.HeightSegments + 1;
+		const float HeightStep = Frustum.Height / ActualHeightSegments;
 
-		for (int32 h = Frustum.HeightSegments - 1; h > 0; --h)
+		for (int32 h = Frustum.HeightSegments; h > 0; --h)
 		{
 			const float CurrentHeight = HalfHeight - h * HeightStep;
-			const float HeightRatio = static_cast<float>(Frustum.HeightSegments - h) / Frustum.HeightSegments;
+			const float HeightRatio = static_cast<float>(ActualHeightSegments - h) / ActualHeightSegments;
 
 			TArray<int32> CurrentRing;
 

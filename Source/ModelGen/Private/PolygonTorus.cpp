@@ -43,9 +43,9 @@ bool APolygonTorus::IsValid() const
 {
     return MajorRadius > 0.0f &&
            MinorRadius > 0.0f && MinorRadius <= MajorRadius * 0.9f &&
-           MajorSegments >= 3 && MajorSegments <= 256 &&
-           MinorSegments >= 3 && MinorSegments <= 256 &&
-           TorusAngle >= 1.0f && TorusAngle <= 360.0f;
+           MajorSegments >= 3 && MajorSegments <= 25 &&
+           MinorSegments >= 3 && MinorSegments <= 25 &&
+           TorusAngle >= 0.0f && TorusAngle <= 360.0f;
 }
 
 int32 APolygonTorus::CalculateVertexCountEstimate() const
@@ -102,7 +102,7 @@ void APolygonTorus::SetMinorRadius(float NewMinorRadius)
 
 void APolygonTorus::SetMajorSegments(int32 NewMajorSegments)
 {
-    if (NewMajorSegments >= 3 && NewMajorSegments <= 256 && NewMajorSegments != MajorSegments)
+    if (NewMajorSegments >= 3 && NewMajorSegments <= 25 && NewMajorSegments != MajorSegments)
     {
         int32 OldMajorSegments = MajorSegments;
         MajorSegments = NewMajorSegments;
@@ -120,7 +120,7 @@ void APolygonTorus::SetMajorSegments(int32 NewMajorSegments)
 
 void APolygonTorus::SetMinorSegments(int32 NewMinorSegments)
 {
-    if (NewMinorSegments >= 3 && NewMinorSegments <= 256 && NewMinorSegments != MinorSegments)
+    if (NewMinorSegments >= 3 && NewMinorSegments <= 25 && NewMinorSegments != MinorSegments)
     {
         int32 OldMinorSegments = MinorSegments;
         MinorSegments = NewMinorSegments;
@@ -138,7 +138,7 @@ void APolygonTorus::SetMinorSegments(int32 NewMinorSegments)
 
 void APolygonTorus::SetTorusAngle(float NewTorusAngle)
 {
-    if (NewTorusAngle >= 1.0f && NewTorusAngle <= 360.0f && NewTorusAngle != TorusAngle)
+    if (NewTorusAngle >= 0.0f && NewTorusAngle <= 360.0f && NewTorusAngle != TorusAngle)
     {
         float OldTorusAngle = TorusAngle;
         TorusAngle = NewTorusAngle;

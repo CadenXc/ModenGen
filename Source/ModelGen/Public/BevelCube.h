@@ -24,21 +24,21 @@ public:
     ABevelCube();
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters", 
-        meta = (ClampMin = "0.01", UIMin = "0.01", DisplayName = "Size"))
+        meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Size"))
     float CubeSize = 100.0f;
 
     UFUNCTION(BlueprintCallable, Category = "BevelCube|Parameters")
     void SetCubeSize(float NewCubeSize);
     
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters", 
-        meta = (ClampMin = "0.0", UIMin = "0.0", DisplayName = "Bevel Size"))
+        meta = (ClampMin = "0.0", ClampMax = "500", UIMin = "0.0", UIMax = "500", DisplayName = "Bevel Size"))
     float BevelRadius = 10.0f;
     
     UFUNCTION(BlueprintCallable, Category = "BevelCube|Parameters")
     void SetBevelRadius(float NewBevelRadius);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters", 
-        meta = (ClampMin = "0", ClampMax = "10", UIMin = "0", UIMax = "10", 
+        meta = (ClampMin = "0", ClampMax = "4", UIMin = "0", UIMax = "4", 
         DisplayName = "Bevel Sections", ToolTip = "倒角分段数。0表示不启用倒角"))
     int32 BevelSegments = 3;
 

@@ -42,7 +42,7 @@ bool AFrustum::TryGenerateMeshInternal()
 bool AFrustum::IsValid() const
 {
     return TopRadius > 0.0f && BottomRadius > 0.0f && Height > 0.0f &&
-           TopSides >= 3 && BottomSides >= 3 && HeightSegments >= 1 &&
+           TopSides >= 3 && TopSides <= 25 && BottomSides >= 3 && BottomSides <= 25 && HeightSegments >= 0 && HeightSegments <= 12 &&
            BevelRadius >= 0.0f && 
            MinBendRadius >= 0.0f && ArcAngle > 0.0f && ArcAngle <= 360.0f;
 }
@@ -53,6 +53,7 @@ int32 AFrustum::CalculateVertexCountEstimate() const
 
     const int32 MaxSides = FMath::Max(TopSides, BottomSides);
     const int32 BaseVertices = TopSides + BottomSides;
+    // 中间分段数 = HeightSegments，实际分段数 = HeightSegments + 1（0表示只有顶部和底部）
     const int32 SideVertices = HeightSegments * MaxSides;
     
     int32 BevelVertices = 0;
@@ -70,7 +71,8 @@ int32 AFrustum::CalculateTriangleCountEstimate() const
 
     const int32 MaxSides = FMath::Max(TopSides, BottomSides);
     const int32 BaseTriangles = TopSides + BottomSides;
-    const int32 SideTriangles = HeightSegments * MaxSides * 2;
+    // 实际分段数 = HeightSegments + 1（0表示只有顶部和底部）
+    const int32 SideTriangles = HeightSegments * MaxSides * 2;  // 中间分段数 = HeightSegments
     
     int32 BevelTriangles = 0;
     if (BevelRadius > 0.0f)
@@ -142,7 +144,7 @@ void AFrustum::SetTopSides(int32 NewTopSides)
 		return;
 	}
     
-    if (NewTopSides >= 3 && NewTopSides != TopSides)
+    if (NewTopSides >= 3 && NewTopSides <= 25 && NewTopSides != TopSides)
     {
         int32 OldTopSides = TopSides;
         TopSides = NewTopSides;
@@ -160,7 +162,7 @@ void AFrustum::SetTopSides(int32 NewTopSides)
 
 void AFrustum::SetBottomSides(int32 NewBottomSides)
 {
-    if (NewBottomSides >= 3 && NewBottomSides != BottomSides)
+    if (NewBottomSides >= 3 && NewBottomSides <= 25 && NewBottomSides != BottomSides)
     {
         int32 OldBottomSides = BottomSides;
         int32 OldTopSides = TopSides;
@@ -185,7 +187,7 @@ void AFrustum::SetBottomSides(int32 NewBottomSides)
 
 void AFrustum::SetHeightSegments(int32 NewHeightSegments)
 {
-    if (NewHeightSegments >= 1 && NewHeightSegments != HeightSegments)
+    if (NewHeightSegments >= 0 && NewHeightSegments <= 12 && NewHeightSegments != HeightSegments)
     {
         int32 OldHeightSegments = HeightSegments;
         HeightSegments = NewHeightSegments;

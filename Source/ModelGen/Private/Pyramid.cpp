@@ -69,7 +69,7 @@ void APyramid::GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides
 bool APyramid::IsValid() const
 {
     return BaseRadius > 0.0f && Height > 0.0f &&
-           Sides >= 3 && Sides <= 100 &&
+           Sides >= 3 && Sides <= 25 &&
            BevelRadius >= 0.0f && BevelRadius < Height;
 }
 
@@ -140,7 +140,7 @@ void APyramid::SetHeight(float NewHeight)
 
 void APyramid::SetSides(int32 NewSides)
 {
-    if (NewSides >= 3 && NewSides <= 100 && NewSides != Sides)
+    if (NewSides >= 3 && NewSides <= 25 && NewSides != Sides)
     {
         int32 OldSides = Sides;
         Sides = NewSides;

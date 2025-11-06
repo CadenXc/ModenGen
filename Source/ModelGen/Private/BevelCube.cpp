@@ -105,7 +105,7 @@ void ABevelCube::SetBevelRadius(float NewBevelRadius)
 
 void ABevelCube::SetBevelSegments(int32 NewBevelSegments)
 {
-    if (NewBevelSegments >= 0 && NewBevelSegments <= 10 && NewBevelSegments != BevelSegments)
+    if (NewBevelSegments >= 0 && NewBevelSegments <= 4 && NewBevelSegments != BevelSegments)
     {
         int32 OldBevelSegments = BevelSegments;
         BevelSegments = NewBevelSegments;

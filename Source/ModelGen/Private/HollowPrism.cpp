@@ -51,7 +51,7 @@ bool AHollowPrism::IsValid() const
 {
     return InnerRadius > 0.0f && OuterRadius > 0.0f && Height > 0.0f &&
            InnerRadius < OuterRadius &&
-           InnerSides >= 3 && OuterSides >= 3 &&
+           InnerSides >= 3 && InnerSides <= 25 && OuterSides >= 3 && OuterSides <= 25 &&
            ArcAngle > 0.0f && ArcAngle <= 360.0f &&
            BevelRadius >= 0.0f && BevelSegments >= 0;
 }
@@ -198,7 +198,7 @@ void AHollowPrism::SetHeight(float NewHeight)
 
 void AHollowPrism::SetOuterSides(int32 NewOuterSides)
 {
-    if (NewOuterSides >= 3 && NewOuterSides <= 100 && NewOuterSides != OuterSides)
+    if (NewOuterSides >= 3 && NewOuterSides <= 25 && NewOuterSides != OuterSides)
     {
         int32 OldOuterSides = OuterSides;
         int32 OldInnerSides = InnerSides;
@@ -228,7 +228,7 @@ void AHollowPrism::SetInnerSides(int32 NewInnerSides)
         return;
     }
 
-    if (NewInnerSides >= 3 && NewInnerSides <= 100 && NewInnerSides != InnerSides)
+    if (NewInnerSides >= 3 && NewInnerSides <= 25 && NewInnerSides != InnerSides)
     {
         int32 OldInnerSides = InnerSides;
         InnerSides = NewInnerSides;
@@ -282,7 +282,7 @@ void AHollowPrism::SetBevelRadius(float NewBevelRadius)
 
 void AHollowPrism::SetBevelSegments(int32 NewBevelSegments)
 {
-    if (NewBevelSegments >= 0 && NewBevelSegments <= 20 && NewBevelSegments != BevelSegments)
+    if (NewBevelSegments >= 0 && NewBevelSegments <= 4 && NewBevelSegments != BevelSegments)
     {
         int32 OldBevelSegments = BevelSegments;
         BevelSegments = NewBevelSegments;
