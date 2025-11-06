@@ -11,26 +11,39 @@ AHollowPrism::AHollowPrism()
 
 void AHollowPrism::GenerateMesh()
 {
+    TryGenerateMeshInternal();
+}
+
+bool AHollowPrism::TryGenerateMeshInternal()
+{
     if (!IsValid())
     {
-        return;
+        return false;
     }
 
     FHollowPrismBuilder Builder(*this);
     FModelGenMeshData MeshData;
 
-    if (Builder.Generate(MeshData))
+    if (!Builder.Generate(MeshData))
     {
-        MeshData.ToProceduralMesh(GetProceduralMesh(), 0);
+        return false;
     }
+
+    if (!MeshData.IsValid())
+    {
+        UE_LOG(LogTemp, Error, TEXT("AHollowPrism::TryGenerateMeshInternal - 生成的网格数据无效"));
+        return false;
+    }
+
+    MeshData.ToProceduralMesh(GetProceduralMesh(), 0);
+    return true;
 }
 
 void AHollowPrism::RegenerateMeshBlueprint()
 {
     if (ProceduralMeshComponent)
     {
-        ProceduralMeshComponent->ClearAllMeshSections();
-        GenerateMesh();
+        TryGenerateMeshInternal();
     }
 }
 
@@ -118,20 +131,24 @@ bool AHollowPrism::operator!=(const AHollowPrism& Other) const
     return !(*this == Other);
 }
 
-// 设置参数函数实现
 void AHollowPrism::SetInnerRadius(float NewInnerRadius)
 {
     if (NewInnerRadius >= OuterRadius)
     {
         return;
-	}
+    }
     if (NewInnerRadius > 0.0f && NewInnerRadius < OuterRadius && NewInnerRadius != InnerRadius)
     {
+        float OldInnerRadius = InnerRadius;
         InnerRadius = NewInnerRadius;
+        
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                InnerRadius = OldInnerRadius;
+                UE_LOG(LogTemp, Warning, TEXT("SetInnerRadius: 网格生成失败，参数已恢复为 %f"), OldInnerRadius);
+            }
         }
     }
 }
@@ -140,15 +157,23 @@ void AHollowPrism::SetOuterRadius(float NewOuterRadius)
 {
     if (NewOuterRadius > 0.0f && NewOuterRadius > InnerRadius && NewOuterRadius != OuterRadius)
     {
+        float OldOuterRadius = OuterRadius;
+        float OldInnerRadius = InnerRadius;
+        
         OuterRadius = NewOuterRadius;
         if (OuterRadius < InnerRadius)
         {
             InnerRadius = OuterRadius - KINDA_SMALL_NUMBER;
         }
+        
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                OuterRadius = OldOuterRadius;
+                InnerRadius = OldInnerRadius;
+                UE_LOG(LogTemp, Warning, TEXT("SetOuterRadius: 网格生成失败，参数已恢复"));
+            }
         }
     }
 }
@@ -157,11 +182,16 @@ void AHollowPrism::SetHeight(float NewHeight)
 {
     if (NewHeight > 0.0f && NewHeight != Height)
     {
+        float OldHeight = Height;
         Height = NewHeight;
+        
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                Height = OldHeight;
+                UE_LOG(LogTemp, Warning, TEXT("SetHeight: 网格生成失败，参数已恢复为 %f"), OldHeight);
+            }
         }
     }
 }
@@ -170,6 +200,9 @@ void AHollowPrism::SetOuterSides(int32 NewOuterSides)
 {
     if (NewOuterSides >= 3 && NewOuterSides <= 100 && NewOuterSides != OuterSides)
     {
+        int32 OldOuterSides = OuterSides;
+        int32 OldInnerSides = InnerSides;
+        
         OuterSides = NewOuterSides;
         if (OuterSides < InnerSides)
         {
@@ -178,26 +211,35 @@ void AHollowPrism::SetOuterSides(int32 NewOuterSides)
 
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                OuterSides = OldOuterSides;
+                InnerSides = OldInnerSides;
+                UE_LOG(LogTemp, Warning, TEXT("SetOuterSides: 网格生成失败，参数已恢复"));
+            }
         }
     }
 }
 
 void AHollowPrism::SetInnerSides(int32 NewInnerSides)
 {
-	if (NewInnerSides > OuterSides)
-	{
-		return;
-	}
+    if (NewInnerSides > OuterSides)
+    {
+        return;
+    }
 
     if (NewInnerSides >= 3 && NewInnerSides <= 100 && NewInnerSides != InnerSides)
     {
+        int32 OldInnerSides = InnerSides;
         InnerSides = NewInnerSides;
+        
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                InnerSides = OldInnerSides;
+                UE_LOG(LogTemp, Warning, TEXT("SetInnerSides: 网格生成失败，参数已恢复为 %d"), OldInnerSides);
+            }
         }
     }
 }
@@ -206,11 +248,16 @@ void AHollowPrism::SetArcAngle(float NewArcAngle)
 {
     if (NewArcAngle > 0.0f && NewArcAngle <= 360.0f && NewArcAngle != ArcAngle)
     {
+        float OldArcAngle = ArcAngle;
         ArcAngle = NewArcAngle;
+        
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                ArcAngle = OldArcAngle;
+                UE_LOG(LogTemp, Warning, TEXT("SetArcAngle: 网格生成失败，参数已恢复为 %f"), OldArcAngle);
+            }
         }
     }
 }
@@ -219,11 +266,16 @@ void AHollowPrism::SetBevelRadius(float NewBevelRadius)
 {
     if (NewBevelRadius >= 0.0f && NewBevelRadius != BevelRadius)
     {
+        float OldBevelRadius = BevelRadius;
         BevelRadius = NewBevelRadius;
+        
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                BevelRadius = OldBevelRadius;
+                UE_LOG(LogTemp, Warning, TEXT("SetBevelRadius: 网格生成失败，参数已恢复为 %f"), OldBevelRadius);
+            }
         }
     }
 }
@@ -232,11 +284,16 @@ void AHollowPrism::SetBevelSegments(int32 NewBevelSegments)
 {
     if (NewBevelSegments >= 1 && NewBevelSegments <= 20 && NewBevelSegments != BevelSegments)
     {
+        int32 OldBevelSegments = BevelSegments;
         BevelSegments = NewBevelSegments;
+        
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                BevelSegments = OldBevelSegments;
+                UE_LOG(LogTemp, Warning, TEXT("SetBevelSegments: 网格生成失败，参数已恢复为 %d"), OldBevelSegments);
+            }
         }
     }
 }

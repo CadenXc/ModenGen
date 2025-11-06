@@ -82,6 +82,8 @@ public:
     virtual void GenerateMesh() override;
 
 private:
+    bool TryGenerateMeshInternal();
+    
     UFUNCTION(BlueprintCallable, Category = "HollowPrism|Generation")
     void RegenerateMeshBlueprint();
     

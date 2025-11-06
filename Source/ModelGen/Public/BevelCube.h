@@ -47,6 +47,9 @@ public:
 
     virtual void GenerateMesh() override;
 
+private:
+    bool TryGenerateMeshInternal();
+
 public:
     float GetHalfSize() const { return CubeSize * 0.5f; }
     float GetInnerOffset() const { return GetHalfSize() - BevelRadius; }

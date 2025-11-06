@@ -11,18 +11,32 @@ APolygonTorus::APolygonTorus()
 
 void APolygonTorus::GenerateMesh()
 {
+    TryGenerateMeshInternal();
+}
+
+bool APolygonTorus::TryGenerateMeshInternal()
+{
     if (!IsValid())
     {
-        return;
+        return false;
     }
-    
+
     FPolygonTorusBuilder Builder(*this);
     FModelGenMeshData MeshData;
-    
-    if (Builder.Generate(MeshData))
+
+    if (!Builder.Generate(MeshData))
     {
-        MeshData.ToProceduralMesh(GetProceduralMesh(), 0);
+        return false;
     }
+
+    if (!MeshData.IsValid())
+    {
+        UE_LOG(LogTemp, Error, TEXT("APolygonTorus::TryGenerateMeshInternal - 生成的网格数据无效"));
+        return false;
+    }
+
+    MeshData.ToProceduralMesh(GetProceduralMesh(), 0);
+    return true;
 }
 
 bool APolygonTorus::IsValid() const
@@ -50,16 +64,20 @@ int32 APolygonTorus::CalculateTriangleCountEstimate() const
     return BaseTriangleCount + CapTriangleCount;
 }
 
-// 设置参数函数实现
 void APolygonTorus::SetMajorRadius(float NewMajorRadius)
 {
     if (NewMajorRadius > 0.0f && NewMajorRadius != MajorRadius)
     {
+        float OldMajorRadius = MajorRadius;
         MajorRadius = NewMajorRadius;
+        
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                MajorRadius = OldMajorRadius;
+                UE_LOG(LogTemp, Warning, TEXT("SetMajorRadius: 网格生成失败，参数已恢复为 %f"), OldMajorRadius);
+            }
         }
     }
 }
@@ -68,11 +86,16 @@ void APolygonTorus::SetMinorRadius(float NewMinorRadius)
 {
     if (NewMinorRadius > 0.0f && NewMinorRadius <= MajorRadius * 0.9f && NewMinorRadius != MinorRadius)
     {
+        float OldMinorRadius = MinorRadius;
         MinorRadius = NewMinorRadius;
+        
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                MinorRadius = OldMinorRadius;
+                UE_LOG(LogTemp, Warning, TEXT("SetMinorRadius: 网格生成失败，参数已恢复为 %f"), OldMinorRadius);
+            }
         }
     }
 }
@@ -81,11 +104,16 @@ void APolygonTorus::SetMajorSegments(int32 NewMajorSegments)
 {
     if (NewMajorSegments >= 3 && NewMajorSegments <= 256 && NewMajorSegments != MajorSegments)
     {
+        int32 OldMajorSegments = MajorSegments;
         MajorSegments = NewMajorSegments;
+        
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                MajorSegments = OldMajorSegments;
+                UE_LOG(LogTemp, Warning, TEXT("SetMajorSegments: 网格生成失败，参数已恢复为 %d"), OldMajorSegments);
+            }
         }
     }
 }
@@ -94,11 +122,16 @@ void APolygonTorus::SetMinorSegments(int32 NewMinorSegments)
 {
     if (NewMinorSegments >= 3 && NewMinorSegments <= 256 && NewMinorSegments != MinorSegments)
     {
+        int32 OldMinorSegments = MinorSegments;
         MinorSegments = NewMinorSegments;
+        
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                MinorSegments = OldMinorSegments;
+                UE_LOG(LogTemp, Warning, TEXT("SetMinorSegments: 网格生成失败，参数已恢复为 %d"), OldMinorSegments);
+            }
         }
     }
 }
@@ -107,11 +140,16 @@ void APolygonTorus::SetTorusAngle(float NewTorusAngle)
 {
     if (NewTorusAngle >= 1.0f && NewTorusAngle <= 360.0f && NewTorusAngle != TorusAngle)
     {
+        float OldTorusAngle = TorusAngle;
         TorusAngle = NewTorusAngle;
+        
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                TorusAngle = OldTorusAngle;
+                UE_LOG(LogTemp, Warning, TEXT("SetTorusAngle: 网格生成失败，参数已恢复为 %f"), OldTorusAngle);
+            }
         }
     }
 }
@@ -120,11 +158,16 @@ void APolygonTorus::SetSmoothCrossSection(bool bNewSmoothCrossSection)
 {
     if (bNewSmoothCrossSection != bSmoothCrossSection)
     {
+        bool OldSmoothCrossSection = bSmoothCrossSection;
         bSmoothCrossSection = bNewSmoothCrossSection;
+        
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                bSmoothCrossSection = OldSmoothCrossSection;
+                UE_LOG(LogTemp, Warning, TEXT("SetSmoothCrossSection: 网格生成失败，参数已恢复"));
+            }
         }
     }
 }
@@ -133,11 +176,16 @@ void APolygonTorus::SetSmoothVerticalSection(bool bNewSmoothVerticalSection)
 {
     if (bNewSmoothVerticalSection != bSmoothVerticalSection)
     {
+        bool OldSmoothVerticalSection = bSmoothVerticalSection;
         bSmoothVerticalSection = bNewSmoothVerticalSection;
+        
         if (ProceduralMeshComponent)
         {
-            ProceduralMeshComponent->ClearAllMeshSections();
-            GenerateMesh();
+            if (!TryGenerateMeshInternal())
+            {
+                bSmoothVerticalSection = OldSmoothVerticalSection;
+                UE_LOG(LogTemp, Warning, TEXT("SetSmoothVerticalSection: 网格生成失败，参数已恢复"));
+            }
         }
     }
 }

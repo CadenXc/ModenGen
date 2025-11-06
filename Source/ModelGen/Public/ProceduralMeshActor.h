@@ -42,14 +42,20 @@ public:
     UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
     void SetPMCCollisionEnabled(bool bEnable);
 
+    // 为ProceduralMeshComponent自动生成碰撞数据（如果还没有的话）
+    // 基于实际顶点计算包围盒并添加到PMC的BodySetup中
+    // 这样在转换时就可以使用方式1（从PMC复制碰撞数据），获得更好的性能
+    UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Collision")
+    void GeneratePMCollisionData();
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Collision")
     bool bGenerateCollision = true;
 
     // 碰撞类型：true=复杂碰撞（精确但性能较低）, false=简单碰撞（快速但不够精确）
+    // 默认使用简单碰撞以获得更好的性能
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Collision",
         meta = (DisplayName = "使用复杂碰撞"))
-    bool bUseComplexCollision = true;
+    bool bUseComplexCollision = false;
 
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|StaticMesh")

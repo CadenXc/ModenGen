@@ -95,6 +95,9 @@ public:
 
     virtual void GenerateMesh() override;
 
+private:
+    bool TryGenerateMeshInternal();
+
 public:
     virtual bool IsValid() const override;
     
