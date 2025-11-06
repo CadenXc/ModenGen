@@ -173,3 +173,21 @@ void APyramid::SetBevelRadius(float NewBevelRadius)
         }
     }
 }
+
+void APyramid::SetSmoothSides(bool bNewSmoothSides)
+{
+    if (bNewSmoothSides != bSmoothSides)
+    {
+        bool OldSmoothSides = bSmoothSides;
+        bSmoothSides = bNewSmoothSides;
+        
+        if (ProceduralMeshComponent)
+        {
+            if (!TryGenerateMeshInternal())
+            {
+                bSmoothSides = OldSmoothSides;
+                UE_LOG(LogTemp, Warning, TEXT("SetSmoothSides: 网格生成失败，参数已恢复"));
+            }
+        }
+    }
+}

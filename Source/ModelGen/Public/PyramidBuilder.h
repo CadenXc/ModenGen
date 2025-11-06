@@ -30,10 +30,8 @@ private:
     float BevelRadius;
     float BevelTopRadius;
 
-    TArray<FVector> BaseVertices;
-    TArray<FVector> BevelBottomVertices;
-    TArray<FVector> BevelTopVertices;
-    TArray<FVector> PyramidBaseVertices;
+    TArray<FVector> BottomVertices;
+    TArray<FVector> TopVertices;
     FVector PyramidTopPoint;
 
     TArray<FVector2D> BaseUVs;
@@ -50,9 +48,7 @@ private:
     void PrecomputeTrigonometricValues();
     void PrecomputeUVScaleValues();
 
-    void InitializeBaseVertices();
-    void InitializeBevelVertices();
-    void InitializePyramidVertices();
+    void InitializeVertices();
 
     void GenerateBaseFace();
     void GenerateBevelSection();

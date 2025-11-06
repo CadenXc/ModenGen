@@ -51,6 +51,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Pyramid|Parameters")
     void SetBevelRadius(float NewBevelRadius);
 
+    /** 侧面光滑 */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid|Smoothing", 
+        meta = (DisplayName = "Smooth Sides", ToolTip = "Smooth sides (soft edges)"))
+    bool bSmoothSides = false;
+
+    UFUNCTION(BlueprintCallable, Category = "Pyramid|Parameters")
+    void SetSmoothSides(bool bNewSmoothSides);
+
     virtual void GenerateMesh() override;
 
 private:
