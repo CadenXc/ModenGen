@@ -27,6 +27,9 @@ public:
 private:
     const AHollowPrism& HollowPrism;
     
+    // 是否启用倒角：BevelRadius > 0 且 BevelSegments > 0
+    bool bEnableBevel;
+    
     // 端盖顶点索引记录 - 拆分为4个独立数组
     TArray<int32> StartOuterCapIndices;  // 起始端盖外壁顶点
     TArray<int32> StartInnerCapIndices;  // 起始端盖内壁顶点

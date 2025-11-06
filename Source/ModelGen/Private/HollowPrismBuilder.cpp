@@ -20,6 +20,9 @@ bool FHollowPrismBuilder::Generate(FModelGenMeshData& OutMeshData)
 
     Clear();
     ReserveMemory();
+    
+    // 计算是否启用倒角
+    bEnableBevel = HollowPrism.BevelRadius > 0.0f && HollowPrism.BevelSegments > 0;
 
     // 清空端盖顶点索引记录
     StartOuterCapIndices.Empty();
@@ -50,8 +53,8 @@ bool FHollowPrismBuilder::Generate(FModelGenMeshData& OutMeshData)
     GenerateCapVertices(InnerVertices, OuterVertices, EHeightPosition::Bottom);
     GenerateCapTriangles(InnerVertices, OuterVertices, EHeightPosition::Bottom);
 
-    // 生成倒角几何体（如果有倒角）
-    if (HollowPrism.BevelRadius > 0.0f)
+    // 生成倒角几何体（如果启用倒角）
+    if (bEnableBevel)
     {
         GenerateBevelGeometry(EHeightPosition::Top, EInnerOuter::Inner);   // 顶部内环倒角
         GenerateBevelGeometry(EHeightPosition::Top, EInnerOuter::Outer);  // 顶部外环倒角
@@ -102,9 +105,9 @@ void FHollowPrismBuilder::GenerateWalls(float Radius, int32 Sides, EInnerOuter I
     {
         const float Angle = StartAngle + i * AngleStep;
 
-        // 如果有倒角，墙体的高度需要缩减
-        const float WallTopZ = HalfHeight - HollowPrism.BevelRadius;
-        const float WallBottomZ = -HalfHeight + HollowPrism.BevelRadius;
+        // 如果启用倒角，墙体的高度需要缩减
+        const float WallTopZ = bEnableBevel ? (HalfHeight - HollowPrism.BevelRadius) : HalfHeight;
+        const float WallBottomZ = bEnableBevel ? (-HalfHeight + HollowPrism.BevelRadius) : -HalfHeight;
 
         const FVector TopPos = CalculateVertexPosition(Radius, Angle, WallTopZ);
         const FVector BottomPos = CalculateVertexPosition(Radius, Angle, WallBottomZ);
@@ -124,8 +127,8 @@ void FHollowPrismBuilder::GenerateWalls(float Radius, int32 Sides, EInnerOuter I
         TopVertices.Add(TopVertex);
         BottomVertices.Add(BottomVertex);
 
-        // 记录与倒角连接的顶点（如果有倒角）
-        if (HollowPrism.BevelRadius > 0.0f)
+        // 记录与倒角连接的顶点（如果启用倒角）
+        if (bEnableBevel)
         {
             if (InnerOuter == EInnerOuter::Inner)
             {
@@ -209,8 +212,8 @@ void FHollowPrismBuilder::GenerateCapVertices(TArray<int32>& OutInnerVertices,
     for (int32 i = 0; i <= HollowPrism.InnerSides; ++i)
     {
         const float Angle = StartAngle + i * InnerAngleStep;
-        // 内环半径增加倒角半径
-        const float AdjustedInnerRadius = HollowPrism.InnerRadius + HollowPrism.BevelRadius;
+        // 内环半径：启用倒角时增加倒角半径，否则使用原始半径
+        const float AdjustedInnerRadius = bEnableBevel ? (HollowPrism.InnerRadius + HollowPrism.BevelRadius) : HollowPrism.InnerRadius;
         const FVector InnerPos = CalculateVertexPosition(AdjustedInnerRadius, Angle, CurrentHight);
         const FVector2D InnerUV = CalculateCapUV(Angle, AdjustedInnerRadius, HeightPosition);
         OutInnerVertices.Add(GetOrAddVertex(InnerPos, Normal, InnerUV));
@@ -220,8 +223,8 @@ void FHollowPrismBuilder::GenerateCapVertices(TArray<int32>& OutInnerVertices,
     for (int32 i = 0; i <= HollowPrism.OuterSides; ++i)
     {
         const float Angle = StartAngle + i * OuterAngleStep;
-        // 外环半径减少倒角半径
-        const float AdjustedOuterRadius = HollowPrism.OuterRadius - HollowPrism.BevelRadius;
+        // 外环半径：启用倒角时减少倒角半径，否则使用原始半径
+        const float AdjustedOuterRadius = bEnableBevel ? (HollowPrism.OuterRadius - HollowPrism.BevelRadius) : HollowPrism.OuterRadius;
         const FVector OuterPos = CalculateVertexPosition(AdjustedOuterRadius, Angle, CurrentHight);
         const FVector2D OuterUV = CalculateCapUV(Angle, AdjustedOuterRadius, HeightPosition);
         OutOuterVertices.Add(GetOrAddVertex(OuterPos, Normal, OuterUV));
@@ -299,7 +302,7 @@ void FHollowPrismBuilder::GenerateCapTriangles(const TArray<int32>& InnerVertice
 
 void FHollowPrismBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition, EInnerOuter InnerOuter)
 {
-    if (HollowPrism.BevelRadius <= 0.0f || HollowPrism.BevelSegments <= 0) return;
+    if (!bEnableBevel) return;
 
     TArray<int32> PrevRing;
     
@@ -458,7 +461,7 @@ void FHollowPrismBuilder::GenerateEndCapColumn(float Angle, const FVector& Norma
     OutOrderedVertices.Empty();
 
     // Handle the case with no bevels separately for clarity and efficiency.
-    if (BevelRadius <= 0.0f || BevelSegments <= 0)
+    if (!bEnableBevel)
     {
         const FVector OuterTop = CalculateVertexPosition(HollowPrism.OuterRadius, Angle, HalfHeight);
         const FVector InnerTop = CalculateVertexPosition(HollowPrism.InnerRadius, Angle, HalfHeight);
@@ -644,7 +647,8 @@ FVector2D FHollowPrismBuilder::CalculateWallUV(float Angle, float Z, EInnerOuter
     }
     
     const float TotalHeight = 2.0f * HalfHeight;
-    const float TopBevelHeight = HollowPrism.BevelRadius;
+    // 只有在启用倒角时才计算倒角高度
+    const float TopBevelHeight = bEnableBevel ? HollowPrism.BevelRadius : 0.0f;
     const float WallHeight = TotalHeight - 2.0f * TopBevelHeight;
     const float OuterCircumference = 2.0f * PI * HollowPrism.OuterRadius;
     const float RadiusRange = HollowPrism.OuterRadius - HollowPrism.InnerRadius;
@@ -674,8 +678,9 @@ FVector2D FHollowPrismBuilder::CalculateWallUV(float Angle, float Z, EInnerOuter
         V_End = InnerWallVOffset + WallVScale;
     }
     
-    const float ActualWallHeight = 2.0f * (HalfHeight - HollowPrism.BevelRadius);
-    const float ActualWallBottom = -HalfHeight + HollowPrism.BevelRadius;
+    // 只有在启用倒角时才缩减墙体高度
+    const float ActualWallHeight = bEnableBevel ? 2.0f * (HalfHeight - HollowPrism.BevelRadius) : 2.0f * HalfHeight;
+    const float ActualWallBottom = bEnableBevel ? (-HalfHeight + HollowPrism.BevelRadius) : -HalfHeight;
     
     float V = 0.5f;
     if (ActualWallHeight > KINDA_SMALL_NUMBER)
@@ -700,15 +705,51 @@ FVector2D FHollowPrismBuilder::CalculateCapUV(float Angle, float Radius, EHeight
     const float NormalizedU = FMath::Clamp(U, 0.0f, 1.0f);
     
     // V坐标：沿着径向方向，从内半径到外半径
-    const float V = (Radius - HollowPrism.InnerRadius) / (HollowPrism.OuterRadius - HollowPrism.InnerRadius);
+    // UV 应该基于原始半径范围计算，即使传入的 Radius 可能是调整后的（用于倒角）
+    // 如果启用了倒角，将调整后的半径映射回原始半径范围
+    float EffectiveRadius = Radius;
+    
+    if (bEnableBevel)
+    {
+        // 将调整后的半径映射回原始半径范围
+        const float AdjustedInnerRadius = HollowPrism.InnerRadius + HollowPrism.BevelRadius;
+        const float AdjustedOuterRadius = HollowPrism.OuterRadius - HollowPrism.BevelRadius;
+        
+        // 如果 Radius 接近调整后的内环半径，映射到原始内环（V=0）
+        if (FMath::IsNearlyEqual(Radius, AdjustedInnerRadius, KINDA_SMALL_NUMBER))
+        {
+            EffectiveRadius = HollowPrism.InnerRadius;
+        }
+        // 如果 Radius 接近调整后的外环半径，映射到原始外环（V=1）
+        else if (FMath::IsNearlyEqual(Radius, AdjustedOuterRadius, KINDA_SMALL_NUMBER))
+        {
+            EffectiveRadius = HollowPrism.OuterRadius;
+        }
+        // 如果 Radius 在调整范围内，线性映射回原始范围
+        else if (Radius >= AdjustedInnerRadius && Radius <= AdjustedOuterRadius)
+        {
+            const float AdjustedRange = AdjustedOuterRadius - AdjustedInnerRadius;
+            if (AdjustedRange > KINDA_SMALL_NUMBER)
+            {
+                const float Alpha = (Radius - AdjustedInnerRadius) / AdjustedRange;
+                EffectiveRadius = HollowPrism.InnerRadius + Alpha * (HollowPrism.OuterRadius - HollowPrism.InnerRadius);
+            }
+        }
+        // 如果 Radius 超出调整范围，可能是特殊情况，直接使用原始范围计算
+        // （这种情况理论上不应该发生，但为了安全起见保留）
+    }
+    
+    const float RadiusRange = HollowPrism.OuterRadius - HollowPrism.InnerRadius;
+    const float V = (RadiusRange > KINDA_SMALL_NUMBER) ? 
+        ((EffectiveRadius - HollowPrism.InnerRadius) / RadiusRange) : 0.5f;
     const float NormalizedV = FMath::Clamp(V, 0.0f, 1.0f);
     
     // 计算V值偏移，确保与其他部分连续
+    // 只有在启用倒角时才使用倒角高度
     const float TotalHeight = 2.0f * HollowPrism.GetHalfHeight();
-    const float BevelHeight = HollowPrism.BevelRadius;
+    const float BevelHeight = bEnableBevel ? HollowPrism.BevelRadius : 0.0f;
     const float WallHeight = TotalHeight - 2.0f * BevelHeight;
     const float OuterCircumference = 2.0f * PI * HollowPrism.OuterRadius;
-    const float RadiusRange = HollowPrism.OuterRadius - HollowPrism.InnerRadius;
     
     const float WallVScale = WallHeight / OuterCircumference;
     const float BevelVScale = BevelHeight / OuterCircumference;
@@ -749,8 +790,9 @@ FVector2D FHollowPrismBuilder::CalculateBevelUV(float Angle, float Alpha, EInner
     float NormalizedAngle = (Angle - StartAngle) / ArcAngleRadians;
     NormalizedAngle = FMath::Clamp(NormalizedAngle, 0.0f, 1.0f);
     
+    // 只有在启用倒角时才使用倒角高度
     const float TotalHeight = 2.0f * HollowPrism.GetHalfHeight();
-    const float BevelHeight = HollowPrism.BevelRadius;
+    const float BevelHeight = bEnableBevel ? HollowPrism.BevelRadius : 0.0f;
     const float WallHeight = TotalHeight - 2.0f * BevelHeight;
     const float OuterCircumference = 2.0f * PI * HollowPrism.OuterRadius;
     const float RadiusRange = HollowPrism.OuterRadius - HollowPrism.InnerRadius;

@@ -30,10 +30,13 @@ bool FFrustumBuilder::Generate(FModelGenMeshData& OutMeshData)
 
     Clear();
     ReserveMemory();
+    
+    // 计算是否启用倒角
+    bEnableBevel = Frustum.BevelRadius > 0.0f;
 
     CreateSideGeometry();
 
-    if (Frustum.BevelRadius > 0.0f)
+    if (bEnableBevel)
     {
         GenerateBevelGeometry(EHeightPosition::Top);
         GenerateBevelGeometry(EHeightPosition::Bottom);
@@ -334,7 +337,6 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(
 	const bool bIsBevelConnection = (FMath::Abs(Z - TopBevelStartZ) < KINDA_SMALL_NUMBER) || 
 	                                 (FMath::Abs(Z - BottomBevelStartZ) < KINDA_SMALL_NUMBER);
 	const bool bIsTopBevel = FMath::Abs(Z - TopBevelStartZ) < KINDA_SMALL_NUMBER;
-	const bool bHasBevel = Frustum.BevelRadius > 0.0f;
 
 	for (int32 i = 0; i < VertexCount; ++i)
 	{
@@ -342,7 +344,7 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(
 		const FVector Pos(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), AdjustedZ);
 		FVector Normal = FVector(Pos.X, Pos.Y, 0).GetSafeNormal();
 		
-		if (bIsBevelConnection && bHasBevel)
+		if (bIsBevelConnection && bEnableBevel)
 		{
 			FVector SideNormal = Normal;
 			FVector CapNormal = FVector(0.0f, 0.0f, bIsTopBevel ? 1.0f : -1.0f);
@@ -430,7 +432,7 @@ void FFrustumBuilder::GenerateCapGeometry(float Z, int32 Sides, float Radius, EH
 		// 法线计算：软边时使用平滑法线（端盖法线 + 侧边法线的归一化和）
 		FVector CurrentVertexNormal = Normal;
 		FVector NextVertexNormal = Normal;
-		if (Frustum.BevelRadius > 0.0f)
+		if (bEnableBevel)
 		{
 			FVector CapNormal = Normal;
 			
@@ -485,7 +487,7 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition)
 	const float HalfHeight = Frustum.GetHalfHeight();
 	const float BevelRadius = Frustum.BevelRadius;
 
-	if (BevelRadius <= 0.0f)
+	if (!bEnableBevel)
 	{
 		return;
 	}
@@ -552,7 +554,7 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition)
 		
 		// 法线计算：软边使用平滑法线（侧边和端盖法线的归一化和），参考BevelCube的实现
 		FVector StartRingNormal, EndRingNormal;
-		if (BevelRadius > 0.0f)
+		if (bEnableBevel)
 		{
 			FVector SmoothNormal = (SideNormal + CapNormal).GetSafeNormal();
 			StartRingNormal = SmoothNormal;
@@ -564,7 +566,7 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition)
 			EndRingNormal = CapNormal;
 		}
 		int32 StartRingVertexIndex;
-		if (BevelRadius > 0.0f && SideRing.Num() > 0)
+		if (bEnableBevel && SideRing.Num() > 0)
 		{
 			const float SideRingRatio = static_cast<float>(s) / (RingSize - 1);
 			const int32 SideRingIndex = FMath::Clamp(FMath::RoundToInt(SideRingRatio * (SideRing.Num() - 1)), 0, SideRing.Num() - 1);
@@ -584,7 +586,7 @@ void FFrustumBuilder::GenerateBevelGeometry(EHeightPosition HeightPosition)
 		const FVector CapPos(CapRadius * FMath::Cos(angle), CapRadius * FMath::Sin(angle), AdjustedEndZ);
 		
 		int32 EndRingVertexIndex;
-		if (BevelRadius > 0.0f && CapRing.Num() > 0)
+		if (bEnableBevel && CapRing.Num() > 0)
 		{
 			const float CapRingRatio = static_cast<float>(s) / (RingSize - 1);
 			const int32 CapRingIndex = FMath::Clamp(FMath::RoundToInt(CapRingRatio * (CapRing.Num() - 1)), 0, CapRing.Num() - 1);

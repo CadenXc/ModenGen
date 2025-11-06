@@ -53,7 +53,7 @@ bool AHollowPrism::IsValid() const
            InnerRadius < OuterRadius &&
            InnerSides >= 3 && OuterSides >= 3 &&
            ArcAngle > 0.0f && ArcAngle <= 360.0f &&
-           BevelRadius >= 0.0f && BevelSegments >= 1;
+           BevelRadius >= 0.0f && BevelSegments >= 0;
 }
 
 float AHollowPrism::GetWallThickness() const
@@ -76,7 +76,7 @@ int32 AHollowPrism::CalculateVertexCountEstimate() const
     const int32 BaseVertices = InnerSides + OuterSides;
     
     int32 BevelVertices = 0;
-    if (BevelRadius > 0.0f)
+    if (BevelRadius > 0.0f && BevelSegments > 0)
     {
         BevelVertices = (InnerSides + OuterSides) * BevelSegments * 2;
     }
@@ -100,7 +100,7 @@ int32 AHollowPrism::CalculateTriangleCountEstimate() const
     const int32 BaseTriangles = InnerSides + OuterSides;
     
     int32 BevelTriangles = 0;
-    if (BevelRadius > 0.0f)
+    if (BevelRadius > 0.0f && BevelSegments > 0)
     {
         BevelTriangles = (InnerSides + OuterSides) * BevelSegments * 2;
     }
@@ -282,7 +282,7 @@ void AHollowPrism::SetBevelRadius(float NewBevelRadius)
 
 void AHollowPrism::SetBevelSegments(int32 NewBevelSegments)
 {
-    if (NewBevelSegments >= 1 && NewBevelSegments <= 20 && NewBevelSegments != BevelSegments)
+    if (NewBevelSegments >= 0 && NewBevelSegments <= 20 && NewBevelSegments != BevelSegments)
     {
         int32 OldBevelSegments = BevelSegments;
         BevelSegments = NewBevelSegments;

@@ -25,6 +25,9 @@ public:
 
 private:
     const AFrustum& Frustum;
+    
+    // 是否启用倒角：BevelRadius > 0
+    bool bEnableBevel;
 
     float StartAngle;
     float EndAngle;

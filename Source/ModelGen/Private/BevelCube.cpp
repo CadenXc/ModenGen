@@ -46,16 +46,24 @@ bool ABevelCube::IsValid() const
 {
     return CubeSize > 0.0f && 
            BevelRadius >= 0.0f && BevelRadius < GetHalfSize() && 
-           BevelSegments >= 1 && BevelSegments <= 10;
+           BevelSegments >= 0 && BevelSegments <= 10;
 }
 
 int32 ABevelCube::GetVertexCount() const
 {
+    if (BevelSegments == 0)
+    {
+        return 24;
+    }
     return 24 + 24 * (BevelSegments + 1) + 4 * (BevelSegments + 1) * (BevelSegments + 1);
 }
 
 int32 ABevelCube::GetTriangleCount() const
 {
+    if (BevelSegments == 0)
+    {
+        return 12;
+    }
     return 12 + 24 * BevelSegments + 8 * BevelSegments * BevelSegments;
 }
 
@@ -97,7 +105,7 @@ void ABevelCube::SetBevelRadius(float NewBevelRadius)
 
 void ABevelCube::SetBevelSegments(int32 NewBevelSegments)
 {
-    if (NewBevelSegments >= 1 && NewBevelSegments <= 10 && NewBevelSegments != BevelSegments)
+    if (NewBevelSegments >= 0 && NewBevelSegments <= 10 && NewBevelSegments != BevelSegments)
     {
         int32 OldBevelSegments = BevelSegments;
         BevelSegments = NewBevelSegments;

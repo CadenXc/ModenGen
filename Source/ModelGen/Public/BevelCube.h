@@ -38,8 +38,8 @@ public:
     void SetBevelRadius(float NewBevelRadius);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters", 
-        meta = (ClampMin = "1", ClampMax = "10", UIMin = "1", UIMax = "10", 
-        DisplayName = "Bevel Sections"))
+        meta = (ClampMin = "0", ClampMax = "10", UIMin = "0", UIMax = "10", 
+        DisplayName = "Bevel Sections", ToolTip = "倒角分段数。0表示不启用倒角"))
     int32 BevelSegments = 3;
 
     UFUNCTION(BlueprintCallable, Category = "BevelCube|Parameters")

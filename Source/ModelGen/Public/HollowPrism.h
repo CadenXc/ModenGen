@@ -73,7 +73,8 @@ public:
     void SetBevelRadius(float NewBevelRadius);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Bevel", 
-        meta = (ClampMin = "1", ClampMax = "20", DisplayName = "Bevel Sections"))
+        meta = (ClampMin = "0", ClampMax = "20", UIMin = "0", UIMax = "20", 
+        DisplayName = "Bevel Sections", ToolTip = "倒角分段数。0表示不启用倒角"))
     int32 BevelSegments = 4;
 
     UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")

@@ -43,6 +43,9 @@ public:
 
 private:
     const ABevelCube& BevelCube;
+    
+    // 是否启用倒角：BevelSegments > 0 且 BevelRadius > 0 且 HalfSize > InnerOffset
+    bool bEnableBevel;
 
     // 几何参数
     float HalfSize;

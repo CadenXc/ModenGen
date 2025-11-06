@@ -25,6 +25,15 @@ bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
 
     Clear();
     ReserveMemory();
+    
+    // 更新缓存的几何参数
+    HalfSize = BevelCube.GetHalfSize();
+    InnerOffset = BevelCube.GetInnerOffset();
+    BevelRadius = BevelCube.BevelRadius;
+    BevelSegments = BevelCube.BevelSegments;
+    
+    // 计算是否启用倒角
+    bEnableBevel = BevelSegments > 0 && BevelRadius > 0.0f && HalfSize > InnerOffset;
 
     // 定义6个面的展开信息，构成一个4x4的UV网格布局（十字架形）
     //      [Top]
@@ -70,16 +79,18 @@ int32 FBevelCubeBuilder::CalculateTriangleCountEstimate() const
 
 void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
 {
-    // 处理特殊情况：无倒角时，只生成主面的4个顶点（一个大正方形）
     TArray<float> UPositions;
     TArray<float> VPositions;
-    if (BevelSegments <= 0 || HalfSize <= InnerOffset)
+    
+    if (!bEnableBevel)
     {
+        // 无倒角时，只生成主面的4个顶点（一个大正方形）
         UPositions = { -HalfSize, HalfSize };
         VPositions = { -HalfSize, HalfSize };
     }
     else
     {
+        // 有倒角时，生成非均匀分布的顶点
         const float Step = (HalfSize - InnerOffset) / static_cast<float>(BevelSegments);
         for (int32 i = 0; i <= BevelSegments; ++i)
         {
@@ -139,8 +150,8 @@ void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
             FVector SurfaceNormal;
             FVector VertexPos;
 
-            // 判断是否有倒角：BevelRadius > 0 时为软边，BevelRadius = 0 时为硬边
-            const bool bHasBevel = BevelRadius > 0.0f;
+            // 判断是否有倒角：只有在启用倒角时才使用软边法线
+            const bool bHasBevel = bEnableBevel;
             const bool bInMainPlane = (FMath::Abs(local_u) <= InnerOffset) && (FMath::Abs(local_v) <= InnerOffset);
 
             if (bInMainPlane)
