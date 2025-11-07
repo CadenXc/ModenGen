@@ -39,7 +39,7 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Geometry", 
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Height"))
-    float Height = 200.0f;
+    float Height = 100.0f;
 
     UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
     void SetHeight(float NewHeight);

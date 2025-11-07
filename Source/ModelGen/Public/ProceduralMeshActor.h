@@ -51,12 +51,6 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Collision")
     bool bGenerateCollision = true;
 
-    // 碰撞类型：true=复杂碰撞（精确但性能较低）, false=简单碰撞（快速但不够精确）
-    // 默认使用简单碰撞以获得更好的性能
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|Collision",
-        meta = (DisplayName = "使用复杂碰撞"))
-    bool bUseComplexCollision = true;
-
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ProceduralMesh|StaticMesh")
     bool bShowStaticMeshComponent = true;

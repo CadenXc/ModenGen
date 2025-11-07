@@ -68,7 +68,7 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Bevel", 
         meta = (ClampMin = "0.0", ClampMax = "250", UIMin = "0.0", UIMax = "250", DisplayName = "Bevel Radius"))
-    float BevelRadius = 5.0f;
+    float BevelRadius = 0.0f;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetBevelRadius(float NewBevelRadius);

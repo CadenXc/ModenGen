@@ -7,6 +7,7 @@
 #include "Materials/MaterialInterface.h"
 #include "MeshDescription.h"
 #include "MeshDescriptionBuilder.h"
+#include "NavCollision.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "ProceduralMeshComponent.h"
@@ -238,7 +239,6 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
 
     const int32 NumSections = ProceduralMeshComponent->GetNumSections();
 
-    // 创建 StaticMesh
     UStaticMesh* StaticMesh = NewObject<UStaticMesh>(
         GetTransientPackage(), NAME_None, RF_Public | RF_Standalone);
     if (!StaticMesh)
@@ -247,24 +247,26 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
         return nullptr;
     }
 
-    // 基础属性
+    StaticMesh->AddToRoot();
+    StaticMesh->SetFlags(RF_Public | RF_Standalone);
     StaticMesh->NeverStream = true;
     StaticMesh->bAllowCPUAccess = true;
-    // StaticMesh->bIsBuiltAtRuntime = true;  // 运行时生成标记（可选，UE版本可能不支持）
-    StaticMesh->SetLightMapResolution(64);
-    StaticMesh->SetLightMapCoordinateIndex(1);
+    StaticMesh->LightMapResolution = 64;
+    StaticMesh->LightMapCoordinateIndex = 1;
+    StaticMesh->LODForCollision = 0;
     StaticMesh->bGenerateMeshDistanceField = false;
     StaticMesh->bHasNavigationData = false;
+    StaticMesh->bSupportPhysicalMaterialMasks = false;
+    StaticMesh->bSupportUniformlyDistributedSampling = false;
+    StaticMesh->LpvBiasMultiplier = 1.0f;
 
-    // 提前创建 BodySetup（关键！）
     StaticMesh->CreateBodySetup();
-    UBodySetup* NewBodySetup = StaticMesh->GetBodySetup();
+    UBodySetup* NewBodySetup = StaticMesh->BodySetup;
     if (!NewBodySetup)
     {
         return nullptr;
     }
 
-    // 构建 MeshDescription
     FMeshDescription MeshDescription;
     FStaticMeshAttributes Attributes(MeshDescription);
     Attributes.Register();
@@ -272,12 +274,11 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
     FMeshDescriptionBuilder MeshDescBuilder;
     MeshDescBuilder.SetMeshDescription(&MeshDescription);
     MeshDescBuilder.EnablePolyGroups();
-    MeshDescBuilder.SetNumUVLayers(1);
+    MeshDescBuilder.SetNumUVLayers(2);
 
     TMap<FVector, FVertexID> VertexMap;
     TArray<FName> MaterialSlotNames;
 
-    // 预处理材质槽
     for (int32 SectionIdx = 0; SectionIdx < NumSections; ++SectionIdx)
     {
         FProcMeshSection* Section = ProceduralMeshComponent->GetProcMeshSection(SectionIdx);
@@ -291,7 +292,6 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
         StaticMat.MaterialSlotName = SlotName;
         StaticMat.UVChannelData.bInitialized = true;
 
-        // 计算 UV 密度
         float UVDensity = 100.0f;
         if (Section->ProcVertexBuffer.Num() > 0)
         {
@@ -314,10 +314,9 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
             StaticMat.UVChannelData.LocalUVDensities[i] = UVDensity;
         }
 
-        StaticMesh->GetStaticMaterials().Add(StaticMat);
+        StaticMesh->StaticMaterials.Add(StaticMat);
     }
 
-    // 填充顶点和三角形
     for (int32 SectionIdx = 0; SectionIdx < NumSections; ++SectionIdx)
     {
         FProcMeshSection* Section = ProceduralMeshComponent->GetProcMeshSection(SectionIdx);
@@ -325,7 +324,8 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
             continue;
 
         FPolygonGroupID PolyGroupID = MeshDescBuilder.AppendPolygonGroup();
-        Attributes.GetPolygonGroupMaterialSlotNames().Set(PolyGroupID, MaterialSlotNames[SectionIdx]);
+        FName SlotName = MaterialSlotNames.IsValidIndex(SectionIdx) ? MaterialSlotNames[SectionIdx] : NAME_None;
+        Attributes.GetPolygonGroupMaterialSlotNames().Set(PolyGroupID, SlotName);
 
         TArray<FVertexInstanceID> InstanceIDs;
         InstanceIDs.Reserve(Section->ProcVertexBuffer.Num());
@@ -345,8 +345,8 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
 
             FVertexInstanceID InstanceID = MeshDescBuilder.AppendInstance(VertID);
             MeshDescBuilder.SetInstanceNormal(InstanceID, ProcVert.Normal);
-            // 注意：FMeshDescriptionBuilder 没有 SetInstanceTangent，切线会在 BuildFromMeshDescriptions 时自动计算
             MeshDescBuilder.SetInstanceUV(InstanceID, ProcVert.UV0, 0);
+            MeshDescBuilder.SetInstanceUV(InstanceID, ProcVert.UV0, 1);
             MeshDescBuilder.SetInstanceColor(InstanceID, FLinearColor(ProcVert.Color));
 
             InstanceIDs.Add(InstanceID);
@@ -356,19 +356,14 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
         {
             if (i + 2 >= Section->ProcIndexBuffer.Num()) break;
 
-            int32 I0 = (int32)Section->ProcIndexBuffer[i];
-            int32 I1 = (int32)Section->ProcIndexBuffer[i + 1];
-            int32 I2 = (int32)Section->ProcIndexBuffer[i + 2];
+            int32 I0 = Section->ProcIndexBuffer[i];
+            int32 I1 = Section->ProcIndexBuffer[i + 1];
+            int32 I2 = Section->ProcIndexBuffer[i + 2];
 
             if (I0 >= InstanceIDs.Num() || I1 >= InstanceIDs.Num() || I2 >= InstanceIDs.Num())
                 continue;
 
-            MeshDescBuilder.AppendTriangle(
-                InstanceIDs[I0],
-                InstanceIDs[I1],
-                InstanceIDs[I2],
-                PolyGroupID
-            );
+            MeshDescBuilder.AppendTriangle(InstanceIDs[I0], InstanceIDs[I1], InstanceIDs[I2], PolyGroupID);
         }
     }
 
@@ -377,126 +372,63 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
         return nullptr;
     }
 
-    // === 关键：配置 BuildParams 和 BodySetup ===
     UStaticMesh::FBuildMeshDescriptionsParams BuildParams;
-    // 设置基本参数
-    BuildParams.bMarkPackageDirty = false;  // 运行时生成不需要标记包为脏
+    BuildParams.bMarkPackageDirty = false;
     BuildParams.bUseHashAsGuid = false;
     BuildParams.bCommitMeshDescription = true;
-    BuildParams.bFastBuild = false;
-    BuildParams.bAllowCpuAccess = true;  // 允许CPU访问（用于运行时生成）
+    BuildParams.bBuildSimpleCollision = false;
 
-    if (bUseComplexCollision)
-    {
-        // 使用网格本身作为简单碰撞
-        NewBodySetup->CollisionTraceFlag = CTF_UseComplexAsSimple;
-        BuildParams.bBuildSimpleCollision = false;  // 关闭自动包围盒
-    }
-    else
-    {
-        // 使用简单碰撞（引擎生成或手动）
-        NewBodySetup->CollisionTraceFlag = CTF_UseDefault;
-        BuildParams.bBuildSimpleCollision = true;
-    }
-
-    // === 构建 StaticMesh ===
     TArray<const FMeshDescription*> MeshDescriptions = { &MeshDescription };
     StaticMesh->BuildFromMeshDescriptions(MeshDescriptions, BuildParams);
 
-    // === 设置材质 ===
-    for (int32 SectionIdx = 0; SectionIdx < NumSections && SectionIdx < StaticMesh->GetStaticMaterials().Num(); ++SectionIdx)
+    for (int32 SectionIdx = 0; SectionIdx < NumSections && SectionIdx < StaticMesh->StaticMaterials.Num(); ++SectionIdx)
     {
         UMaterialInterface* Mat = ProceduralMeshComponent->GetMaterial(SectionIdx);
         if (!Mat && ProceduralDefaultMaterial)
             Mat = ProceduralDefaultMaterial;
-        StaticMesh->GetStaticMaterials()[SectionIdx].MaterialInterface = Mat;
+        StaticMesh->StaticMaterials[SectionIdx].MaterialInterface = Mat;
     }
 
-    // === 简单碰撞手动 fallback（无论复杂/简单模式，都强制生成 ConvexElem 作为备用）===
-    bool bGeneratedSimpleCollision = false;
-
-    // 尝试从 ProceduralMesh 复制（优先）
-    if (ProceduralMeshComponent->ProcMeshBodySetup &&
-        ProceduralMeshComponent->ProcMeshBodySetup->AggGeom.GetElementCount() > 0)
+    TArray<FVector> AllVertices;
+    TVertexAttributesRef<FVector> VertexPositions = Attributes.GetVertexPositions();
+    for (const FVertexID& VertID : MeshDescription.Vertices().GetElementIDs())
     {
-        NewBodySetup->AggGeom = ProceduralMeshComponent->ProcMeshBodySetup->AggGeom;
-        bGeneratedSimpleCollision = true;
-        UE_LOG(LogTemp, Log, TEXT("从 ProceduralMesh 复制了 AggGeom（元素数: %d）"),
-            NewBodySetup->AggGeom.GetElementCount());
+        AllVertices.Add(VertexPositions[VertID]);
     }
 
-    // 如果未复制，生成 ConvexElem（用唯一顶点）
-    if (!bGeneratedSimpleCollision)
+    NewBodySetup->CollisionTraceFlag = CTF_UseDefault;
+
+    if (AllVertices.Num() >= 4)
     {
-        TArray<FVector> UniqueVertices;
-        TMap<FString, bool> VertexKeyMap;
-        const float Tolerance = 0.01f;
-
-        for (int32 SectionIdx = 0; SectionIdx < NumSections; ++SectionIdx)
+        FKConvexElem ConvexElem;
+        ConvexElem.VertexData = AllVertices;
+        ConvexElem.UpdateElemBox();
+        NewBodySetup->AggGeom.ConvexElems.Add(ConvexElem);
+    }
+    else if (AllVertices.Num() > 0)
+    {
+        const FBox BoundingBox = MeshDescription.ComputeBoundingBox();
+        if (BoundingBox.IsValid)
         {
-            FProcMeshSection* SectionData = ProceduralMeshComponent->GetProcMeshSection(SectionIdx);
-            if (SectionData && SectionData->ProcVertexBuffer.Num() > 0)
-            {
-                for (const FProcMeshVertex& Vertex : SectionData->ProcVertexBuffer)
-                {
-                    int32 X = FMath::RoundToInt(Vertex.Position.X / Tolerance);
-                    int32 Y = FMath::RoundToInt(Vertex.Position.Y / Tolerance);
-                    int32 Z = FMath::RoundToInt(Vertex.Position.Z / Tolerance);
-                    FString VertexKey = FString::Printf(TEXT("%d_%d_%d"), X, Y, Z);
-
-                    if (!VertexKeyMap.Contains(VertexKey))
-                    {
-                        VertexKeyMap.Add(VertexKey, true);
-                        UniqueVertices.Add(Vertex.Position);
-                    }
-                }
-            }
-        }
-
-        if (UniqueVertices.Num() >= 4)
-        {
-            FKConvexElem ConvexElem;
-            ConvexElem.VertexData = UniqueVertices;
-            ConvexElem.UpdateElemBox();  // 更新包围盒（无参数）
-            NewBodySetup->AggGeom.ConvexElems.Add(ConvexElem);
-            bGeneratedSimpleCollision = true;
-            UE_LOG(LogTemp, Log, TEXT("生成了 ConvexElem（顶点数: %d）"), UniqueVertices.Num());
-        }
-        else if (UniqueVertices.Num() > 0)
-        {
-            // Fallback 到 BoxElem
-            const FBoxSphereBounds& Bounds = StaticMesh->GetBounds();
-            if (Bounds.BoxExtent.Size() > 0)
-            {
-                FKBoxElem BoxElem;
-                BoxElem.Center = Bounds.Origin;
-                BoxElem.X = Bounds.BoxExtent.X * 2.0f;
-                BoxElem.Y = Bounds.BoxExtent.Y * 2.0f;
-                BoxElem.Z = Bounds.BoxExtent.Z * 2.0f;
-                // BoxElem 无 UpdateElemBox()，包围盒自动基于 Center/X/Y/Z 更新
-                NewBodySetup->AggGeom.BoxElems.Add(BoxElem);
-                bGeneratedSimpleCollision = true;
-                UE_LOG(LogTemp, Log, TEXT("Fallback 到 BoxElem（基于 Bounds）"));
-            }
+            FKBoxElem BoxElem;
+            BoxElem.Center = BoundingBox.GetCenter();
+            BoxElem.X = BoundingBox.GetSize().X;
+            BoxElem.Y = BoundingBox.GetSize().Y;
+            BoxElem.Z = BoundingBox.GetSize().Z;
+            NewBodySetup->AggGeom.BoxElems.Add(BoxElem);
         }
     }
 
-    // 如果复杂模式，AggGeom 作为简单备用
-    if (bUseComplexCollision && bGeneratedSimpleCollision)
-    {
-        UE_LOG(LogTemp, Log, TEXT("复杂模式下生成了简单碰撞备用（AggGeom 元素: %d）"),
-            NewBodySetup->AggGeom.GetElementCount());
-        // 保持 CollisionTraceFlag=UseComplexAsSimple（优先复杂）
-    }
-
-    // === BodySetup 通用设置 ===
-    NewBodySetup->bDoubleSidedGeometry = true;
     NewBodySetup->bGenerateMirroredCollision = false;
     NewBodySetup->bGenerateNonMirroredCollision = true;
+    NewBodySetup->bDoubleSidedGeometry = true;
+    NewBodySetup->bSupportUVsAndFaceRemap = false;
+    NewBodySetup->bConsiderForBounds = true;
     NewBodySetup->bMeshCollideAll = true;
+    NewBodySetup->PhysicsType = EPhysicsType::PhysType_Default;
     NewBodySetup->BuildScale3D = FVector(1.0f);
 
-    if (ProceduralMeshComponent->ProcMeshBodySetup && ProceduralMeshComponent->ProcMeshBodySetup->PhysMaterial)
+    if (ProceduralMeshComponent->ProcMeshBodySetup)
     {
         NewBodySetup->PhysMaterial = ProceduralMeshComponent->ProcMeshBodySetup->PhysMaterial;
     }
@@ -504,135 +436,35 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
     if (bGenerateCollision)
     {
         NewBodySetup->DefaultInstance.SetCollisionProfileName(TEXT("BlockAll"));
+        NewBodySetup->DefaultInstance.SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+        NewBodySetup->DefaultInstance.SetEnableGravity(false);
+        NewBodySetup->DefaultInstance.bUseCCD = false;
     }
     else
     {
         NewBodySetup->DefaultInstance.SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        NewBodySetup->DefaultInstance.SetResponseToAllChannels(ECR_Ignore);
     }
 
-    // 刷新物理
     NewBodySetup->InvalidatePhysicsData();
     NewBodySetup->CreatePhysicsMeshes();
 
-    // === 打印 UStaticMesh 数据（重点关注 ConvexElem）===
-    UE_LOG(LogTemp, Log, TEXT("========================================"));
-    UE_LOG(LogTemp, Log, TEXT("=== UStaticMesh 数据输出 ==="));
-    UE_LOG(LogTemp, Log, TEXT("========================================"));
-
-    // StaticMesh 基本信息
-    UE_LOG(LogTemp, Log, TEXT("StaticMesh 名称: %s"), *StaticMesh->GetName());
-    UE_LOG(LogTemp, Log, TEXT("StaticMesh 材质槽数量: %d"), StaticMesh->GetStaticMaterials().Num());
-    UE_LOG(LogTemp, Log, TEXT("StaticMesh 渲染数据 LOD 数量: %d"), StaticMesh->GetNumLODs());
-
-    // Bounds 信息
-    const FBoxSphereBounds& Bounds = StaticMesh->GetBounds();
-    UE_LOG(LogTemp, Log, TEXT("StaticMesh Bounds - Origin: %s, Extent: %s"),
-        *Bounds.Origin.ToString(), *Bounds.BoxExtent.ToString());
-
-    // BodySetup 信息
-    if (NewBodySetup)
+    if (!StaticMesh->NavCollision)
     {
-        UE_LOG(LogTemp, Log, TEXT("--- BodySetup 信息 ---"));
-        UE_LOG(LogTemp, Log, TEXT("  CollisionTraceFlag: %d (%s)"),
-            (int32)NewBodySetup->CollisionTraceFlag,
-            NewBodySetup->CollisionTraceFlag == CTF_UseComplexAsSimple ? TEXT("UseComplexAsSimple") :
-            NewBodySetup->CollisionTraceFlag == CTF_UseSimpleAsComplex ? TEXT("UseSimpleAsComplex") :
-            NewBodySetup->CollisionTraceFlag == CTF_UseDefault ? TEXT("UseDefault") : TEXT("Unknown"));
-        UE_LOG(LogTemp, Log, TEXT("  bDoubleSidedGeometry: %s"), NewBodySetup->bDoubleSidedGeometry ? TEXT("true") : TEXT("false"));
-        UE_LOG(LogTemp, Log, TEXT("  bGenerateMirroredCollision: %s"), NewBodySetup->bGenerateMirroredCollision ? TEXT("true") : TEXT("false"));
-        UE_LOG(LogTemp, Log, TEXT("  bGenerateNonMirroredCollision: %s"), NewBodySetup->bGenerateNonMirroredCollision ? TEXT("true") : TEXT("false"));
-        UE_LOG(LogTemp, Log, TEXT("  bMeshCollideAll: %s"), NewBodySetup->bMeshCollideAll ? TEXT("true") : TEXT("false"));
-
-        // DefaultInstance 信息
-        UE_LOG(LogTemp, Log, TEXT("  DefaultInstance.CollisionEnabled: %s"),
-            NewBodySetup->DefaultInstance.GetCollisionEnabled() == ECollisionEnabled::QueryAndPhysics ? TEXT("QueryAndPhysics") :
-            NewBodySetup->DefaultInstance.GetCollisionEnabled() == ECollisionEnabled::QueryOnly ? TEXT("QueryOnly") :
-            NewBodySetup->DefaultInstance.GetCollisionEnabled() == ECollisionEnabled::PhysicsOnly ? TEXT("PhysicsOnly") :
-            TEXT("NoCollision"));
-        UE_LOG(LogTemp, Log, TEXT("  DefaultInstance.CollisionProfileName: %s"),
-            *NewBodySetup->DefaultInstance.GetCollisionProfileName().ToString());
-
-        // AggGeom 信息
-        const FKAggregateGeom& AggGeom = NewBodySetup->AggGeom;
-        const int32 TotalElementCount = AggGeom.GetElementCount();
-        UE_LOG(LogTemp, Log, TEXT("--- AggGeom 信息 ---"));
-        UE_LOG(LogTemp, Log, TEXT("  总元素数量: %d"), TotalElementCount);
-        UE_LOG(LogTemp, Log, TEXT("  ConvexElems: %d"), AggGeom.ConvexElems.Num());
-        UE_LOG(LogTemp, Log, TEXT("  BoxElems: %d"), AggGeom.BoxElems.Num());
-        UE_LOG(LogTemp, Log, TEXT("  SphereElems: %d"), AggGeom.SphereElems.Num());
-        UE_LOG(LogTemp, Log, TEXT("  SphylElems: %d"), AggGeom.SphylElems.Num());
-        UE_LOG(LogTemp, Log, TEXT("  TaperedCapsuleElems: %d"), AggGeom.TaperedCapsuleElems.Num());
-
-        // === 详细输出 ConvexElems ===
-        if (AggGeom.ConvexElems.Num() > 0)
-        {
-            UE_LOG(LogTemp, Log, TEXT("--- ConvexElems 详细信息 ---"));
-            for (int32 ConvexIdx = 0; ConvexIdx < AggGeom.ConvexElems.Num(); ++ConvexIdx)
-            {
-                const FKConvexElem& ConvexElem = AggGeom.ConvexElems[ConvexIdx];
-                UE_LOG(LogTemp, Log, TEXT("  ConvexElem[%d]:"), ConvexIdx);
-                UE_LOG(LogTemp, Log, TEXT("    顶点数量 (VertexData): %d"), ConvexElem.VertexData.Num());
-
-                // 输出所有顶点
-                for (int32 VertIdx = 0; VertIdx < ConvexElem.VertexData.Num(); ++VertIdx)
-                {
-                    UE_LOG(LogTemp, Log, TEXT("      Vertex[%d]: %s"), VertIdx, *ConvexElem.VertexData[VertIdx].ToString());
-                }
-
-                // 输出 ConvexElem 的其他属性
-                UE_LOG(LogTemp, Log, TEXT("    ElemBox: Min=%s, Max=%s"),
-                    *ConvexElem.ElemBox.Min.ToString(), *ConvexElem.ElemBox.Max.ToString());
-                UE_LOG(LogTemp, Log, TEXT("    Transform: %s"), *ConvexElem.GetTransform().ToString());
-            }
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning, TEXT("--- ConvexElems 为空！---"));
-        }
-
-        // === 输出其他碰撞几何元素（如果有）===
-        if (AggGeom.BoxElems.Num() > 0)
-        {
-            UE_LOG(LogTemp, Log, TEXT("--- BoxElems 详细信息 ---"));
-            for (int32 BoxIdx = 0; BoxIdx < AggGeom.BoxElems.Num(); ++BoxIdx)
-            {
-                const FKBoxElem& BoxElem = AggGeom.BoxElems[BoxIdx];
-                UE_LOG(LogTemp, Log, TEXT("  BoxElem[%d]: Center=%s, X=%.2f, Y=%.2f, Z=%.2f"),
-                    BoxIdx, *BoxElem.Center.ToString(), BoxElem.X, BoxElem.Y, BoxElem.Z);
-            }
-        }
-
-        if (AggGeom.SphereElems.Num() > 0)
-        {
-            UE_LOG(LogTemp, Log, TEXT("--- SphereElems 详细信息 ---"));
-            for (int32 SphereIdx = 0; SphereIdx < AggGeom.SphereElems.Num(); ++SphereIdx)
-            {
-                const FKSphereElem& SphereElem = AggGeom.SphereElems[SphereIdx];
-                UE_LOG(LogTemp, Log, TEXT("  SphereElem[%d]: Center=%s, Radius=%.2f"),
-                    SphereIdx, *SphereElem.Center.ToString(), SphereElem.Radius);
-            }
-        }
-
-        if (AggGeom.SphylElems.Num() > 0)
-        {
-            UE_LOG(LogTemp, Log, TEXT("--- SphylElems 详细信息 ---"));
-            for (int32 SphylIdx = 0; SphylIdx < AggGeom.SphylElems.Num(); ++SphylIdx)
-            {
-                const FKSphylElem& SphylElem = AggGeom.SphylElems[SphylIdx];
-                UE_LOG(LogTemp, Log, TEXT("  SphylElem[%d]: Center=%s, Rotation=%s, Radius=%.2f, Length=%.2f"),
-                    SphylIdx, *SphylElem.Center.ToString(), *SphylElem.Rotation.ToString(),
-                    SphylElem.Radius, SphylElem.Length);
-            }
-        }
+        StaticMesh->CreateNavCollision(false);
+        StaticMesh->bHasNavigationData = true;
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("BodySetup 为空！"));
+        StaticMesh->bHasNavigationData = true;
     }
 
-    UE_LOG(LogTemp, Log, TEXT("========================================"));
-    UE_LOG(LogTemp, Log, TEXT("=== UStaticMesh 数据输出结束 ==="));
-    UE_LOG(LogTemp, Log, TEXT("========================================"));
+    if (StaticMesh->RenderData)
+    {
+        StaticMesh->RenderData->ScreenSize[0].Default = 1.0f;
+        StaticMesh->RenderData->ScreenSize[1].Default = 0.2f;
+        StaticMesh->RenderData->ScreenSize[2].Default = 0.1f;
+    }
 
     StaticMesh->MarkPackageDirty();
 
