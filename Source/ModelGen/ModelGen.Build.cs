@@ -22,6 +22,9 @@ public class ModelGen : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
+		// VHACD模块（运行时可用）
+		PublicDependencyModuleNames.Add("VHACD");
+
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		

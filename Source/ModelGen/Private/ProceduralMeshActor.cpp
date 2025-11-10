@@ -19,6 +19,7 @@
 #include "StaticMeshOperations.h"
 #include "StaticMeshResources.h"
 #include "UObject/ConstructorHelpers.h"
+#include "ModelGenVHACD.h"
 
 AProceduralMeshActor::AProceduralMeshActor()
 {
@@ -709,13 +710,47 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
         }
       }
       
-      // ===== 方式2：基于实际顶点生成碰撞（次优） =====
-      // 优点：基于实际几何体更准确、自动适应几何变化
-      // 策略：顶点数>=4时生成凸包，否则生成包围盒
-      // 适用：PMC无碰撞数据时
+      // ===== 方式2：使用V-HACD凸包分解算法生成多个高精度凸包 =====
+      // 使用UE的V-HACD算法将凹体网格分解成多个凸包
+      // 这样可以准确表示凹体（如空心圆管），同时保持简单碰撞的性能
+      // 适用：PMC无碰撞数据时，使用V-HACD生成高精度多凸包
       if (!bCopiedCollisionData)
       {
-        UE_LOG(LogTemp, Log, TEXT("【方式2】PMC无碰撞数据，基于实际顶点生成碰撞..."));
+        UE_LOG(LogTemp, Log, TEXT("【方式2】使用V-HACD凸包分解算法生成多个高精度凸包..."));
+        
+        // V-HACD参数配置（与编辑器中的"Auto Convex Collision"一致）
+        int32 HullCount = 8;        // 目标凸包数量（根据网格复杂度调整，1-64）
+        int32 MaxHullVerts = 16;    // 每个凸包的最大顶点数（6-32）
+        uint32 HullPrecision = 100000; // 精度（体素数量，10000-1000000）
+        
+        // 调用运行时可用的V-HACD实现
+        bool bSuccess = FModelGenVHACD::GenerateConvexHulls(
+          ProceduralMeshComponent,
+          NewBodySetup,
+          HullCount,
+          MaxHullVerts,
+          HullPrecision);
+        
+        if (bSuccess && NewBodySetup->AggGeom.ConvexElems.Num() > 0)
+        {
+          int32 ConvexCount = NewBodySetup->AggGeom.ConvexElems.Num();
+          UE_LOG(LogTemp, Log, TEXT("【方式2】V-HACD凸包分解成功！生成了 %d 个凸包元素"), ConvexCount);
+          bCopiedCollisionData = true;
+          CollisionSourceType = 2; // 基于V-HACD凸包分解
+        }
+        else
+        {
+          UE_LOG(LogTemp, Warning, TEXT("【方式2】V-HACD凸包分解失败，将使用后备方案"));
+        }
+      }
+      
+      // ===== 方式3：基于实际顶点生成碰撞（后备） =====
+      // 优点：基于实际几何体更准确、自动适应几何变化
+      // 策略：顶点数>=4时生成凸包，否则生成包围盒
+      // 适用：V-HACD失败时的后备方案
+      if (!bCopiedCollisionData)
+      {
+        UE_LOG(LogTemp, Log, TEXT("【方式3】V-HACD失败，基于实际顶点生成碰撞..."));
         
         // 收集所有唯一顶点（用于生成凸包）
         TArray<FVector> AllUniqueVertices;
@@ -761,12 +796,12 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
             ConvexElem.UpdateElemBox();
             NewBodySetup->AggGeom.ConvexElems.Add(ConvexElem);
             
-            UE_LOG(LogTemp, Log, TEXT("【方式2】基于实际顶点创建ConvexElem: 顶点数=%d, 中心=(%.2f, %.2f, %.2f), 包围盒大小=(%.2f, %.2f, %.2f)"),
+            UE_LOG(LogTemp, Log, TEXT("【方式3】基于实际顶点创建ConvexElem: 顶点数=%d, 中心=(%.2f, %.2f, %.2f), 包围盒大小=(%.2f, %.2f, %.2f)"),
               AllUniqueVertices.Num(),
               ConvexElem.ElemBox.GetCenter().X, ConvexElem.ElemBox.GetCenter().Y, ConvexElem.ElemBox.GetCenter().Z,
               ConvexElem.ElemBox.GetSize().X, ConvexElem.ElemBox.GetSize().Y, ConvexElem.ElemBox.GetSize().Z);
             bCopiedCollisionData = true;
-            CollisionSourceType = 2; // 基于实际顶点计算
+            CollisionSourceType = 3; // 基于实际顶点计算
           }
           else
           {
@@ -780,11 +815,11 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
               BoxElem.X = Extent.X * 2.0f;
               BoxElem.Y = Extent.Y * 2.0f;
               BoxElem.Z = Extent.Z * 2.0f;
-              UE_LOG(LogTemp, Log, TEXT("【方式2】顶点数不足4个，创建BoxElem: 中心=(%.2f, %.2f, %.2f), 大小=(%.2f, %.2f, %.2f)"),
+              UE_LOG(LogTemp, Log, TEXT("【方式3】顶点数不足4个，创建BoxElem: 中心=(%.2f, %.2f, %.2f), 大小=(%.2f, %.2f, %.2f)"),
                 Center.X, Center.Y, Center.Z, BoxElem.X, BoxElem.Y, BoxElem.Z);
               NewBodySetup->AggGeom.BoxElems.Add(BoxElem);
               bCopiedCollisionData = true;
-              CollisionSourceType = 2; // 基于实际顶点计算
+              CollisionSourceType = 3; // 基于实际顶点计算
             }
           }
         }
@@ -794,10 +829,10 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
         }
       }
 
-      // ===== 方式3：使用BuildFromMeshDescriptions自动生成的碰撞（后备） =====
+      // ===== 方式4：使用BuildFromMeshDescriptions自动生成的碰撞（后备） =====
       // 优点：引擎标准方法、可靠、基于RenderData->Bounds
       // 缺点：可能不够精确、只有包围盒
-      // 适用：前两种方式都失败时作为后备
+      // 适用：前三种方式都失败时作为后备
       if (!bCopiedCollisionData)
       {
         // 手动设置失败，恢复之前保存的自动生成的碰撞数据
@@ -805,8 +840,8 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
         if (BackupElementCount > 0)
         {
           NewBodySetup->AggGeom = BackupAggGeom;
-          CollisionSourceType = 3; // BuildFromMeshDescriptions自动生成
-          UE_LOG(LogTemp, Log, TEXT("【方式3】手动创建碰撞失败，已恢复自动生成的碰撞（%d个元素）"), 
+          CollisionSourceType = 4; // BuildFromMeshDescriptions自动生成
+          UE_LOG(LogTemp, Log, TEXT("【方式4】手动创建碰撞失败，已恢复自动生成的碰撞（%d个元素）"), 
             BackupElementCount);
           UE_LOG(LogTemp, Log, TEXT("自动生成的碰撞详情 - ConvexElems: %d, BoxElems: %d, SphereElems: %d, SphylElems: %d"),
             BackupAggGeom.ConvexElems.Num(),
@@ -816,7 +851,7 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
         }
         else
         {
-          // ===== 方式4：基于RenderData.Bounds生成（最后的后备） =====
+          // ===== 方式5：基于RenderData.Bounds生成（最后的后备） =====
           // 参考StaticMesh.cpp:5473-5482，这是引擎内部使用的标准方法
           if (StaticMesh->RenderData.IsValid())
           {
@@ -824,7 +859,7 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
             // 检查Bounds是否有效：BoxExtent应该大于0
             if (Bounds.BoxExtent.X > 0.0f && Bounds.BoxExtent.Y > 0.0f && Bounds.BoxExtent.Z > 0.0f)
             {
-              UE_LOG(LogTemp, Warning, TEXT("【方式4】手动创建碰撞失败，且自动生成也未产生碰撞数据，尝试基于RenderData.Bounds生成包围盒..."));
+              UE_LOG(LogTemp, Warning, TEXT("【方式5】手动创建碰撞失败，且自动生成也未产生碰撞数据，尝试基于RenderData.Bounds生成包围盒..."));
 
               FKBoxElem BoxElem;
               BoxElem.Center = Bounds.Origin;
@@ -832,7 +867,7 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
               BoxElem.Y = Bounds.BoxExtent.Y * 2.0f;
               BoxElem.Z = Bounds.BoxExtent.Z * 2.0f;
               NewBodySetup->AggGeom.BoxElems.Add(BoxElem);
-              CollisionSourceType = 4; // 基于RenderData.Bounds生成
+              CollisionSourceType = 5; // 基于RenderData.Bounds生成
               
               UE_LOG(LogTemp, Log, TEXT("基于RenderData.Bounds创建包围盒: 中心=(%.2f, %.2f, %.2f), 大小=(%.2f, %.2f, %.2f)"),
                 BoxElem.Center.X, BoxElem.Center.Y, BoxElem.Center.Z,
