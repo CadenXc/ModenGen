@@ -19,7 +19,7 @@ bool FModelGenVHACD::GenerateConvexHulls(
     }
 
     // 1. 从ProceduralMeshComponent提取顶点和索引
-    TArray<FVector3f> Vertices;
+    TArray<FVector> Vertices;
     TArray<uint32> Indices;
     
     for (int32 SectionIdx = 0; SectionIdx < ProceduralMeshComponent->GetNumSections(); ++SectionIdx)
@@ -32,7 +32,7 @@ bool FModelGenVHACD::GenerateConvexHulls(
         // 添加顶点
         for (const FProcMeshVertex& ProcVertex : Section->ProcVertexBuffer)
         {
-            Vertices.Add(FVector3f(ProcVertex.Position));
+            Vertices.Add(ProcVertex.Position);
         }
         
         // 添加索引（需要调整偏移）

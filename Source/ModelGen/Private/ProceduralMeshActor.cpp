@@ -313,7 +313,7 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
   FMeshDescriptionBuilder MeshDescBuilder;
   MeshDescBuilder.SetMeshDescription(&MeshDescription);
   MeshDescBuilder.EnablePolyGroups();
-  MeshDescBuilder.SetNumUVLayers(1);
+  MeshDescBuilder.SetNumUVLayers(2);
 
   // 4. 从PMC数据填充 FMeshDescription
   TMap<FVector, FVertexID> VertexMap;
@@ -396,6 +396,7 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
       FVertexInstanceID InstanceID = MeshDescBuilder.AppendInstance(VertexID);
       MeshDescBuilder.SetInstanceNormal(InstanceID, ProcVertex.Normal);
       MeshDescBuilder.SetInstanceUV(InstanceID, ProcVertex.UV0, 0);
+      MeshDescBuilder.SetInstanceUV(InstanceID, ProcVertex.UV0, 1); // UV通道1使用UV0的副本
       MeshDescBuilder.SetInstanceColor(InstanceID, FVector4(ProcVertex.Color));
       VertexInstanceIDs.Add(InstanceID);
     }
@@ -578,39 +579,15 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
     StaticMesh->CreateBodySetup();
     UBodySetup* NewBodySetup = StaticMesh->BodySetup;
     if (NewBodySetup) {
-      // ========== 核心参数：CollisionTraceFlag（碰撞追踪标志） ==========
-      // 这是决定使用哪种碰撞几何体的最重要参数
-      // 我们使用简单碰撞（CTF_UseSimpleAsComplex）
-      
-      // 【核心参数】CTF_UseSimpleAsComplex（使用简单碰撞）
-      // 类型：ECollisionTraceFlag
-      // 值：2
-      // 作用：使用简化的碰撞几何体（凸包、包围盒等）
-      // 详细说明：
-      //   - 使用简化的碰撞几何体（Box、Sphere、Convex、Capsule等）
-      //   - 通过 BuildFromMeshDescriptions 自动生成简化碰撞
-      //   - AggGeom 包含简化几何体元素
-      // 优点：
-      //   ✅ 性能开销小（内存和CPU）
-      //   ✅ 适合大量物体和动态物体
-      //   ✅ 内存占用小
-      // 缺点：
-      //   ❌ 碰撞精度较低
-      //   ❌ 可能与渲染网格不完全一致
-      // 适用场景：
-      //   - 动态物体
-      //   - 性能要求高的场景
-      //   - 简单形状的网格
-      //   - 大量物体的场景
+      // 使用简单碰撞（CTF_UseSimpleAsComplex：性能开销小，适合大量物体）
       UE_LOG(LogTemp, Log, TEXT("=== 使用简单碰撞 ==="));
 
-      // ===== 优先从ProceduralMeshComponent获取碰撞数据 =====
-      // 策略：先保存自动生成的碰撞作为后备，然后尝试手动设置更精确的碰撞
-      // 如果手动设置成功，就替换；如果失败，就恢复自动生成的
+      // ===== 碰撞数据生成策略 =====
+      // 按优先级尝试多种方法生成碰撞数据，如果失败则使用后备方案
       
       bool bCopiedCollisionData = false;
       FKAggregateGeom BackupAggGeom;  // 保存自动生成的碰撞作为后备
-      int32 CollisionSourceType = 0; // 0=未设置, 1=从PMC复制, 2=基于顶点计算, 3=自动生成, 4=基于RenderData.Bounds
+      int32 CollisionSourceType = 0; // 0=未设置, 2=V-HACD凸包分解, 3=基于顶点计算, 4=自动生成, 5=基于RenderData.Bounds
       
       if (bManuallySetCollision)
       {
@@ -628,95 +605,11 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
         NewBodySetup->AggGeom.EmptyElements();
       }
       
-      // ===== 方式1：优先从ProceduralMeshComponent复制现有碰撞数据（最优） =====
-      // 优点：支持多种几何体类型、通常是预设优化的、速度快、精度高
-      // 适用：PMC已有碰撞数据时
-      if (ProceduralMeshComponent->ProcMeshBodySetup)
-      {
-        UBodySetup* SourceBodySetup = ProceduralMeshComponent->ProcMeshBodySetup;
-        const FKAggregateGeom& SourceAggGeom = SourceBodySetup->AggGeom;
-        
-        int32 SourceElementCount = SourceAggGeom.GetElementCount();
-
-        // 输出源碰撞几何的详细信息
-        UE_LOG(LogTemp, Log, TEXT("【方式1】ProceduralMeshComponent碰撞信息 - ConvexElems: %d, BoxElems: %d, SphereElems: %d, SphylElems: %d, TaperedCapsuleElems: %d"),
-          SourceAggGeom.ConvexElems.Num(),
-          SourceAggGeom.BoxElems.Num(),
-          SourceAggGeom.SphereElems.Num(),
-          SourceAggGeom.SphylElems.Num(),
-          SourceAggGeom.TaperedCapsuleElems.Num());
-        
-        // 只有当PMC确实有碰撞数据时才尝试复制
-        if (SourceElementCount > 0)
-        {
-          UE_LOG(LogTemp, Log, TEXT("【方式1】检测到PMC有碰撞数据（%d个元素），开始复制..."), SourceElementCount);
-
-          // 复制所有简单碰撞几何体（比自动生成更准确）
-          if (SourceAggGeom.ConvexElems.Num() > 0)
-          {
-            UE_LOG(LogTemp, Log, TEXT("复制凸包元素到StaticMesh..."));
-            NewBodySetup->AggGeom.ConvexElems = SourceAggGeom.ConvexElems;
-            bCopiedCollisionData = true;
-            CollisionSourceType = 1; // 从PMC复制
-            UE_LOG(LogTemp, Log, TEXT("已复制 %d 个凸包元素"), SourceAggGeom.ConvexElems.Num());
-          }
-          
-          if (SourceAggGeom.BoxElems.Num() > 0)
-          {
-            UE_LOG(LogTemp, Log, TEXT("复制包围盒元素到StaticMesh..."));
-            NewBodySetup->AggGeom.BoxElems = SourceAggGeom.BoxElems;
-            bCopiedCollisionData = true;
-            CollisionSourceType = 1; // 从PMC复制
-            UE_LOG(LogTemp, Log, TEXT("已复制 %d 个包围盒元素"), SourceAggGeom.BoxElems.Num());
-          }
-          
-          if (SourceAggGeom.SphereElems.Num() > 0)
-          {
-            UE_LOG(LogTemp, Log, TEXT("复制球体元素到StaticMesh..."));
-            NewBodySetup->AggGeom.SphereElems = SourceAggGeom.SphereElems;
-            bCopiedCollisionData = true;
-            CollisionSourceType = 1; // 从PMC复制
-            UE_LOG(LogTemp, Log, TEXT("已复制 %d 个球体元素"), SourceAggGeom.SphereElems.Num());
-          }
-          
-          if (SourceAggGeom.SphylElems.Num() > 0)
-          {
-            UE_LOG(LogTemp, Log, TEXT("复制胶囊体元素到StaticMesh..."));
-            NewBodySetup->AggGeom.SphylElems = SourceAggGeom.SphylElems;
-            bCopiedCollisionData = true;
-            CollisionSourceType = 1; // 从PMC复制
-            UE_LOG(LogTemp, Log, TEXT("已复制 %d 个胶囊体元素"), SourceAggGeom.SphylElems.Num());
-          }
-          
-          if (SourceAggGeom.TaperedCapsuleElems.Num() > 0)
-          {
-            UE_LOG(LogTemp, Log, TEXT("复制锥形胶囊体元素到StaticMesh..."));
-            NewBodySetup->AggGeom.TaperedCapsuleElems = SourceAggGeom.TaperedCapsuleElems;
-            bCopiedCollisionData = true;
-            CollisionSourceType = 1; // 从PMC复制
-            UE_LOG(LogTemp, Log, TEXT("已复制 %d 个锥形胶囊体元素"), SourceAggGeom.TaperedCapsuleElems.Num());
-          }
-          
-          if (bCopiedCollisionData)
-          {
-            UE_LOG(LogTemp, Log, TEXT("【方式1】成功！已从PMC复制碰撞数据（总计 %d 个元素）"), 
-              NewBodySetup->AggGeom.GetElementCount());
-          }
-        }
-        else
-        {
-          UE_LOG(LogTemp, Log, TEXT("【方式1】跳过：PMC虽然有BodySetup，但AggGeom为空（元素数为0）"));
-          UE_LOG(LogTemp, Log, TEXT("提示：如需使用方式1，请先在PMC中手动设置碰撞几何体（如包围盒、凸包等）"));
-        }
-      }
-      
-      // ===== 方式2：使用V-HACD凸包分解算法生成多个高精度凸包 =====
-      // 使用UE的V-HACD算法将凹体网格分解成多个凸包
-      // 这样可以准确表示凹体（如空心圆管），同时保持简单碰撞的性能
-      // 适用：PMC无碰撞数据时，使用V-HACD生成高精度多凸包
+      // ===== 方式1：使用V-HACD凸包分解算法生成多个高精度凸包 =====
+      // 使用V-HACD算法将凹体网格分解成多个凸包，准确表示凹体同时保持简单碰撞的性能
       if (!bCopiedCollisionData)
       {
-        UE_LOG(LogTemp, Log, TEXT("【方式2】使用V-HACD凸包分解算法生成多个高精度凸包..."));
+        UE_LOG(LogTemp, Log, TEXT("【方式1】使用V-HACD凸包分解算法生成多个高精度凸包..."));
         
         // V-HACD参数配置（与编辑器中的"Auto Convex Collision"一致）
         int32 HullCount = 8;        // 目标凸包数量（根据网格复杂度调整，1-64）
@@ -734,23 +627,21 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
         if (bSuccess && NewBodySetup->AggGeom.ConvexElems.Num() > 0)
         {
           int32 ConvexCount = NewBodySetup->AggGeom.ConvexElems.Num();
-          UE_LOG(LogTemp, Log, TEXT("【方式2】V-HACD凸包分解成功！生成了 %d 个凸包元素"), ConvexCount);
+          UE_LOG(LogTemp, Log, TEXT("【方式1】V-HACD凸包分解成功！生成了 %d 个凸包元素"), ConvexCount);
           bCopiedCollisionData = true;
           CollisionSourceType = 2; // 基于V-HACD凸包分解
         }
         else
         {
-          UE_LOG(LogTemp, Warning, TEXT("【方式2】V-HACD凸包分解失败，将使用后备方案"));
+          UE_LOG(LogTemp, Warning, TEXT("【方式1】V-HACD凸包分解失败，将使用后备方案"));
         }
       }
       
-      // ===== 方式3：基于实际顶点生成碰撞（后备） =====
-      // 优点：基于实际几何体更准确、自动适应几何变化
-      // 策略：顶点数>=4时生成凸包，否则生成包围盒
-      // 适用：V-HACD失败时的后备方案
+      // ===== 方式2：基于实际顶点生成碰撞（后备） =====
+      // 基于实际几何体生成碰撞，顶点数>=4时生成凸包，否则生成包围盒
       if (!bCopiedCollisionData)
       {
-        UE_LOG(LogTemp, Log, TEXT("【方式3】V-HACD失败，基于实际顶点生成碰撞..."));
+        UE_LOG(LogTemp, Log, TEXT("【方式2】V-HACD失败，基于实际顶点生成碰撞..."));
         
         // 收集所有唯一顶点（用于生成凸包）
         TArray<FVector> AllUniqueVertices;
@@ -796,7 +687,7 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
             ConvexElem.UpdateElemBox();
             NewBodySetup->AggGeom.ConvexElems.Add(ConvexElem);
             
-            UE_LOG(LogTemp, Log, TEXT("【方式3】基于实际顶点创建ConvexElem: 顶点数=%d, 中心=(%.2f, %.2f, %.2f), 包围盒大小=(%.2f, %.2f, %.2f)"),
+            UE_LOG(LogTemp, Log, TEXT("【方式2】基于实际顶点创建ConvexElem: 顶点数=%d, 中心=(%.2f, %.2f, %.2f), 包围盒大小=(%.2f, %.2f, %.2f)"),
               AllUniqueVertices.Num(),
               ConvexElem.ElemBox.GetCenter().X, ConvexElem.ElemBox.GetCenter().Y, ConvexElem.ElemBox.GetCenter().Z,
               ConvexElem.ElemBox.GetSize().X, ConvexElem.ElemBox.GetSize().Y, ConvexElem.ElemBox.GetSize().Z);
@@ -815,7 +706,7 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
               BoxElem.X = Extent.X * 2.0f;
               BoxElem.Y = Extent.Y * 2.0f;
               BoxElem.Z = Extent.Z * 2.0f;
-              UE_LOG(LogTemp, Log, TEXT("【方式3】顶点数不足4个，创建BoxElem: 中心=(%.2f, %.2f, %.2f), 大小=(%.2f, %.2f, %.2f)"),
+              UE_LOG(LogTemp, Log, TEXT("【方式2】顶点数不足4个，创建BoxElem: 中心=(%.2f, %.2f, %.2f), 大小=(%.2f, %.2f, %.2f)"),
                 Center.X, Center.Y, Center.Z, BoxElem.X, BoxElem.Y, BoxElem.Z);
               NewBodySetup->AggGeom.BoxElems.Add(BoxElem);
               bCopiedCollisionData = true;
@@ -829,19 +720,17 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
         }
       }
 
-      // ===== 方式4：使用BuildFromMeshDescriptions自动生成的碰撞（后备） =====
-      // 优点：引擎标准方法、可靠、基于RenderData->Bounds
-      // 缺点：可能不够精确、只有包围盒
-      // 适用：前三种方式都失败时作为后备
+      // ===== 方式3：使用BuildFromMeshDescriptions自动生成的碰撞（后备） =====
+      // 使用引擎标准方法生成的碰撞数据作为后备
       if (!bCopiedCollisionData)
       {
-        // 手动设置失败，恢复之前保存的自动生成的碰撞数据
+        // 恢复之前保存的自动生成的碰撞数据
         int32 BackupElementCount = BackupAggGeom.GetElementCount();
         if (BackupElementCount > 0)
         {
           NewBodySetup->AggGeom = BackupAggGeom;
           CollisionSourceType = 4; // BuildFromMeshDescriptions自动生成
-          UE_LOG(LogTemp, Log, TEXT("【方式4】手动创建碰撞失败，已恢复自动生成的碰撞（%d个元素）"), 
+          UE_LOG(LogTemp, Log, TEXT("【方式3】已恢复自动生成的碰撞（%d个元素）"), 
             BackupElementCount);
           UE_LOG(LogTemp, Log, TEXT("自动生成的碰撞详情 - ConvexElems: %d, BoxElems: %d, SphereElems: %d, SphylElems: %d"),
             BackupAggGeom.ConvexElems.Num(),
@@ -851,15 +740,15 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
         }
         else
         {
-          // ===== 方式5：基于RenderData.Bounds生成（最后的后备） =====
-          // 参考StaticMesh.cpp:5473-5482，这是引擎内部使用的标准方法
+          // ===== 方式4：基于RenderData.Bounds生成（最后的后备） =====
+          // 基于渲染数据的边界框生成包围盒碰撞
           if (StaticMesh->RenderData.IsValid())
           {
             const FBoxSphereBounds& Bounds = StaticMesh->RenderData->Bounds;
             // 检查Bounds是否有效：BoxExtent应该大于0
             if (Bounds.BoxExtent.X > 0.0f && Bounds.BoxExtent.Y > 0.0f && Bounds.BoxExtent.Z > 0.0f)
             {
-              UE_LOG(LogTemp, Warning, TEXT("【方式5】手动创建碰撞失败，且自动生成也未产生碰撞数据，尝试基于RenderData.Bounds生成包围盒..."));
+              UE_LOG(LogTemp, Warning, TEXT("【方式4】基于RenderData.Bounds生成包围盒..."));
 
               FKBoxElem BoxElem;
               BoxElem.Center = Bounds.Origin;
@@ -880,7 +769,7 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
           }
           else
           {
-            UE_LOG(LogTemp, Warning, TEXT("手动创建碰撞失败，且无法从RenderData.Bounds生成碰撞！"));
+            UE_LOG(LogTemp, Warning, TEXT("所有碰撞生成方式均失败，无法生成碰撞数据"));
             UE_LOG(LogTemp, Warning, TEXT("建议检查网格数据是否有效，或手动添加碰撞几何体"));
           }
         }
@@ -905,118 +794,37 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
       // ===== BodySetup 完整配置（根据 BodySetup.h 源码） =====
       // ========== 几何和碰撞生成设置 ==========
       
-      // 【参数1】bGenerateMirroredCollision（镜像碰撞生成）
-      // 类型：bool
-      // 默认值：false
-      // 作用：是否生成支持镜像版本网格的碰撞数据
-      // 详细说明：
-      //   - false：不生成镜像碰撞数据（节省内存，推荐）
-      //   - true：生成镜像碰撞数据，碰撞数据大小会减半，但会禁用镜像实例的碰撞
-      // 适用场景：只有在需要镜像网格（负缩放）且需要碰撞时才启用
-      // 内存影响：启用后会减少碰撞数据大小，但可能影响镜像实例的碰撞功能
+      // 镜像碰撞生成（仅在需要镜像网格时启用）
       NewBodySetup->bGenerateMirroredCollision = false;
       
-      // 【参数2】bGenerateNonMirroredCollision（非镜像碰撞生成）
-      // 类型：bool
-      // 默认值：true
-      // 作用：生成非镜像版本的碰撞数据（正常情况）
-      // 说明：这是正常网格的碰撞数据，应该始终启用
+      // 非镜像碰撞生成（正常网格的碰撞数据）
       NewBodySetup->bGenerateNonMirroredCollision = true;
       
-      // 【参数3】bDoubleSidedGeometry（双面几何体）
-      // 类型：bool
-      // 默认值：true
-      // 作用：物理三角形网格在场景查询时是否使用双面面片
-      // 详细说明：
-      //   - true：启用双面碰撞，射线可以从两侧检测到碰撞
-      //   - false：单面碰撞，只有正面才能检测到碰撞
-      // 适用场景：
-      //   - 平面和单面网格：如果需要在两侧都能进行射线检测，应该启用
-      //   - 封闭网格：通常不需要，但启用也没有问题
-      // 性能影响：几乎无影响
+      // 双面几何体（启用双面碰撞检测）
       NewBodySetup->bDoubleSidedGeometry = true;
       
-      // 【参数4】bSupportUVsAndFaceRemap（UV和面重映射支持）
-      // 类型：bool
-      // 默认值：false
-      // 作用：是否支持UV和面重映射，用于物理材质遮罩功能
-      // 详细说明：
-      //   - false：不生成UV和面重映射数据（节省内存，推荐）
-      //   - true：生成UV和面重映射数据，可以支持物理材质遮罩
-      // 适用场景：
-      //   - 需要使用物理材质遮罩（PhysicalMaterialMask）时才启用
-      //   - 需要从碰撞结果获取UV坐标时才启用
-      // 内存影响：启用后会增加内存占用
+      // UV和面重映射支持（用于物理材质遮罩，默认禁用以节省内存）
       NewBodySetup->bSupportUVsAndFaceRemap = false;
       
-      // 【参数5】bConsiderForBounds（考虑边界计算）
-      // 类型：bool
-      // 默认值：true
-      // 作用：是否在计算PhysicsAsset的边界时考虑此BodySetup
-      // 详细说明：
-      //   - true：参与边界计算，影响物理资产的边界框
-      //   - false：不参与边界计算，可以提升边界计算性能
-      // 适用场景：
-      //   - 大多数情况应该启用，确保边界计算准确
-      //   - 如果有很多BodySetup且性能敏感，可以禁用不重要的
-      // 性能影响：启用后会参与边界计算，轻微性能开销
+      // 考虑边界计算（参与PhysicsAsset边界计算）
       NewBodySetup->bConsiderForBounds = true;
       
-      // 【参数6】bMeshCollideAll（全网格碰撞）
-      // 类型：bool
-      // 默认值：true
-      // 作用：是否强制使用整个渲染网格进行碰撞
-      // 详细说明：
-      //   - true：强制使用整个渲染网格进行碰撞（包括未启用碰撞的部分）
-      //   - false：只使用启用碰撞的网格元素
-      // 适用场景：
-      //   - true：需要整个网格都参与碰撞，提供最精确的碰撞
-      //   - false：只使用启用碰撞的部分，性能更好
-      // 性能影响：启用后会增加内存和性能开销
-      // 注意：这个参数只影响静态网格，且需要配合CollisionTraceFlag使用
+      // 全网格碰撞（使用整个渲染网格进行碰撞）
       NewBodySetup->bMeshCollideAll = true;
       
       // ========== 物理模拟设置 ==========
       
-      // 【参数7】PhysicsType（物理类型）
-      // 类型：EPhysicsType
-      // 默认值：PhysType_Default
-      // 作用：物理模拟类型
-      // 可选值：
-      //   - PhysType_Default：默认物理类型
-      //   - PhysType_Kinematic：运动学物理（不响应力，但可以移动）
-      //   - PhysType_Simulated：完全模拟物理（响应力和碰撞）
-      // 说明：静态网格通常使用默认类型
+      // 物理类型（静态网格使用默认类型）
       NewBodySetup->PhysicsType = EPhysicsType::PhysType_Default;
       
-      // 【参数8】PhysMaterial（物理材质）
-      // 类型：UPhysicalMaterial*
-      // 默认值：nullptr（使用默认物理材质）
-      // 作用：定义物理对象的响应属性（密度、摩擦、弹性等）
-      // 详细说明：
-      //   - nullptr：使用默认物理材质（密度1.0，摩擦0.7，弹性0.0）
-      //   - 自定义材质：可以设置密度、摩擦系数、弹性等
-      // 适用场景：
-      //   - 需要特殊物理属性的物体（如冰面、橡胶、金属等）
-      //   - 简单场景可以保持默认
-      // 注意：这是简单碰撞使用的物理材质（用于简单几何体）
+      // 物理材质（从PMC复制，如果存在）
       if (ProceduralMeshComponent->ProcMeshBodySetup && ProceduralMeshComponent->ProcMeshBodySetup->PhysMaterial)
       {
         NewBodySetup->PhysMaterial = ProceduralMeshComponent->ProcMeshBodySetup->PhysMaterial;
         UE_LOG(LogTemp, Log, TEXT("已复制物理材质: %s"), *NewBodySetup->PhysMaterial->GetName());
       }
       
-      // 【参数9】BuildScale3D（构建缩放）
-      // 类型：FVector
-      // 默认值：FVector(1.0f, 1.0f, 1.0f)（无缩放）
-      // 作用：构建碰撞时的缩放因子
-      // 详细说明：
-      //   - (1,1,1)：无缩放，使用原始大小
-      //   - 其他值：按比例缩放碰撞几何体
-      // 适用场景：
-      //   - 静态网格设置中定义的构建缩放
-      //   - 通常保持默认值
-      // 注意：这个值会影响碰撞几何体的实际大小
+      // 构建缩放（碰撞几何体的缩放因子）
       NewBodySetup->BuildScale3D = FVector(1.0f, 1.0f, 1.0f);
 
       // ===== StaticMesh 资源层面的完整碰撞设置 =====
@@ -1031,48 +839,14 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
       // ========== BodyInstance 碰撞设置（资源层面的默认设置） ==========
       // 这些设置会被所有使用该 StaticMesh 的组件自动继承
       
-      // 【参数11】CollisionProfileName（碰撞配置名称）
-      // 类型：FName
-      // 当前值："BlockAll"
-      // 作用：预设的碰撞配置，包含所有碰撞相关设置
-      // 详细说明：
-      //   - BlockAll：阻挡所有通道，适合静态障碍物
-      //     * CollisionEnabled: QueryAndPhysics
-      //     * ObjectType: ECC_WorldStatic
-      //     * 所有通道响应: ECR_Block
-      //   - OverlapAll：重叠所有通道，适合触发器
-      //   - Custom：自定义配置（手动设置时）
-      // 重要：必须先设置 Profile，它会自动应用所有默认设置
-      // 如果手动设置 CollisionEnabled 或 ObjectType，Profile 会变为 Custom
+      // 碰撞配置（BlockAll：阻挡所有通道，适合静态障碍物）
+      // 注意：必须先设置Profile，它会自动应用所有默认设置
       NewBodySetup->DefaultInstance.SetCollisionProfileName(TEXT("BlockAll"));
-      
-      // 注意：不需要再手动设置 CollisionEnabled 和 ObjectType，因为 Profile 已经设置了
-      // 如果手动设置这些，可能会破坏 Profile 的内部状态，导致显示为 Custom
 
-      // 【参数12】SetEnableGravity（重力设置）
-      // 类型：bool
-      // 当前值：false（禁用重力）
-      // 作用：是否受重力影响
-      // 详细说明：
-      //   - false：不受重力影响（静态网格的默认设置）
-      //   - true：受重力影响（用于动态物体）
-      // 适用场景：
-      //   - 静态网格：应该禁用重力
-      //   - 动态物体：需要启用重力
-      // 性能影响：禁用重力可以提升性能
+      // 重力设置（静态网格禁用重力）
       NewBodySetup->DefaultInstance.SetEnableGravity(false);
       
-      // 【参数13】bUseCCD（连续碰撞检测）
-      // 类型：bool
-      // 当前值：false（禁用CCD）
-      // 作用：是否使用连续碰撞检测
-      // 详细说明：
-      //   - false：不使用CCD（静态网格的默认设置）
-      //   - true：使用CCD，可以检测高速物体的碰撞
-      // 适用场景：
-      //   - 静态网格：不需要CCD
-      //   - 高速移动的物体：需要CCD避免穿透
-      // 性能影响：启用CCD会增加性能开销
+      // 连续碰撞检测（静态网格禁用CCD）
       NewBodySetup->DefaultInstance.bUseCCD = false;
       
       UE_LOG(LogTemp, Log, TEXT("StaticMesh资源层面：完整碰撞配置已设置"));

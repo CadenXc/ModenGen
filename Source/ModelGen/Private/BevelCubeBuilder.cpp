@@ -35,18 +35,15 @@ bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
     // 计算是否启用倒角
     bEnableBevel = BevelSegments > 0 && BevelRadius > 0.0f && HalfSize > InnerOffset;
 
-    // 定义6个面的展开信息，构成一个4x4的UV网格布局（十字架形）
-    //      [Top]
-    // [Left][Front][Right][Back]
-    //      [Bottom]
+    // 定义6个面的展开信息，每个面都是1x1的UV全展
     TArray<FUnfoldedFace> FacesToGenerate = {
         // U/V轴的定义确保了在UV展开图中所有面的方向是一致的
-        { FVector(0, 1, 0),  FVector(1, 0, 0), FVector(0, 0, -1), FIntPoint(1, 1), TEXT("Front") }, // +Y
-        { FVector(0, -1, 0), FVector(-1, 0, 0),FVector(0, 0, -1), FIntPoint(3, 1), TEXT("Back") },  // -Y
-        { FVector(0, 0, 1),  FVector(1, 0, 0), FVector(0, 1, 0),  FIntPoint(1, 0), TEXT("Top") },   // +Z
-        { FVector(0, 0, -1), FVector(1, 0, 0), FVector(0, -1, 0), FIntPoint(1, 2), TEXT("Bottom")},// -Z
-        { FVector(1, 0, 0),  FVector(0, -1, 0),FVector(0, 0, -1), FIntPoint(2, 1), TEXT("Right") }, // +X
-        { FVector(-1, 0, 0), FVector(0, 1, 0), FVector(0, 0, -1), FIntPoint(0, 1), TEXT("Left") }  // -X
+        { FVector(0, 1, 0),  FVector(1, 0, 0), FVector(0, 0, -1), FIntPoint(0, 0), TEXT("Front") }, // +Y
+        { FVector(0, -1, 0), FVector(-1, 0, 0),FVector(0, 0, -1), FIntPoint(0, 0), TEXT("Back") },  // -Y
+        { FVector(0, 0, 1),  FVector(1, 0, 0), FVector(0, 1, 0),  FIntPoint(0, 0), TEXT("Top") },   // +Z
+        { FVector(0, 0, -1), FVector(1, 0, 0), FVector(0, -1, 0), FIntPoint(0, 0), TEXT("Bottom")},// -Z
+        { FVector(1, 0, 0),  FVector(0, -1, 0),FVector(0, 0, -1), FIntPoint(0, 0), TEXT("Right") }, // +X
+        { FVector(-1, 0, 0), FVector(0, 1, 0), FVector(0, 0, -1), FIntPoint(0, 0), TEXT("Left") }  // -X
     };
 
     // 循环为每个面生成网格
@@ -127,10 +124,6 @@ void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
         VertexGrid[i].SetNum(NumU);
     }
 
-    // UV布局计算，假设整个UV空间被划分为4x4的网格
-    const FVector2D UVBlockSize(1.0f / 4.0f, 1.0f / 4.0f);
-    const FVector2D UVBaseOffset(FaceDef.UV_Grid_Offset.X * UVBlockSize.X, FaceDef.UV_Grid_Offset.Y * UVBlockSize.Y);
-
     // 遍历非均匀网格上的每个点，计算其 3D位置、法线 和 UV坐标
     for (int32 v_idx = 0; v_idx < NumV; ++v_idx)
     {
@@ -142,9 +135,9 @@ void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
             const float local_u = UPositions[u_idx];
             const float u_alpha = (local_u + HalfSize) / (2.0f * HalfSize);
 
-            // 计算UV坐标：基于物理位置的alpha，确保纹理均匀分布
+            // 计算UV坐标：每个面都是1x1的UV全展，直接映射到[0,1]范围
             // V方向(v_alpha)需要翻转 (1.0f - ...)，以匹配常见的从上到下的纹理坐标系
-            FVector2D UV(u_alpha * UVBlockSize.X + UVBaseOffset.X, (1.0f - v_alpha) * UVBlockSize.Y + UVBaseOffset.Y);
+            FVector2D UV(u_alpha, 1.0f - v_alpha);
 
             // 计算核心点 (CorePoint) 和表面法线 (SurfaceNormal)
             FVector SurfaceNormal;
