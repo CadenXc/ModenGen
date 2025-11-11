@@ -19,7 +19,7 @@
 #include "StaticMeshOperations.h"
 #include "StaticMeshResources.h"
 #include "UObject/ConstructorHelpers.h"
-#include "ModelGenVHACD.h"
+#include "ModelGenConvexDecomp.h"
 
 AProceduralMeshActor::AProceduralMeshActor()
 {
@@ -605,19 +605,20 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
         NewBodySetup->AggGeom.EmptyElements();
       }
       
-      // ===== 方式1：使用V-HACD凸包分解算法生成多个高精度凸包 =====
-      // 使用V-HACD算法将凹体网格分解成多个凸包，准确表示凹体同时保持简单碰撞的性能
+      // ===== 方式1：使用QuickHull凸包分解算法生成多个高精度凸包 =====
+      // 使用QuickHull算法和递归分割将凹体网格分解成多个凸包，准确表示凹体同时保持简单碰撞的性能
+      // 全平台支持，包括移动端（Android/iOS）
       if (!bCopiedCollisionData)
       {
-        UE_LOG(LogTemp, Log, TEXT("【方式1】使用V-HACD凸包分解算法生成多个高精度凸包..."));
+        UE_LOG(LogTemp, Log, TEXT("【方式1】使用QuickHull凸包分解算法生成多个高精度凸包..."));
         
-        // V-HACD参数配置（与编辑器中的"Auto Convex Collision"一致）
+        // 凸包分解参数配置（与编辑器中的"Auto Convex Collision"一致）
         int32 HullCount = 8;        // 目标凸包数量（根据网格复杂度调整，1-64）
         int32 MaxHullVerts = 16;    // 每个凸包的最大顶点数（6-32）
-        uint32 HullPrecision = 100000; // 精度（体素数量，10000-1000000）
+        uint32 HullPrecision = 100000; // 精度（用于控制分割深度，10000-1000000）
         
-        // 调用运行时可用的V-HACD实现
-        bool bSuccess = FModelGenVHACD::GenerateConvexHulls(
+        // 调用全平台支持的QuickHull实现
+        bool bSuccess = FModelGenConvexDecomp::GenerateConvexHulls(
           ProceduralMeshComponent,
           NewBodySetup,
           HullCount,
@@ -627,13 +628,13 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
         if (bSuccess && NewBodySetup->AggGeom.ConvexElems.Num() > 0)
         {
           int32 ConvexCount = NewBodySetup->AggGeom.ConvexElems.Num();
-          UE_LOG(LogTemp, Log, TEXT("【方式1】V-HACD凸包分解成功！生成了 %d 个凸包元素"), ConvexCount);
+          UE_LOG(LogTemp, Log, TEXT("【方式1】QuickHull凸包分解成功！生成了 %d 个凸包元素"), ConvexCount);
           bCopiedCollisionData = true;
-          CollisionSourceType = 2; // 基于V-HACD凸包分解
+          CollisionSourceType = 2; // 基于QuickHull凸包分解
         }
         else
         {
-          UE_LOG(LogTemp, Warning, TEXT("【方式1】V-HACD凸包分解失败，将使用后备方案"));
+          UE_LOG(LogTemp, Warning, TEXT("【方式1】QuickHull凸包分解失败，将使用后备方案"));
         }
       }
       
