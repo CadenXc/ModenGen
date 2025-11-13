@@ -193,9 +193,9 @@ void AProceduralMeshActor::GeneratePMCollisionData()
     // 如果PMC还没有碰撞数据，基于实际顶点计算并添加
     if (CurrentElementCount == 0)
     {
-        const int32 NumSections = ProceduralMeshComponent->GetNumSections();
-        if (NumSections == 0)
-        {
+    const int32 NumSections = ProceduralMeshComponent->GetNumSections();
+    if (NumSections == 0)
+    {
             UE_LOG(LogTemp, Warning, TEXT("PMC无网格段，无法生成碰撞数据"));
             return;
         }
@@ -448,7 +448,7 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
     FName MaterialSlotName = FName(*FString::Printf(TEXT("MaterialSlot_%d"), SectionIdx));
     FStaticMaterial NewStaticMaterial(SectionMaterial, MaterialSlotName);
     NewStaticMaterial.UVChannelData = FMeshUVChannelInfo(1.f);
-    StaticMesh->StaticMaterials.Add(NewStaticMaterial);
+        StaticMesh->StaticMaterials.Add(NewStaticMaterial);
   }
 
   FMeshDescription MeshDescription;
@@ -475,54 +475,54 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
 
     FName MaterialSlotName = StaticMesh->StaticMaterials[SectionIdx].MaterialSlotName;
     const FPolygonGroupID PolygonGroup = MeshDescBuilder.AppendPolygonGroup();
-    PolygonGroupMaterialSlotNames.Set(PolygonGroup, MaterialSlotName);
+        PolygonGroupMaterialSlotNames.Set(PolygonGroup, MaterialSlotName);
 
-    TArray<FVertexInstanceID> VertexInstanceIDs;
+        TArray<FVertexInstanceID> VertexInstanceIDs;
 
     for (const FProcMeshVertex& ProcVertex : SectionData->ProcVertexBuffer) {
-      FVertexID VertexID;
+            FVertexID VertexID;
 
       if (FVertexID* FoundID = VertexMap.Find(ProcVertex.Position)) {
-        VertexID = *FoundID;
+                VertexID = *FoundID;
       } else {
-        VertexID = MeshDescBuilder.AppendVertex(ProcVertex.Position);
-        VertexMap.Add(ProcVertex.Position, VertexID);
-      }
-      
-      FVertexInstanceID InstanceID = MeshDescBuilder.AppendInstance(VertexID);
-      MeshDescBuilder.SetInstanceNormal(InstanceID, ProcVertex.Normal);
-      MeshDescBuilder.SetInstanceUV(InstanceID, ProcVertex.UV0, 0);
+                VertexID = MeshDescBuilder.AppendVertex(ProcVertex.Position);
+                VertexMap.Add(ProcVertex.Position, VertexID);
+            }
+
+            FVertexInstanceID InstanceID = MeshDescBuilder.AppendInstance(VertexID);
+            MeshDescBuilder.SetInstanceNormal(InstanceID, ProcVertex.Normal);
+            MeshDescBuilder.SetInstanceUV(InstanceID, ProcVertex.UV0, 0);
       MeshDescBuilder.SetInstanceUV(InstanceID, ProcVertex.UV0, 1);
-      MeshDescBuilder.SetInstanceColor(InstanceID, FVector4(ProcVertex.Color));
-      VertexInstanceIDs.Add(InstanceID);
+            MeshDescBuilder.SetInstanceColor(InstanceID, FVector4(ProcVertex.Color));
+            VertexInstanceIDs.Add(InstanceID);
+        }
+
+        for (int32 i = 0; i < SectionData->ProcIndexBuffer.Num(); i += 3) {
+            if (i + 2 >= SectionData->ProcIndexBuffer.Num()) {
+                break;
+            }
+
+            int32 Index1 = SectionData->ProcIndexBuffer[i + 0];
+            int32 Index2 = SectionData->ProcIndexBuffer[i + 1];
+            int32 Index3 = SectionData->ProcIndexBuffer[i + 2];
+
+            if (Index1 >= VertexInstanceIDs.Num() ||
+                Index2 >= VertexInstanceIDs.Num() ||
+                Index3 >= VertexInstanceIDs.Num()) {
+                continue;
+            }
+
+            FVertexInstanceID V1 = VertexInstanceIDs[Index1];
+            FVertexInstanceID V2 = VertexInstanceIDs[Index2];
+            FVertexInstanceID V3 = VertexInstanceIDs[Index3];
+
+            MeshDescBuilder.AppendTriangle(V1, V2, V3, PolygonGroup);
+        }
     }
 
-    for (int32 i = 0; i < SectionData->ProcIndexBuffer.Num(); i += 3) {
-      if (i + 2 >= SectionData->ProcIndexBuffer.Num()) {
-        break;
-      }
-
-      int32 Index1 = SectionData->ProcIndexBuffer[i + 0];
-      int32 Index2 = SectionData->ProcIndexBuffer[i + 1];
-      int32 Index3 = SectionData->ProcIndexBuffer[i + 2];
-      
-      if (Index1 >= VertexInstanceIDs.Num() ||
-          Index2 >= VertexInstanceIDs.Num() ||
-          Index3 >= VertexInstanceIDs.Num()) {
-        continue;
-      }
-      
-      FVertexInstanceID V1 = VertexInstanceIDs[Index1];
-      FVertexInstanceID V2 = VertexInstanceIDs[Index2];
-      FVertexInstanceID V3 = VertexInstanceIDs[Index3];
-
-      MeshDescBuilder.AppendTriangle(V1, V2, V3, PolygonGroup);
+    if (MeshDescription.Vertices().Num() == 0) {
+        return nullptr;
     }
-  }
-
-  if (MeshDescription.Vertices().Num() == 0) {
-    return nullptr;
-  }
 
   {
     UE_LOG(LogTemp, Log, TEXT("========== ProceduralMeshComponent 详细数据 =========="));
@@ -655,9 +655,9 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
     
     UE_LOG(LogTemp, Log, TEXT("RenderData初始化完成 - LOD数量: %d, 有颜色数据: 是"),
       StaticMesh->RenderData->LODResources.Num());
-  }
-  else
-  {
+            }
+            else
+            {
     UE_LOG(LogTemp, Warning, TEXT("BuildFromMeshDescriptions后RenderData无效或没有LOD资源"));
   }
 
@@ -685,9 +685,9 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
       {
         int32 ConvexCount = NewBodySetup->AggGeom.ConvexElems.Num();
         UE_LOG(LogTemp, Log, TEXT("✓ QuickHull凸包分解成功！生成了 %d 个凸包元素"), ConvexCount);
-      }
-      else
-      {
+                    }
+                    else
+                    {
         // 方式2：如果QuickHull失败，使用RenderData.Bounds生成简单的包围盒作为兜底方案
         UE_LOG(LogTemp, Warning, TEXT("QuickHull凸包分解失败，使用RenderData.Bounds生成包围盒作为兜底方案"));
         
@@ -710,10 +710,10 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
           else
           {
             UE_LOG(LogTemp, Error, TEXT("✗ RenderData.Bounds无效（BoxExtent为0或负数），无法生成碰撞"));
-          }
-        }
-        else
-        {
+                    }
+                }
+                else
+                {
           UE_LOG(LogTemp, Error, TEXT("✗ RenderData无效，无法生成碰撞数据"));
         }
       }
@@ -730,44 +730,81 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
 
       NewBodySetup->CollisionTraceFlag = CTF_UseDefault;
       
-      NewBodySetup->bGenerateMirroredCollision = false;
-      NewBodySetup->bGenerateNonMirroredCollision = true;
-      NewBodySetup->bDoubleSidedGeometry = true;
-      NewBodySetup->bSupportUVsAndFaceRemap = false;
-      NewBodySetup->bConsiderForBounds = true;
-      NewBodySetup->bMeshCollideAll = true;
-      NewBodySetup->PhysicsType = EPhysicsType::PhysType_Default;
-      
-      if (ProceduralMeshComponent->ProcMeshBodySetup && ProceduralMeshComponent->ProcMeshBodySetup->PhysMaterial)
-      {
-        NewBodySetup->PhysMaterial = ProceduralMeshComponent->ProcMeshBodySetup->PhysMaterial;
-        UE_LOG(LogTemp, Log, TEXT("已复制物理材质: %s"), *NewBodySetup->PhysMaterial->GetName());
-      }
-      
-      NewBodySetup->BuildScale3D = FVector(1.0f, 1.0f, 1.0f);
+            NewBodySetup->bGenerateMirroredCollision = false;
+            NewBodySetup->bGenerateNonMirroredCollision = true;
+            NewBodySetup->bDoubleSidedGeometry = true;
+            NewBodySetup->bSupportUVsAndFaceRemap = false;
+            NewBodySetup->bConsiderForBounds = true;
+            NewBodySetup->bMeshCollideAll = true;
+            NewBodySetup->PhysicsType = EPhysicsType::PhysType_Default;
+            
+            if (ProceduralMeshComponent->ProcMeshBodySetup && ProceduralMeshComponent->ProcMeshBodySetup->PhysMaterial)
+            {
+                NewBodySetup->PhysMaterial = ProceduralMeshComponent->ProcMeshBodySetup->PhysMaterial;
+                UE_LOG(LogTemp, Log, TEXT("已复制物理材质: %s"), *NewBodySetup->PhysMaterial->GetName());
+            }
+            
+            NewBodySetup->BuildScale3D = FVector(1.0f, 1.0f, 1.0f);
+            
+                NewBodySetup->DefaultInstance.SetCollisionProfileName(TEXT("BlockAll"));
+                NewBodySetup->DefaultInstance.SetEnableGravity(false);
+                NewBodySetup->DefaultInstance.bUseCCD = false;
 
-      NewBodySetup->DefaultInstance.SetCollisionProfileName(TEXT("BlockAll"));
-      NewBodySetup->DefaultInstance.SetEnableGravity(false);
-      NewBodySetup->DefaultInstance.bUseCCD = false;
-      
       // 在所有 BodySetup 属性设置完成后，生成物理网格
       if (NewBodySetup->AggGeom.GetElementCount() > 0)
       {
         // 确保所有 ConvexElem 都调用了 UpdateElemBox() 并设置了有效的 Transform
+        int32 ValidConvexElemCount = 0;
         for (FKConvexElem& ConvexElem : NewBodySetup->AggGeom.ConvexElems)
         {
-          if (ConvexElem.VertexData.Num() >= 4)
+          if (ConvexElem.VertexData.Num() < 4)
           {
-            ConvexElem.UpdateElemBox();
-            // 确保 Transform 有效（GetCookInfo 需要有效的 Transform）
-            if (!ConvexElem.GetTransform().IsValid())
+            UE_LOG(LogTemp, Error, TEXT("ConvexElem 顶点数不足: %d < 4，跳过"), ConvexElem.VertexData.Num());
+            continue;
+          }
+          
+          // 验证顶点数据有效性（检查 NaN 和无穷大）
+          bool bHasValidVertices = true;
+          for (const FVector& Vert : ConvexElem.VertexData)
+          {
+            // UE 4.26 兼容：使用 FMath::IsFinite 检查每个分量
+            if (Vert.ContainsNaN() || 
+                !FMath::IsFinite(Vert.X) || 
+                !FMath::IsFinite(Vert.Y) || 
+                !FMath::IsFinite(Vert.Z))
             {
-              ConvexElem.SetTransform(FTransform::Identity);
+              UE_LOG(LogTemp, Error, TEXT("ConvexElem 包含无效顶点: %s（NaN 或无穷大）"), *Vert.ToString());
+              bHasValidVertices = false;
+              break;
             }
           }
+          
+          if (!bHasValidVertices)
+          {
+            UE_LOG(LogTemp, Error, TEXT("ConvexElem 顶点数据无效，跳过"));
+            continue;
+          }
+          
+          ConvexElem.UpdateElemBox();
+          // 确保 Transform 有效（GetCookInfo 需要有效的 Transform）
+          if (!ConvexElem.GetTransform().IsValid())
+          {
+            ConvexElem.SetTransform(FTransform::Identity);
+          }
+          // 关键：将 Transform 应用到顶点数据中（参考 MWGenerateActorGroup.cpp:444）
+          // 这必须在 CreatePhysicsMeshes 之前调用，否则 PhysX 无法正确创建 ConvexMesh
+          ConvexElem.BakeTransformToVerts();
+          ValidConvexElemCount++;
+          
+          UE_LOG(LogTemp, Log, TEXT("ConvexElem[%d]: 顶点数=%d, 中心=(%.2f, %.2f, %.2f), 大小=(%.2f, %.2f, %.2f)"),
+            ValidConvexElemCount - 1,
+            ConvexElem.VertexData.Num(),
+            ConvexElem.ElemBox.GetCenter().X, ConvexElem.ElemBox.GetCenter().Y, ConvexElem.ElemBox.GetCenter().Z,
+            ConvexElem.ElemBox.GetSize().X, ConvexElem.ElemBox.GetSize().Y, ConvexElem.ElemBox.GetSize().Z);
         }
         
-        UE_LOG(LogTemp, Log, TEXT("准备生成物理网格 - ConvexElems数量: %d"), NewBodySetup->AggGeom.ConvexElems.Num());
+        UE_LOG(LogTemp, Log, TEXT("准备生成物理网格 - ConvexElems数量: %d (有效: %d)"), 
+          NewBodySetup->AggGeom.ConvexElems.Num(), ValidConvexElemCount);
         
         // 确保 bNeverNeedsCookedCollisionData = false（允许运行时烹饪）
         NewBodySetup->bNeverNeedsCookedCollisionData = false;
@@ -788,16 +825,16 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
           {
             bRuntimeCookingEnabled = true;
             UE_LOG(LogTemp, Log, TEXT("✓ 运行时烹饪已启用 - RuntimePhysXCooking 模块已加载"));
-          }
-          else
-          {
+            }
+            else
+            {
             UE_LOG(LogTemp, Warning, TEXT("⚠ PhysXCookingModule 可用，但 RuntimePhysXCooking 模块未加载"));
             UE_LOG(LogTemp, Warning, TEXT("  这可能导致 ConvexMesh 无法在运行时创建"));
             UE_LOG(LogTemp, Warning, TEXT("  请确保在项目设置中启用了 RuntimePhysXCooking 插件"));
           }
-        }
-        else
-        {
+                }
+                else
+                {
           UE_LOG(LogTemp, Warning, TEXT("⚠ PhysXCookingModule 不可用"));
           UE_LOG(LogTemp, Warning, TEXT("  这可能导致 ConvexMesh 无法在运行时创建"));
         }
@@ -843,44 +880,221 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
       UE_LOG(LogTemp, Log, TEXT("  - 重力: 禁用"));
       UE_LOG(LogTemp, Log, TEXT("  - CCD: 禁用"));
 
-      // 生成复杂碰撞（TriMeshes）- 参考 InitStaticMeshInfo
-      if (NewBodySetup->TriMeshes.Num() == 0 && StaticMesh->RenderData && StaticMesh->RenderData->LODResources.Num() > 0)
+      bool bTriMeshesGenerated = false;
+      
+      // 方案1：如果已有自动生成的 TriMeshes，也使用 CreateTriMesh 重新生成（确保统一使用 CreateTriMesh）
+      if (NewBodySetup->TriMeshes.Num() > 0)
       {
-        UE_LOG(LogTemp, Log, TEXT("=== 开始生成复杂碰撞（TriMeshes）==="));
+        UE_LOG(LogTemp, Log, TEXT("【方案1】检测到自动生成的 TriMeshes（数量: %d），将使用 CreateTriMesh 重新生成"), 
+          NewBodySetup->TriMeshes.Num());
+        NewBodySetup->TriMeshes.Empty();
+      }
+      
+      // 使用 CreateTriMesh 手动生成 TriMeshes（方案1和方案2都使用此方法）
+      if (!bTriMeshesGenerated)
+      {
+        UE_LOG(LogTemp, Log, TEXT("【方案2】开始手动生成复杂碰撞（TriMeshes）..."));
         
         TArray<FVector> NewVertices;
         TArray<FTriIndices> NewIndices;
-        int32 NumTris = 0;
-
-        // 从 RenderData 提取顶点和索引数据
-        const FStaticMeshLODResources& LODResource = StaticMesh->RenderData->LODResources[0];
-        const FPositionVertexBuffer& PositionVertexBuffer = LODResource.VertexBuffers.PositionVertexBuffer;
-        const FRawStaticIndexBuffer& IndexBuffer = LODResource.IndexBuffer;
-
-        // 提取顶点
-        const int32 NumVertices = PositionVertexBuffer.GetNumVertices();
-        NewVertices.Reserve(NumVertices);
-        for (int32 VertIdx = 0; VertIdx < NumVertices; ++VertIdx)
+        bool bDataFromPMC = false;
+        
+        // 优先从 ProceduralMeshComponent 提取数据（方案2-优先）
+        if (ProceduralMeshComponent)
         {
-          NewVertices.Add(PositionVertexBuffer.VertexPosition(VertIdx));
+          UE_LOG(LogTemp, Log, TEXT("【方案2-优先】从 ProceduralMeshComponent 提取数据..."));
+          NewVertices.Empty();
+          NewIndices.Empty();
+          
+          int32 TotalVertices = 0;
+          int32 TotalSkippedTriangles = 0;
+          
+          for (int32 SectionIdx = 0; SectionIdx < ProceduralMeshComponent->GetNumSections(); ++SectionIdx)
+          {
+            FProcMeshSection* SectionData = ProceduralMeshComponent->GetProcMeshSection(SectionIdx);
+            if (!SectionData) continue;
+            
+            const int32 SectionVertexOffset = TotalVertices;
+            const int32 SectionVertexCount = SectionData->ProcVertexBuffer.Num();
+            
+            // 提取顶点
+            for (const FProcMeshVertex& ProcVertex : SectionData->ProcVertexBuffer)
+            {
+              NewVertices.Add(ProcVertex.Position);
+            }
+            
+            // 提取索引（需要调整偏移）
+            const int32 NumSectionIndices = SectionData->ProcIndexBuffer.Num();
+            if (NumSectionIndices % 3 == 0 && SectionVertexCount > 0)
+            {
+              for (int32 Idx = 0; Idx < NumSectionIndices - 2; Idx += 3)
+              {
+                // 边界检查：确保索引访问安全
+                if (Idx < 0 || Idx + 2 >= NumSectionIndices)
+                {
+                  UE_LOG(LogTemp, Warning, TEXT("Section[%d] 索引边界检查失败: Idx=%d, NumSectionIndices=%d"), 
+                    SectionIdx, Idx, NumSectionIndices);
+                  break;
+                }
+                
+                // 安全获取索引值
+                uint32 LocalV0 = SectionData->ProcIndexBuffer[Idx];
+                uint32 LocalV1 = SectionData->ProcIndexBuffer[Idx + 1];
+                uint32 LocalV2 = SectionData->ProcIndexBuffer[Idx + 2];
+                
+                // 验证原始索引是否在当前Section的有效范围内
+                if (LocalV0 >= static_cast<uint32>(SectionVertexCount) || 
+                    LocalV1 >= static_cast<uint32>(SectionVertexCount) || 
+                    LocalV2 >= static_cast<uint32>(SectionVertexCount))
+                {
+                  UE_LOG(LogTemp, Warning, TEXT("Section[%d] 跳过无效三角形索引: [%d, %d, %d] (Section顶点数=%d)"), 
+                    SectionIdx, LocalV0, LocalV1, LocalV2, SectionVertexCount);
+                  TotalSkippedTriangles++;
+                  continue;
+                }
+                
+                // 计算全局索引（加上偏移）
+                const uint32 V0 = SectionVertexOffset + LocalV0;
+                const uint32 V1 = SectionVertexOffset + LocalV1;
+                const uint32 V2 = SectionVertexOffset + LocalV2;
+                
+                // 验证全局索引
+                if (V0 < static_cast<uint32>(NewVertices.Num()) && 
+                    V1 < static_cast<uint32>(NewVertices.Num()) && 
+                    V2 < static_cast<uint32>(NewVertices.Num()))
+                {
+                  FTriIndices Tri;
+                  Tri.v0 = V0;
+                  Tri.v1 = V1;
+                  Tri.v2 = V2;
+                  NewIndices.Add(Tri);
+                }
+                else
+                {
+                  UE_LOG(LogTemp, Warning, TEXT("Section[%d] 全局索引验证失败: [%d, %d, %d] (总顶点数=%d)"), 
+                    SectionIdx, V0, V1, V2, NewVertices.Num());
+                  TotalSkippedTriangles++;
+                }
+              }
+            }
+            else if (NumSectionIndices > 0)
+            {
+              UE_LOG(LogTemp, Warning, TEXT("Section[%d] 索引数=%d（不是3的倍数），跳过"), SectionIdx, NumSectionIndices);
+            }
+            
+            TotalVertices = NewVertices.Num();
+          }
+          
+          if (TotalSkippedTriangles > 0)
+          {
+            UE_LOG(LogTemp, Warning, TEXT("从 ProceduralMeshComponent 提取数据时跳过了 %d 个无效三角形"), TotalSkippedTriangles);
+          }
+          
+          if (NewVertices.Num() > 0 && NewIndices.Num() > 0)
+          {
+            bDataFromPMC = true;
+            UE_LOG(LogTemp, Log, TEXT("✓ 【方案2-优先】从 ProceduralMeshComponent 提取数据成功: 顶点数=%d, 三角形数=%d"), 
+              NewVertices.Num(), NewIndices.Num());
+          }
+          else
+          {
+            UE_LOG(LogTemp, Warning, TEXT("⚠ 从 ProceduralMeshComponent 提取数据失败，将从 RenderData 提取数据"));
+          }
+        }
+        
+        // 如果从 ProceduralMeshComponent 提取失败，从 RenderData 提取数据（方案2-备用）
+        if (!bDataFromPMC && StaticMesh->RenderData && StaticMesh->RenderData->LODResources.Num() > 0)
+        {
+          UE_LOG(LogTemp, Log, TEXT("【方案2-备用】从 RenderData 提取数据..."));
+          NewVertices.Empty();
+          NewIndices.Empty();
+          
+          const FStaticMeshLODResources& LODResource = StaticMesh->RenderData->LODResources[0];
+          const FPositionVertexBuffer& PositionVertexBuffer = LODResource.VertexBuffers.PositionVertexBuffer;
+          const FRawStaticIndexBuffer& IndexBuffer = LODResource.IndexBuffer;
+
+          // 提取顶点
+          const int32 NumVertices = PositionVertexBuffer.GetNumVertices();
+          if (NumVertices > 0)
+          {
+            NewVertices.Reserve(NumVertices);
+            for (int32 VertIdx = 0; VertIdx < NumVertices; ++VertIdx)
+            {
+              // 边界检查：确保顶点访问安全
+              if (VertIdx >= 0 && VertIdx < NumVertices)
+              {
+                NewVertices.Add(PositionVertexBuffer.VertexPosition(VertIdx));
+              }
+              else
+              {
+                UE_LOG(LogTemp, Warning, TEXT("顶点索引越界: VertIdx=%d, NumVertices=%d"), VertIdx, NumVertices);
+                break;
+              }
+            }
+
+            // 提取索引并转换为 FTriIndices 格式
+            const int32 NumIndices = IndexBuffer.GetNumIndices();
+            
+            if (NumIndices > 0 && NumIndices % 3 == 0)
+            {
+              NewIndices.Reserve(NumIndices / 3);
+              
+              int32 SkippedTriangles = 0;
+              for (int32 Idx = 0; Idx < NumIndices - 2; Idx += 3)
+              {
+                // 边界检查：确保索引访问安全
+                if (Idx < 0 || Idx + 2 >= NumIndices)
+                {
+                  UE_LOG(LogTemp, Warning, TEXT("索引边界检查失败: Idx=%d, NumIndices=%d"), Idx, NumIndices);
+                  break;
+                }
+                
+                // 安全获取索引值
+                uint32 V0 = IndexBuffer.GetIndex(Idx);
+                uint32 V1 = IndexBuffer.GetIndex(Idx + 1);
+                uint32 V2 = IndexBuffer.GetIndex(Idx + 2);
+                
+                // 验证索引值是否在有效范围内
+                if (V0 >= static_cast<uint32>(NumVertices) || 
+                    V1 >= static_cast<uint32>(NumVertices) || 
+                    V2 >= static_cast<uint32>(NumVertices))
+                {
+                  UE_LOG(LogTemp, Warning, TEXT("跳过无效三角形索引: [%d, %d, %d] (顶点数=%d)"), 
+                    V0, V1, V2, NumVertices);
+                  SkippedTriangles++;
+                  continue;
+                }
+                
+                FTriIndices Tri;
+                Tri.v0 = V0;
+                Tri.v1 = V1;
+                Tri.v2 = V2;
+                NewIndices.Add(Tri);
+              }
+              
+              if (SkippedTriangles > 0)
+              {
+                UE_LOG(LogTemp, Warning, TEXT("跳过了 %d 个无效三角形索引"), SkippedTriangles);
+              }
+              
+              if (NewIndices.Num() > 0)
+              {
+                UE_LOG(LogTemp, Log, TEXT("✓ 【方案2-备用】从 RenderData 提取数据成功: 顶点数=%d, 索引数=%d, 三角形数=%d"), 
+                  NumVertices, NumIndices, NewIndices.Num());
+              }
+            }
+            else if (NumIndices > 0)
+            {
+              UE_LOG(LogTemp, Warning, TEXT("⚠ RenderData 索引数=%d（不是3的倍数）"), NumIndices);
+            }
+            else
+            {
+              UE_LOG(LogTemp, Warning, TEXT("⚠ RenderData 索引数据为空"));
+            }
+          }
         }
 
-        // 提取索引（参考 InitStaticMeshInfo）- 转换为 FTriIndices 格式
-        const int32 NumIndices = IndexBuffer.GetNumIndices();
-        NumTris = NumIndices / 3;
-        NewIndices.Reserve(NumTris);
-        for (int32 Idx = 0; Idx < NumIndices; Idx += 3)
-        {
-          FTriIndices Tri;
-          Tri.v0 = IndexBuffer.GetIndex(Idx);
-          Tri.v1 = IndexBuffer.GetIndex(Idx + 1);
-          Tri.v2 = IndexBuffer.GetIndex(Idx + 2);
-          NewIndices.Add(Tri);
-        }
-
-        UE_LOG(LogTemp, Log, TEXT("从 RenderData 提取数据: 顶点数=%d, 索引数=%d, 三角形数=%d"), 
-          NumVertices, NumIndices, NumTris);
-
+        // 确保有数据，然后生成 TriMeshes
         if (NewVertices.Num() > 0 && NewIndices.Num() > 0)
         {
           // 获取 PhysXCookingModule
@@ -900,7 +1114,7 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
 
             // 创建 MaterialIndices
             TArray<uint16> MaterialIndices;
-            MaterialIndices.AddZeroed(NumTris);
+            MaterialIndices.AddZeroed(NewIndices.Num());
 
             UE_LOG(LogTemp, Log, TEXT("调用 CreateTriMesh 生成复杂碰撞..."));
 
@@ -917,44 +1131,38 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
             if (!bError)
             {
               NewBodySetup->bCreatedPhysicsMeshes = true;
-              UE_LOG(LogTemp, Log, TEXT("✓ 成功创建 TriMeshes（复杂碰撞）"));
+              bTriMeshesGenerated = true;
+              UE_LOG(LogTemp, Log, TEXT("✓ 【方案2】成功手动创建 TriMeshes（复杂碰撞）"));
               UE_LOG(LogTemp, Log, TEXT("  - 顶点数: %d"), NewVertices.Num());
-              UE_LOG(LogTemp, Log, TEXT("  - 三角形数: %d"), NumTris);
+              UE_LOG(LogTemp, Log, TEXT("  - 三角形数: %d"), NewIndices.Num());
               UE_LOG(LogTemp, Log, TEXT("  - TriMeshes 数量: %d"), NewBodySetup->TriMeshes.Num());
             }
             else
             {
-              UE_LOG(LogTemp, Warning, TEXT("✗ CreateTriMesh 失败，无法生成复杂碰撞"));
+              UE_LOG(LogTemp, Warning, TEXT("✗ 【方案2】CreateTriMesh 失败，无法生成复杂碰撞"));
               NewBodySetup->TriMeshes.Empty();
             }
-          }
-          else
-          {
-            UE_LOG(LogTemp, Warning, TEXT("✗ 无法获取 PhysXCookingModule，跳过 TriMeshes 生成"));
-          }
+            }
+            else
+            {
+              UE_LOG(LogTemp, Error, TEXT("✗ 【方案2】无法获取 PhysXCookingModule，无法生成 TriMeshes"));
+            }
         }
         else
         {
-          UE_LOG(LogTemp, Warning, TEXT("✗ 无法提取顶点或索引数据，跳过 TriMeshes 生成"));
-          UE_LOG(LogTemp, Warning, TEXT("  - 顶点数: %d, 索引数: %d"), NewVertices.Num(), NewIndices.Num());
+          UE_LOG(LogTemp, Error, TEXT("✗ 【方案2】无法提取有效的顶点或索引数据，无法生成 TriMeshes"));
+          UE_LOG(LogTemp, Error, TEXT("  顶点数: %d, 索引数: %d"), NewVertices.Num(), NewIndices.Num());
         }
-        
-        UE_LOG(LogTemp, Log, TEXT("=== 复杂碰撞生成完成 ==="));
+      }
+      
+      // 总结 TriMeshes 生成结果
+      if (bTriMeshesGenerated)
+      {
+        UE_LOG(LogTemp, Log, TEXT("=== 复杂碰撞生成完成 - TriMeshes 数量: %d ==="), NewBodySetup->TriMeshes.Num());
       }
       else
       {
-        if (NewBodySetup->TriMeshes.Num() > 0)
-        {
-          UE_LOG(LogTemp, Log, TEXT("TriMeshes 已存在（数量: %d），跳过生成"), NewBodySetup->TriMeshes.Num());
-        }
-        else if (!StaticMesh->RenderData)
-        {
-          UE_LOG(LogTemp, Warning, TEXT("StaticMesh->RenderData 无效，无法生成 TriMeshes"));
-        }
-        else if (StaticMesh->RenderData->LODResources.Num() == 0)
-        {
-          UE_LOG(LogTemp, Warning, TEXT("RenderData 没有 LOD 资源，无法生成 TriMeshes"));
-        }
+        UE_LOG(LogTemp, Warning, TEXT("=== 复杂碰撞生成失败 - 所有方案均未成功 ==="));
       }
       
       // 碰撞数据统计
@@ -987,9 +1195,9 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
       if (TriMeshesCount > 0)
       {
         UE_LOG(LogTemp, Log, TEXT("复杂碰撞已生成，可用于精确碰撞检测"));
-      }
-      else
-      {
+        }
+        else
+        {
         UE_LOG(LogTemp, Log, TEXT("复杂碰撞未生成，将仅使用简单碰撞"));
       }
 
