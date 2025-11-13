@@ -18,9 +18,12 @@ public class ModelGen : ModuleRules
 			"StaticMeshDescription", 
 			"MeshConversion",
 			"AssetRegistry",
+			"PhysicsCore",
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
+		PrivateDependencyModuleNames.AddRange(new string[] { 
+			"PhysXCooking",
+		});
 
 		// 注意：已移除VHACD依赖，改用全平台支持的QuickHull实现（ModelGenConvexDecomp）
 		// PublicDependencyModuleNames.Add("VHACD");
