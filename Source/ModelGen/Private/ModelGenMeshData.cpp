@@ -62,7 +62,9 @@ int32 FModelGenMeshData::AddVertex(const FVector& Position, const FVector& Norma
     Normals.Add(Normal);
     UVs.Add(UV);
     VertexColors.Add(Color);
-    Tangents.Add(FProcMeshTangent(CalculateTangent(Normal), false));
+    // 不在这里计算切线，让 CalculateTangents() 统一基于 UV 计算
+    // 使用零向量作为占位符，CalculateTangents() 会重新计算
+    Tangents.Add(FProcMeshTangent(FVector::ZeroVector, false));
 
     VertexCount = Vertices.Num();
     return Index;
@@ -172,17 +174,33 @@ void FModelGenMeshData::CalculateTangents()
         return;
     }
 
-    // 硬边模式：保持原始法线，不进行平滑处理
-    // 只重新计算切线，保持法线不变
-    TArray<FVector> OutNormals = Normals; // 保持原始法线
-    TArray<FProcMeshTangent> OutTangents = Tangents;
+    // 硬边模式：保持原始法线，但让引擎基于 UV 正确计算切线
+    // 保存原始法线（硬边模式）
+    TArray<FVector> OriginalNormals = Normals;
     
-    // 使用引擎提供的切线计算，但保持原始法线不变
-    UKismetProceduralMeshLibrary::CalculateTangentsForMesh(Vertices, Triangles, UVs, OutNormals, OutTangents);
+    // 准备输出数组
+    TArray<FVector> OutNormals;
+    TArray<FProcMeshTangent> OutTangents;
     
-    // 恢复原始法线，只更新切线
-    OutNormals = Normals; // 强制恢复原始法线
-    Normals = MoveTemp(OutNormals);
+    OutNormals.SetNum(Vertices.Num());
+    OutTangents.SetNum(Vertices.Num());
+    
+    // 使用引擎计算切线和法线（基于 UV 和几何形状）
+    // 这会基于 UV 正确计算切线方向
+    UKismetProceduralMeshLibrary::CalculateTangentsForMesh(
+        Vertices, 
+        Triangles, 
+        UVs, 
+        OutNormals, 
+        OutTangents
+    );
+    
+    // 恢复原始法线（硬边模式）
+    Normals = MoveTemp(OriginalNormals);
+    
+    // 直接使用引擎计算的切线（已经基于 UV 正确计算）
+    // 即使法线是硬边的，引擎计算的切线也应该能正确工作
+    // 因为切线主要基于 UV 展开方向，而不是法线
     Tangents = MoveTemp(OutTangents);
 }
 

@@ -104,7 +104,7 @@ int32 APyramid::CalculateTriangleCountEstimate() const
 
 void APyramid::SetBaseRadius(float NewBaseRadius)
 {
-    if (NewBaseRadius > 0.0f && NewBaseRadius != BaseRadius)
+    if (NewBaseRadius > 0.0f && !FMath::IsNearlyEqual(NewBaseRadius, BaseRadius))
     {
         float OldBaseRadius = BaseRadius;
         BaseRadius = NewBaseRadius;
@@ -122,7 +122,7 @@ void APyramid::SetBaseRadius(float NewBaseRadius)
 
 void APyramid::SetHeight(float NewHeight)
 {
-    if (NewHeight > 0.0f && NewHeight != Height)
+    if (NewHeight > 0.0f && !FMath::IsNearlyEqual(NewHeight, Height))
     {
         float OldHeight = Height;
         Height = NewHeight;
@@ -158,7 +158,7 @@ void APyramid::SetSides(int32 NewSides)
 
 void APyramid::SetBevelRadius(float NewBevelRadius)
 {
-    if (NewBevelRadius >= 0.0f && NewBevelRadius < Height && NewBevelRadius != BevelRadius)
+    if (NewBevelRadius >= 0.0f && NewBevelRadius < Height && !FMath::IsNearlyEqual(NewBevelRadius, BevelRadius))
     {
         float OldBevelRadius = BevelRadius;
         BevelRadius = NewBevelRadius;

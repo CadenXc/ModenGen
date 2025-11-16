@@ -87,7 +87,7 @@ void ABevelCube::SetCubeSize(float NewCubeSize)
 
 void ABevelCube::SetBevelRadius(float NewBevelRadius)
 {
-    if (NewBevelRadius >= 0.0f && NewBevelRadius < GetHalfSize() && NewBevelRadius != BevelRadius)
+    if (NewBevelRadius >= 0.0f && NewBevelRadius < GetHalfSize() && !FMath::IsNearlyEqual(NewBevelRadius, BevelRadius))
     {
         float OldBevelRadius = BevelRadius;
         BevelRadius = NewBevelRadius;

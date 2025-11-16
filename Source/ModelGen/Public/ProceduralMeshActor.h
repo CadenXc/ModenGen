@@ -82,4 +82,41 @@ public:
     // 子类计算自己的Mesh
     UFUNCTION(BlueprintCallable, Category = "ProceduralMesh|Operations")
     virtual void GenerateMesh() { }
+
+private:
+    // 辅助函数：创建并初始化 StaticMesh 对象
+    UStaticMesh* CreateStaticMeshObject() const;
+    
+    // 辅助函数：从 ProceduralMeshComponent 构建 MeshDescription
+    bool BuildMeshDescriptionFromPMC(FMeshDescription& OutMeshDescription, UStaticMesh* StaticMesh) const;
+    
+    // 辅助函数：从 ProceduralMeshComponent 构建 StaticMesh 几何体
+    bool BuildStaticMeshGeometryFromProceduralMesh(UStaticMesh* StaticMesh) const;
+    
+    // 辅助函数：初始化 StaticMesh 的 RenderData
+    bool InitializeStaticMeshRenderData(UStaticMesh* StaticMesh) const;
+    
+    // 辅助函数：设置 BodySetup 的基本属性
+    void SetupBodySetupProperties(UBodySetup* BodySetup) const;
+    
+    // 辅助函数：生成简单碰撞（ConvexElems 或 BoxElems）
+    bool GenerateSimpleCollision(UBodySetup* BodySetup, UStaticMesh* StaticMesh) const;
+    
+    // 辅助函数：手动创建所有 ConvexMesh
+    int32 CreateConvexMeshesManually(UBodySetup* BodySetup, IPhysXCookingModule* PhysXCookingModule) const;
+    
+    // 辅助函数：从 ProceduralMeshComponent 提取 TriMesh 数据
+    bool ExtractTriMeshDataFromPMC(TArray<FVector>& OutVertices, TArray<FTriIndices>& OutIndices) const;
+    
+    // 辅助函数：从 RenderData 提取 TriMesh 数据
+    bool ExtractTriMeshDataFromRenderData(UStaticMesh* StaticMesh, TArray<FVector>& OutVertices, TArray<FTriIndices>& OutIndices) const;
+    
+    // 辅助函数：生成复杂碰撞（TriMeshes）
+    bool GenerateComplexCollision(UBodySetup* BodySetup, IPhysXCookingModule* PhysXCookingModule) const;
+    
+    // 辅助函数：记录碰撞统计信息
+    void LogCollisionStatistics(UBodySetup* BodySetup, UStaticMesh* StaticMesh) const;
+    
+    // 辅助函数：创建 BodySetup 并生成碰撞（简单碰撞和复杂碰撞）
+    void SetupBodySetupAndCollision(UStaticMesh* StaticMesh) const;
 };

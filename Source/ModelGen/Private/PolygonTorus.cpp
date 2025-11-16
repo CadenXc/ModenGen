@@ -66,7 +66,7 @@ int32 APolygonTorus::CalculateTriangleCountEstimate() const
 
 void APolygonTorus::SetMajorRadius(float NewMajorRadius)
 {
-    if (NewMajorRadius > 0.0f && NewMajorRadius != MajorRadius)
+    if (NewMajorRadius > 0.0f && !FMath::IsNearlyEqual(NewMajorRadius, MajorRadius))
     {
         float OldMajorRadius = MajorRadius;
         MajorRadius = NewMajorRadius;
@@ -84,7 +84,7 @@ void APolygonTorus::SetMajorRadius(float NewMajorRadius)
 
 void APolygonTorus::SetMinorRadius(float NewMinorRadius)
 {
-    if (NewMinorRadius > 0.0f && NewMinorRadius <= MajorRadius * 0.9f && NewMinorRadius != MinorRadius)
+    if (NewMinorRadius > 0.0f && NewMinorRadius <= MajorRadius * 0.9f && !FMath::IsNearlyEqual(NewMinorRadius, MinorRadius))
     {
         float OldMinorRadius = MinorRadius;
         MinorRadius = NewMinorRadius;
@@ -138,7 +138,7 @@ void APolygonTorus::SetMinorSegments(int32 NewMinorSegments)
 
 void APolygonTorus::SetTorusAngle(float NewTorusAngle)
 {
-    if (NewTorusAngle >= 0.0f && NewTorusAngle <= 360.0f && NewTorusAngle != TorusAngle)
+    if (NewTorusAngle >= 0.0f && NewTorusAngle <= 360.0f && !FMath::IsNearlyEqual(NewTorusAngle, TorusAngle))
     {
         float OldTorusAngle = TorusAngle;
         TorusAngle = NewTorusAngle;

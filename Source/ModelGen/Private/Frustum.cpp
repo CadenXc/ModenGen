@@ -85,7 +85,7 @@ int32 AFrustum::CalculateTriangleCountEstimate() const
 
 void AFrustum::SetTopRadius(float NewTopRadius)
 {
-    if (NewTopRadius > 0.0f && NewTopRadius != TopRadius)
+    if (NewTopRadius > 0.0f && !FMath::IsNearlyEqual(NewTopRadius, TopRadius))
     {
         float OldTopRadius = TopRadius;
         TopRadius = NewTopRadius;
@@ -103,7 +103,7 @@ void AFrustum::SetTopRadius(float NewTopRadius)
 
 void AFrustum::SetBottomRadius(float NewBottomRadius)
 {
-    if (NewBottomRadius > 0.0f && NewBottomRadius != BottomRadius)
+    if (NewBottomRadius > 0.0f && !FMath::IsNearlyEqual(NewBottomRadius, BottomRadius))
     {
         float OldBottomRadius = BottomRadius;
         BottomRadius = NewBottomRadius;
@@ -121,7 +121,7 @@ void AFrustum::SetBottomRadius(float NewBottomRadius)
 
 void AFrustum::SetHeight(float NewHeight)
 {
-    if (NewHeight > 0.0f && NewHeight != Height)
+    if (NewHeight > 0.0f && !FMath::IsNearlyEqual(NewHeight, Height))
     {
         float OldHeight = Height;
         Height = NewHeight;
@@ -205,7 +205,7 @@ void AFrustum::SetHeightSegments(int32 NewHeightSegments)
 
 void AFrustum::SetBevelRadius(float NewBevelRadius)
 {
-    if (NewBevelRadius >= 0.0f && NewBevelRadius != BevelRadius)
+    if (NewBevelRadius >= 0.0f && !FMath::IsNearlyEqual(NewBevelRadius, BevelRadius))
     {
         float OldBevelRadius = BevelRadius;
         BevelRadius = NewBevelRadius;
@@ -223,7 +223,7 @@ void AFrustum::SetBevelRadius(float NewBevelRadius)
 
 void AFrustum::SetBendAmount(float NewBendAmount)
 {
-    if (NewBendAmount >= -1.0f && NewBendAmount <= 1.0f && NewBendAmount != BendAmount)
+    if (NewBendAmount >= -1.0f && NewBendAmount <= 1.0f && !FMath::IsNearlyEqual(NewBendAmount, BendAmount))
     {
         float OldBendAmount = BendAmount;
         BendAmount = NewBendAmount;
@@ -241,7 +241,7 @@ void AFrustum::SetBendAmount(float NewBendAmount)
 
 void AFrustum::SetMinBendRadius(float NewMinBendRadius)
 {
-    if (NewMinBendRadius >= 0.0f && NewMinBendRadius != MinBendRadius)
+    if (NewMinBendRadius >= 0.0f && !FMath::IsNearlyEqual(NewMinBendRadius, MinBendRadius))
     {
         float OldMinBendRadius = MinBendRadius;
         MinBendRadius = NewMinBendRadius;
@@ -259,7 +259,7 @@ void AFrustum::SetMinBendRadius(float NewMinBendRadius)
 
 void AFrustum::SetArcAngle(float NewArcAngle)
 {
-    if (NewArcAngle > 0.0f && NewArcAngle <= 360.0f && NewArcAngle != ArcAngle)
+    if (NewArcAngle > 0.0f && NewArcAngle <= 360.0f && !FMath::IsNearlyEqual(NewArcAngle, ArcAngle))
     {
         float OldArcAngle = ArcAngle;
         ArcAngle = NewArcAngle;

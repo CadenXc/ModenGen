@@ -137,7 +137,7 @@ void AHollowPrism::SetInnerRadius(float NewInnerRadius)
     {
         return;
     }
-    if (NewInnerRadius > 0.0f && NewInnerRadius < OuterRadius && NewInnerRadius != InnerRadius)
+    if (NewInnerRadius > 0.0f && NewInnerRadius < OuterRadius && !FMath::IsNearlyEqual(NewInnerRadius, InnerRadius))
     {
         float OldInnerRadius = InnerRadius;
         InnerRadius = NewInnerRadius;
@@ -155,7 +155,7 @@ void AHollowPrism::SetInnerRadius(float NewInnerRadius)
 
 void AHollowPrism::SetOuterRadius(float NewOuterRadius)
 {
-    if (NewOuterRadius > 0.0f && NewOuterRadius > InnerRadius && NewOuterRadius != OuterRadius)
+    if (NewOuterRadius > 0.0f && NewOuterRadius > InnerRadius && !FMath::IsNearlyEqual(NewOuterRadius, OuterRadius))
     {
         float OldOuterRadius = OuterRadius;
         float OldInnerRadius = InnerRadius;
@@ -180,7 +180,7 @@ void AHollowPrism::SetOuterRadius(float NewOuterRadius)
 
 void AHollowPrism::SetHeight(float NewHeight)
 {
-    if (NewHeight > 0.0f && NewHeight != Height)
+    if (NewHeight > 0.0f && !FMath::IsNearlyEqual(NewHeight, Height))
     {
         float OldHeight = Height;
         Height = NewHeight;
@@ -246,7 +246,7 @@ void AHollowPrism::SetInnerSides(int32 NewInnerSides)
 
 void AHollowPrism::SetArcAngle(float NewArcAngle)
 {
-    if (NewArcAngle > 0.0f && NewArcAngle <= 360.0f && NewArcAngle != ArcAngle)
+    if (NewArcAngle > 0.0f && NewArcAngle <= 360.0f && !FMath::IsNearlyEqual(NewArcAngle, ArcAngle))
     {
         float OldArcAngle = ArcAngle;
         ArcAngle = NewArcAngle;
@@ -264,7 +264,7 @@ void AHollowPrism::SetArcAngle(float NewArcAngle)
 
 void AHollowPrism::SetBevelRadius(float NewBevelRadius)
 {
-    if (NewBevelRadius >= 0.0f && NewBevelRadius != BevelRadius)
+    if (NewBevelRadius >= 0.0f && !FMath::IsNearlyEqual(NewBevelRadius, BevelRadius))
     {
         float OldBevelRadius = BevelRadius;
         BevelRadius = NewBevelRadius;
