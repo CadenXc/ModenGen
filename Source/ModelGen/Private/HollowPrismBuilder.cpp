@@ -696,90 +696,111 @@ FVector2D FHollowPrismBuilder::CalculateWallUV(float Angle, float Z, EInnerOuter
 
 FVector2D FHollowPrismBuilder::CalculateCapUV(float Angle, float Radius, EHeightPosition HeightPosition) const
 {
-    const float ArcAngleRadians = FMath::DegreesToRadians(HollowPrism.ArcAngle);
+    // 参考 Pyramid 的底面映射：使用边界框方法映射到 1x1 UV 区域
+    // 计算端盖的边界框（基于内半径、外半径和角度范围）
     const float StartAngle = CalculateStartAngle();
+    const float ArcAngleRadians = FMath::DegreesToRadians(HollowPrism.ArcAngle);
+    const float EndAngle = StartAngle + ArcAngleRadians;
     
-    // 条状UV映射：将盖子展开成矩形条带
-    // U坐标：沿着角度方向，从0到1
-    const float U = (Angle - StartAngle) / ArcAngleRadians;
-    const float NormalizedU = FMath::Clamp(U, 0.0f, 1.0f);
+    // 确定实际使用的半径范围（考虑倒角）
+    const float EffectiveInnerRadius = bEnableBevel ? (HollowPrism.InnerRadius + HollowPrism.BevelRadius) : HollowPrism.InnerRadius;
+    const float EffectiveOuterRadius = bEnableBevel ? (HollowPrism.OuterRadius - HollowPrism.BevelRadius) : HollowPrism.OuterRadius;
     
-    // V坐标：沿着径向方向，从内半径到外半径
-    // UV 应该基于原始半径范围计算，即使传入的 Radius 可能是调整后的（用于倒角）
-    // 如果启用了倒角，将调整后的半径映射回原始半径范围
-    float EffectiveRadius = Radius;
+    // 计算边界框：找到所有可能顶点的最小/最大 X 和 Y
+    float MinX, MaxX, MinY, MaxY;
     
-    if (bEnableBevel)
+    // 如果是完整圆形，边界框是正方形
+    if (HollowPrism.IsFullCircle())
     {
-        // 将调整后的半径映射回原始半径范围
-        const float AdjustedInnerRadius = HollowPrism.InnerRadius + HollowPrism.BevelRadius;
-        const float AdjustedOuterRadius = HollowPrism.OuterRadius - HollowPrism.BevelRadius;
-        
-        // 如果 Radius 接近调整后的内环半径，映射到原始内环（V=0）
-        if (FMath::IsNearlyEqual(Radius, AdjustedInnerRadius, KINDA_SMALL_NUMBER))
-        {
-            EffectiveRadius = HollowPrism.InnerRadius;
-        }
-        // 如果 Radius 接近调整后的外环半径，映射到原始外环（V=1）
-        else if (FMath::IsNearlyEqual(Radius, AdjustedOuterRadius, KINDA_SMALL_NUMBER))
-        {
-            EffectiveRadius = HollowPrism.OuterRadius;
-        }
-        // 如果 Radius 在调整范围内，线性映射回原始范围
-        else if (Radius >= AdjustedInnerRadius && Radius <= AdjustedOuterRadius)
-        {
-            const float AdjustedRange = AdjustedOuterRadius - AdjustedInnerRadius;
-            if (AdjustedRange > KINDA_SMALL_NUMBER)
-            {
-                const float Alpha = (Radius - AdjustedInnerRadius) / AdjustedRange;
-                EffectiveRadius = HollowPrism.InnerRadius + Alpha * (HollowPrism.OuterRadius - HollowPrism.InnerRadius);
-            }
-        }
-        // 如果 Radius 超出调整范围，可能是特殊情况，直接使用原始范围计算
-        // （这种情况理论上不应该发生，但为了安全起见保留）
-    }
-    
-    const float RadiusRange = HollowPrism.OuterRadius - HollowPrism.InnerRadius;
-    const float V = (RadiusRange > KINDA_SMALL_NUMBER) ? 
-        ((EffectiveRadius - HollowPrism.InnerRadius) / RadiusRange) : 0.5f;
-    const float NormalizedV = FMath::Clamp(V, 0.0f, 1.0f);
-    
-    // 计算V值偏移，确保与其他部分连续
-    // 只有在启用倒角时才使用倒角高度
-    const float TotalHeight = 2.0f * HollowPrism.GetHalfHeight();
-    const float BevelHeight = bEnableBevel ? HollowPrism.BevelRadius : 0.0f;
-    const float WallHeight = TotalHeight - 2.0f * BevelHeight;
-    const float OuterCircumference = 2.0f * PI * HollowPrism.OuterRadius;
-    
-    const float WallVScale = WallHeight / OuterCircumference;
-    const float BevelVScale = BevelHeight / OuterCircumference;
-    const float CapVScale = RadiusRange / OuterCircumference;
-    
-    const float OuterWallVOffset = 0.0f;
-    const float OuterTopBevelVOffset = OuterWallVOffset + WallVScale;
-    const float TopCapVOffset = OuterTopBevelVOffset + BevelVScale;
-    const float InnerTopBevelVOffset = TopCapVOffset + CapVScale;
-    const float InnerWallVOffset = InnerTopBevelVOffset + BevelVScale;
-    const float InnerBottomBevelVOffset = InnerWallVOffset + WallVScale;
-    const float BottomCapVOffset = InnerBottomBevelVOffset + BevelVScale;
-    const float OuterBottomBevelVOffset = BottomCapVOffset + CapVScale;
-    
-    float V_Start, V_End;
-    if (HeightPosition == EHeightPosition::Top)
-    {
-        V_Start = TopCapVOffset;
-        V_End = TopCapVOffset + CapVScale;
+        MinX = -EffectiveOuterRadius;
+        MaxX = EffectiveOuterRadius;
+        MinY = -EffectiveOuterRadius;
+        MaxY = EffectiveOuterRadius;
     }
     else
     {
-        V_Start = BottomCapVOffset;
-        V_End = BottomCapVOffset + CapVScale;
+        // 对于部分圆形，需要检查所有关键点
+        // 初始化边界框
+        const float StartX_Outer = EffectiveOuterRadius * FMath::Cos(StartAngle);
+        const float StartY_Outer = EffectiveOuterRadius * FMath::Sin(StartAngle);
+        MinX = FMath::Min(StartX_Outer, EffectiveOuterRadius * FMath::Cos(EndAngle));
+        MaxX = FMath::Max(StartX_Outer, EffectiveOuterRadius * FMath::Cos(EndAngle));
+        MinY = FMath::Min(StartY_Outer, EffectiveOuterRadius * FMath::Sin(EndAngle));
+        MaxY = FMath::Max(StartY_Outer, EffectiveOuterRadius * FMath::Sin(EndAngle));
+        
+        // 检查内环的点
+        const float StartX_Inner = EffectiveInnerRadius * FMath::Cos(StartAngle);
+        const float StartY_Inner = EffectiveInnerRadius * FMath::Sin(StartAngle);
+        const float EndX_Inner = EffectiveInnerRadius * FMath::Cos(EndAngle);
+        const float EndY_Inner = EffectiveInnerRadius * FMath::Sin(EndAngle);
+        
+        MinX = FMath::Min(MinX, FMath::Min(StartX_Inner, EndX_Inner));
+        MaxX = FMath::Max(MaxX, FMath::Max(StartX_Inner, EndX_Inner));
+        MinY = FMath::Min(MinY, FMath::Min(StartY_Inner, EndY_Inner));
+        MaxY = FMath::Max(MaxY, FMath::Max(StartY_Inner, EndY_Inner));
+        
+        // 检查关键角度（0°, 90°, 180°, 270°）是否在角度范围内
+        const float KeyAngles[4] = {0.0f, PI / 2.0f, PI, 3.0f * PI / 2.0f};
+        for (int32 i = 0; i < 4; ++i)
+        {
+            float KeyAngle = KeyAngles[i];
+            
+            // 检查关键角度是否在 [StartAngle, EndAngle] 范围内（考虑周期性）
+            bool bInRange = false;
+            if (StartAngle <= EndAngle)
+            {
+                // 正常情况：StartAngle < EndAngle
+                bInRange = (KeyAngle >= StartAngle && KeyAngle <= EndAngle);
+            }
+            else
+            {
+                // 跨越 0° 的情况：StartAngle > EndAngle
+                bInRange = (KeyAngle >= StartAngle || KeyAngle <= EndAngle);
+            }
+            
+            if (bInRange)
+            {
+                const float KeyX_Outer = EffectiveOuterRadius * FMath::Cos(KeyAngle);
+                const float KeyY_Outer = EffectiveOuterRadius * FMath::Sin(KeyAngle);
+                const float KeyX_Inner = EffectiveInnerRadius * FMath::Cos(KeyAngle);
+                const float KeyY_Inner = EffectiveInnerRadius * FMath::Sin(KeyAngle);
+                
+                MinX = FMath::Min(MinX, FMath::Min(KeyX_Outer, KeyX_Inner));
+                MaxX = FMath::Max(MaxX, FMath::Max(KeyX_Outer, KeyX_Inner));
+                MinY = FMath::Min(MinY, FMath::Min(KeyY_Outer, KeyY_Inner));
+                MaxY = FMath::Max(MaxY, FMath::Max(KeyY_Outer, KeyY_Inner));
+            }
+        }
     }
     
-    // 条状映射：U使用完整范围[0,1]，V在分配的范围内连续分布
-    const float ActualV = V_Start + NormalizedV * (V_End - V_Start);
+    // 计算当前顶点的位置
+    const float X = Radius * FMath::Cos(Angle);
+    const float Y = Radius * FMath::Sin(Angle);
     
-    return FVector2D(NormalizedU, ActualV);
+    // 映射到 1x1 UV 区域
+    const float RangeX = MaxX - MinX;
+    const float RangeY = MaxY - MinY;
+    
+    float U, V;
+    if (RangeX > KINDA_SMALL_NUMBER)
+    {
+        U = (X - MinX) / RangeX;
+    }
+    else
+    {
+        U = 0.5f; // 如果 X 范围太小，放在中心
+    }
+    
+    if (RangeY > KINDA_SMALL_NUMBER)
+    {
+        V = (Y - MinY) / RangeY;
+    }
+    else
+    {
+        V = 0.5f; // 如果 Y 范围太小，放在中心
+    }
+    
+    return FVector2D(FMath::Clamp(U, 0.0f, 1.0f), FMath::Clamp(V, 0.0f, 1.0f));
 }
 
 FVector2D FHollowPrismBuilder::CalculateBevelUV(float Angle, float Alpha, EInnerOuter InnerOuter, EHeightPosition HeightPosition) const

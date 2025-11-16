@@ -71,13 +71,42 @@ int32 FFrustumBuilder::CalculateTriangleCountEstimate() const
 void FFrustumBuilder::CreateSideGeometry()
 {
 	const float HalfHeight = Frustum.GetHalfHeight();
-	const float TopBevelStartZ = HalfHeight - CalculateBevelHeight(Frustum.TopRadius);
-	const float BottomBevelStartZ = -HalfHeight + CalculateBevelHeight(Frustum.BottomRadius);
+	const float TopBevelHeight = CalculateBevelHeight(Frustum.TopRadius);
+	const float BottomBevelHeight = CalculateBevelHeight(Frustum.BottomRadius);
+	
+	// 计算侧边棱的方向向量（从底部到顶部）
+	const float RadiusDiff = Frustum.TopRadius - Frustum.BottomRadius;
+	const float SideLength = FMath::Sqrt(RadiusDiff * RadiusDiff + Frustum.Height * Frustum.Height);
+	
+	// 计算沿着侧边棱移动后的新位置
+	float TopBevelRadius, TopBevelStartZ;
+	float BottomBevelRadius, BottomBevelStartZ;
+	
+	if (bEnableBevel && SideLength > KINDA_SMALL_NUMBER)
+	{
+		// 侧边方向向量的归一化分量
+		const float RadiusDir = RadiusDiff / SideLength;
+		const float HeightDir = Frustum.Height / SideLength;
+		
+		// 顶部：沿着棱向下移动
+		TopBevelRadius = Frustum.TopRadius - TopBevelHeight * RadiusDir;
+		TopBevelStartZ = HalfHeight - TopBevelHeight * HeightDir;
+		
+		// 底部：沿着棱向上移动
+		BottomBevelRadius = Frustum.BottomRadius + BottomBevelHeight * RadiusDir;
+		BottomBevelStartZ = -HalfHeight + BottomBevelHeight * HeightDir;
+	}
+	else
+	{
+		// 无倒角时，使用原始值
+		TopBevelRadius = Frustum.TopRadius;
+		TopBevelStartZ = HalfHeight;
+		BottomBevelRadius = Frustum.BottomRadius;
+		BottomBevelStartZ = -HalfHeight;
+	}
 
 	// 侧边UV映射：使用周长比例计算V值
 	const float TotalHeight = Frustum.Height;
-	const float TopBevelHeight = CalculateBevelHeight(Frustum.TopRadius);
-	const float BottomBevelHeight = CalculateBevelHeight(Frustum.BottomRadius);
 	const float SideHeight = TotalHeight - TopBevelHeight - BottomBevelHeight;
 	
 	const float AvgRadius = (Frustum.TopRadius + Frustum.BottomRadius) * 0.5f;
@@ -91,7 +120,7 @@ void FFrustumBuilder::CreateSideGeometry()
 	const float SideVEnd = SideVStart + SideVScale;
 	
 	TArray<int32> TopRing = GenerateVertexRing(
-		Frustum.TopRadius,
+		TopBevelRadius,
 		TopBevelStartZ,
 		Frustum.TopSides,
 		1.0f,
@@ -101,7 +130,7 @@ void FFrustumBuilder::CreateSideGeometry()
 	TopSideRing = TopRing;
 
 	TArray<int32> BottomRing = GenerateVertexRing(
-		Frustum.BottomRadius,
+		BottomBevelRadius,
 		BottomBevelStartZ,
 		Frustum.BottomSides,
 		SideVStart,
@@ -337,9 +366,26 @@ TArray<int32> FFrustumBuilder::GenerateVertexRing(
 	const float HalfHeight = Frustum.GetHalfHeight();
 	const float AdjustedZ = Z + HalfHeight;
 
-	// 判断是否为倒角连接点，软边时使用平滑法线（使用原始Z值进行判断）
-	const float TopBevelStartZ = HalfHeight - CalculateBevelHeight(Frustum.TopRadius);
-	const float BottomBevelStartZ = -HalfHeight + CalculateBevelHeight(Frustum.BottomRadius);
+	// 判断是否为倒角连接点，软边时使用平滑法线
+	// 计算沿着侧边棱移动后的位置（与 CreateSideGeometry 中的计算一致）
+	const float TopBevelHeight = CalculateBevelHeight(Frustum.TopRadius);
+	const float BottomBevelHeight = CalculateBevelHeight(Frustum.BottomRadius);
+	const float RadiusDiff = Frustum.TopRadius - Frustum.BottomRadius;
+	const float SideLength = FMath::Sqrt(RadiusDiff * RadiusDiff + Frustum.Height * Frustum.Height);
+	
+	float TopBevelStartZ, BottomBevelStartZ;
+	if (bEnableBevel && SideLength > KINDA_SMALL_NUMBER)
+	{
+		const float HeightDir = Frustum.Height / SideLength;
+		TopBevelStartZ = HalfHeight - TopBevelHeight * HeightDir;
+		BottomBevelStartZ = -HalfHeight + BottomBevelHeight * HeightDir;
+	}
+	else
+	{
+		TopBevelStartZ = HalfHeight;
+		BottomBevelStartZ = -HalfHeight;
+	}
+	
 	const bool bIsBevelConnection = (FMath::Abs(Z - TopBevelStartZ) < KINDA_SMALL_NUMBER) || 
 	                                 (FMath::Abs(Z - BottomBevelStartZ) < KINDA_SMALL_NUMBER);
 	const bool bIsTopBevel = FMath::Abs(Z - TopBevelStartZ) < KINDA_SMALL_NUMBER;

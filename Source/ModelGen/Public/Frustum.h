@@ -25,21 +25,21 @@ public:
     //~ Begin Geometry Parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Geometry", 
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Top Radius"))
-    float TopRadius = 50.0f;
+    float TopRadius = 30.0f;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetTopRadius(float NewTopRadius);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Geometry", 
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Bottom Radius"))
-    float BottomRadius = 100.0f;
+    float BottomRadius = 50.0f;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetBottomRadius(float NewBottomRadius);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Geometry", 
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Height"))
-    float Height = 200.0f;
+    float Height = 100.0f;
 
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetHeight(float NewHeight);

@@ -56,7 +56,7 @@ int32 FPyramidBuilder::CalculateTriangleCountEstimate() const
 
 void FPyramidBuilder::GenerateBaseFace()
 {
-    // 底面使用独立的UV区域，类似BevelCube的主面处理
+    // 底面也占据完整的 1x1 UV 区域
     FVector Normal(0, 0, -1);
 
     if (BottomVertices.Num() < 3)
@@ -67,21 +67,46 @@ void FPyramidBuilder::GenerateBaseFace()
     TArray<int32> VertexIndices;
     VertexIndices.Reserve(BottomVertices.Num());
 
-    // 计算底面UV区域，使正多边形边长和为1
-    // 正n边形周长 = 2n × 半径 × sin(π/n)
-    const float PolygonPerimeter = 2.0f * Sides * BevelTopRadius * FMath::Sin(PI / Sides);
-    // 使周长归一化为1，计算UV半径
-    const float UVRadius = 1.0f / (2.0f * Sides * FMath::Sin(PI / Sides));
-    const FVector2D BaseCenterUV(0.5f, 0.5f - UVRadius); // 底面中心位置
-
-    // 底面UV映射，使用动态半径
+    // 计算底面的边界框，用于映射到 1x1 UV 区域
+    float MinX = BottomVertices[0].X;
+    float MaxX = BottomVertices[0].X;
+    float MinY = BottomVertices[0].Y;
+    float MaxY = BottomVertices[0].Y;
+    
+    for (int32 i = 1; i < BottomVertices.Num(); ++i)
+    {
+        MinX = FMath::Min(MinX, BottomVertices[i].X);
+        MaxX = FMath::Max(MaxX, BottomVertices[i].X);
+        MinY = FMath::Min(MinY, BottomVertices[i].Y);
+        MaxY = FMath::Max(MaxY, BottomVertices[i].Y);
+    }
+    
+    const float RangeX = MaxX - MinX;
+    const float RangeY = MaxY - MinY;
+    
+    // 将底面顶点映射到 1x1 UV 区域
     for (int32 i = 0; i < BottomVertices.Num(); ++i)
     {
-        // 将底面顶点映射到UV空间，使用动态半径
-        float U = BaseCenterUV.X + (BottomVertices[i].X / BevelTopRadius) * UVRadius;
-        float V = BaseCenterUV.Y + (BottomVertices[i].Y / BevelTopRadius) * UVRadius;
+        float U, V;
+        if (RangeX > KINDA_SMALL_NUMBER)
+        {
+            U = (BottomVertices[i].X - MinX) / RangeX;
+        }
+        else
+        {
+            U = 0.5f; // 如果 X 范围太小，放在中心
+        }
+        
+        if (RangeY > KINDA_SMALL_NUMBER)
+        {
+            V = (BottomVertices[i].Y - MinY) / RangeY;
+        }
+        else
+        {
+            V = 0.5f; // 如果 Y 范围太小，放在中心
+        }
+        
         FVector2D UV(U, V);
-
         int32 VertexIndex = GetOrAddVertex(BottomVertices[i], Normal, UV);
         VertexIndices.Add(VertexIndex);
     }
@@ -104,23 +129,18 @@ void FPyramidBuilder::GenerateBevelSection()
         return;
     }
 
-    // 倒角部分UV映射，与侧面连续分布
-    // 倒角V值根据倒角高度与底边边长的比例计算，确保UV映射比例正确
-    const float U_WIDTH_PER_SIDE = 1.0f / Sides;
-    
-    // 计算底面周长：2π × BevelTopRadius
-    const float BaseCircumference = 2.0f * PI * BevelTopRadius;
-    
-    // 计算倒角V值范围：倒角高度 / 底面周长
-    const float BevelVHeight = BevelRadius / BaseCircumference;
-    
-    // 计算侧面V值范围：侧面高度 / 侧面周长
+    // 计算倒角和侧面的高度比例，用于在 1x1 UV 区域中分配
     const float SideHeight = Height - BevelRadius;
-    const float SideCircumference = 2.0f * PI * BevelTopRadius;
-    const float SideVHeight = SideHeight / SideCircumference;
+    const float TotalHeight = Height;
     
+    // 计算倒角在总高度中的比例（用于 UV V 值分配）
+    const float BevelRatio = (TotalHeight > KINDA_SMALL_NUMBER) ? (BevelRadius / TotalHeight) : 0.0f;
+    
+    // 每个面占据完整的 1x1 UV 区域
+    // 倒角部分：V 从 0 到 BevelRatio
+    // 侧面部分：V 从 BevelRatio 到 1.0
     const float V_START = 0.0f;
-    const float V_HEIGHT = BevelVHeight;
+    const float V_HEIGHT = BevelRatio;
 
     const bool bSmooth = Pyramid.bSmoothSides;
 
@@ -200,13 +220,11 @@ void FPyramidBuilder::GenerateBevelSection()
             }
         }
 
-        float U_START = static_cast<float>(i) * U_WIDTH_PER_SIDE;
-        float U_END = U_START + U_WIDTH_PER_SIDE;
-
-        FVector2D UV_Bottom_i(U_START, V_START);
-        FVector2D UV_Bottom_NextI(U_END, V_START);
-        FVector2D UV_Top_i(U_START, V_START + V_HEIGHT);
-        FVector2D UV_Top_NextI(U_END, V_START + V_HEIGHT);
+        // 每个面占据完整的 1x1 UV 区域，U 从 0 到 1
+        FVector2D UV_Bottom_i(0.0f, V_START);
+        FVector2D UV_Bottom_NextI(1.0f, V_START);
+        FVector2D UV_Top_i(0.0f, V_START + V_HEIGHT);
+        FVector2D UV_Top_NextI(1.0f, V_START + V_HEIGHT);
 
         int32 V0 = GetOrAddVertex(BottomVertices[i], Normal_i, UV_Bottom_i);
         int32 V1 = GetOrAddVertex(BottomVertices[NextI], Normal_NextI, UV_Bottom_NextI);
@@ -221,20 +239,18 @@ void FPyramidBuilder::GenerateBevelSection()
 
 void FPyramidBuilder::GeneratePyramidSides()
 {
-    const float BaseCircumference = 2.0f * PI * BaseRadius;
+    // 计算倒角和侧面的高度比例，用于在 1x1 UV 区域中分配
     const float SideHeight = Height - BevelRadius;
-    const float CircumferenceRatio = BaseCircumference / SideHeight;
+    const float TotalHeight = Height;
     
-    const float U_WIDTH_PER_SIDE = 1.0f / Sides;
+    // 计算倒角在总高度中的比例（用于 UV V 值分配）
+    const float BevelRatio = (TotalHeight > KINDA_SMALL_NUMBER) ? (BevelRadius / TotalHeight) : 0.0f;
     
-    const float BevelTopCircumference = 2.0f * PI * BevelTopRadius;
-    const float BevelVHeight = BevelRadius / BevelTopCircumference;
-    
-    const float SideCircumference = 2.0f * PI * BevelTopRadius;
-    const float SideVHeight = SideHeight / SideCircumference;
-    
-    const float V_START = BevelVHeight;
-    const float V_HEIGHT = SideVHeight;
+    // 每个面占据完整的 1x1 UV 区域
+    // 倒角部分：V 从 0 到 BevelRatio
+    // 侧面部分：V 从 BevelRatio 到 1.0
+    const float V_START = BevelRatio;
+    const float V_HEIGHT = 1.0f - BevelRatio;
 
     const bool bSmooth = Pyramid.bSmoothSides;
 
@@ -294,12 +310,10 @@ void FPyramidBuilder::GeneratePyramidSides()
             BaseNormal2 = CurrentSideNormal;
         }
 
-        float U_START = static_cast<float>(i) * U_WIDTH_PER_SIDE;
-        float U_END = U_START + U_WIDTH_PER_SIDE;
-
-        FVector2D UV_Top((U_START + U_END) * 0.5f, V_START + V_HEIGHT);
-        FVector2D UV_Base1(U_START, V_START);
-        FVector2D UV_Base2(U_END, V_START);
+        // 每个面占据完整的 1x1 UV 区域，U 从 0 到 1
+        FVector2D UV_Top(0.5f, V_START + V_HEIGHT);
+        FVector2D UV_Base1(0.0f, V_START);
+        FVector2D UV_Base2(1.0f, V_START);
 
         int32 TopVertex = GetOrAddVertex(PyramidTopPoint, FinalTopNormal, UV_Top);
         int32 V1 = GetOrAddVertex(TopVertices[i], BaseNormal1, UV_Base1);

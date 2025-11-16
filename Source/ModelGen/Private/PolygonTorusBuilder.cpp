@@ -255,16 +255,11 @@ void FPolygonTorusBuilder::GenerateTriangles()
                         MinorSin_Norm
                     ).GetSafeNormal();
 
-                    // 计算UV (根据周长比例动态分布，避免面拉伸)
-                    // 计算大圆环和小圆环的周长比例
-                    const float MajorCircumference = 2.0f * PI * MajorRad;
-                    const float MinorCircumference = 2.0f * PI * MinorRad;
-                    const float CircumferenceRatio = MajorCircumference / MinorCircumference;
-                    
-                    // U坐标：沿主环方向均匀分布
-                    // V坐标：沿次环方向均匀分布，根据周长比例调整
-                    const float UCoord = static_cast<float>(MajorIndex + i) / MajorSegs;
-                    const float VCoord = (static_cast<float>(MinorIndex + j) / MinorSegs) / CircumferenceRatio;
+                    // 每个段占据完整的 1x1 UV 区域，类似于 Pyramid 的侧面
+                    // U坐标：在当前段内从 0 到 1（每个段独立）
+                    const float UCoord = static_cast<float>(i) / 1.0f; // i 是 0 或 1，所以 U 是 0 或 1
+                    // V坐标：沿次环方向从 0 到 1（每个段独立）
+                    const float VCoord = static_cast<float>(MinorIndex + j) / MinorSegs;
                     QuadUVs[CornerIndex] = FVector2D(UCoord, VCoord);
                 }
             }

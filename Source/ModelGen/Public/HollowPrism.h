@@ -25,14 +25,14 @@ public:
     //~ Begin Geometry Parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Geometry", 
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Inner Radius"))
-    float InnerRadius = 50.0f;
+    float InnerRadius = 25.0f;
 
     UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
     void SetInnerRadius(float NewInnerRadius);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Geometry", 
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Outer Radius"))
-    float OuterRadius = 100.0f;
+    float OuterRadius = 50.0f;
 
     UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
     void SetOuterRadius(float NewOuterRadius);
@@ -67,7 +67,7 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Bevel", 
         meta = (ClampMin = "0.0", ClampMax = "500", UIMin = "0.0", UIMax = "500", DisplayName = "Bevel Radius"))
-    float BevelRadius = 5.0f;
+    float BevelRadius = 0.0f;
 
     UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
     void SetBevelRadius(float NewBevelRadius);
@@ -75,7 +75,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Bevel", 
         meta = (ClampMin = "0", ClampMax = "4", UIMin = "0", UIMax = "4", 
         DisplayName = "Bevel Sections", ToolTip = "倒角分段数。0表示不启用倒角"))
-    int32 BevelSegments = 4;
+    int32 BevelSegments = 0;
 
     UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
     void SetBevelSegments(int32 NewBevelSegments);

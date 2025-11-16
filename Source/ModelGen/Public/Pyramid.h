@@ -25,14 +25,14 @@ public:
     //~ Begin Geometry Parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid|Geometry",
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Base Radius"))
-    float BaseRadius = 100.0f;
+    float BaseRadius = 70.0f;
     
     UFUNCTION(BlueprintCallable, Category = "Pyramid|Parameters")
     void SetBaseRadius(float NewBaseRadius);
     
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid|Geometry",
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Height"))
-    float Height = 200.0f;
+    float Height = 100.0f;
     
     UFUNCTION(BlueprintCallable, Category = "Pyramid|Parameters")
     void SetHeight(float NewHeight);
