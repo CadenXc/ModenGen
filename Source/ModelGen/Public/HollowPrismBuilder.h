@@ -10,7 +10,7 @@
 #include "CoreMinimal.h"
 #include "ModelGenMeshBuilder.h"
 
-// Forward declarations
+ // Forward declarations
 class AHollowPrism;
 
 class MODELGEN_API FHollowPrismBuilder : public FModelGenMeshBuilder
@@ -26,62 +26,71 @@ public:
 
 private:
     const AHollowPrism& HollowPrism;
-    
+
     // 是否启用倒角：BevelRadius > 0 且 BevelSegments > 0
     bool bEnableBevel;
     
-    // 端盖顶点索引记录 - 拆分为4个独立数组
-    TArray<int32> StartOuterCapIndices;  // 起始端盖外壁顶点
-    TArray<int32> StartInnerCapIndices;  // 起始端盖内壁顶点
-    TArray<int32> EndOuterCapIndices;    // 结束端盖外壁顶点
-    TArray<int32> EndInnerCapIndices;    // 结束端盖内壁顶点
+    // 倒角段数
+    int32 BevelSegments;
+
+    // 盖子顶点环记录 (由 Bevel/Wall 几何体生成)
+    // 这些是最终与 Cap 三角形连接的边缘顶点
+    TArray<int32> TopInnerCapRing;
+    TArray<int32> TopOuterCapRing;
+    TArray<int32> BottomInnerCapRing;
+    TArray<int32> BottomOuterCapRing;
+
+    // 墙体顶点环记录 (倒角与中间墙体连接的边缘顶点)
+    TArray<int32> TopInnerWallRing;
+    TArray<int32> TopOuterWallRing;
+    TArray<int32> BottomInnerWallRing;
+    TArray<int32> BottomOuterWallRing;
     
-    // 倒角连接顶点记录
-    TArray<int32> TopInnerBevelVertices;   // 顶部内环倒角连接顶点
-    TArray<int32> TopOuterBevelVertices;   // 顶部外环倒角连接顶点
-    TArray<int32> BottomInnerBevelVertices; // 底部内环倒角连接顶点
-    TArray<int32> BottomOuterBevelVertices; // 底部外环倒角连接顶点
+    // 端盖顶点索引记录（用于生成端盖）
+    TArray<int32> StartOuterCapIndices;
+    TArray<int32> StartInnerCapIndices;
+    TArray<int32> EndOuterCapIndices;
+    TArray<int32> EndInnerCapIndices;
     
-    //~ Begin Wall Generation
+    // 清空所有数据
+    void Clear();
+
+    //~ Begin Geometry Generation
+    /**
+     * @brief (新) 统一生成墙体和倒角几何体。
+     * 此函数将填充 Top/Bottom CapRing 和 WallRing 数组。
+     */
+    void GenerateSideAndBevelGeometry(EInnerOuter InnerOuter);
+
+    /**
+     * @brief 生成墙体 (仅在 bEnableBevel=false 时使用)
+     */
     void GenerateWalls(float Radius, int32 Sides, EInnerOuter InnerOuter);
 
-    //~ Begin Cap Generation
-    void GenerateCapVertices(TArray<int32>& OutInnerVertices, 
-                            TArray<int32>& OutOuterVertices, 
-                            EHeightPosition HeightPosition);
+    /**
+     * @brief 使用提供的 Cap 环生成盖子三角形。
+     */
     void GenerateCapTriangles(const TArray<int32>& InnerVertices,
-                             const TArray<int32>& OuterVertices,
-                             EHeightPosition HeightPosition);
-
-    //~ Begin Bevel Generation
-    void GenerateBevelGeometry(EHeightPosition HeightPosition, EInnerOuter InnerOuter);
-    void GenerateBevelRing(TArray<int32>& OutCurrentRing,
-                          EHeightPosition HeightPosition,
-                          EInnerOuter InnerOuter,
-                          int32 RingIndex,
-                          int32 TotalRings);
-    void ConnectBevelRings(const TArray<int32>& PrevRing,
-                          const TArray<int32>& CurrentRing,
-                          EInnerOuter InnerOuter,
-                          EHeightPosition HeightPosition);
+        const TArray<int32>& OuterVertices,
+        EHeightPosition HeightPosition);
 
     //~ Begin End Cap Generation (for partial circles)
     void GenerateEndCapColumn(float Angle,
-                             const FVector& Normal,
-                             TArray<int32>& OutOrderedVertices,
-                             EEndCapType EndCapType);
+        const FVector& Normal,
+        TArray<int32>& OutOrderedVertices,
+        EEndCapType EndCapType);
     void GenerateEndCapTriangles(const TArray<int32>& OrderedVertices,
-                                EEndCapType EndCapType);
+        EEndCapType EndCapType);
     void GenerateEndCapWithBevel(EEndCapType EndCapType);
-    void GenerateEndCapWithBevelVertices(const TArray<int32>& RecordedVertices,
-                                        EEndCapType EndCapType);
-    
+
     //~ Begin Utility Functions
     float CalculateStartAngle() const;
     float CalculateAngleStep(int32 Sides) const;
+    /**
+     * @brief 计算顶点坐标 (Z值会向上偏移 HalfHeight)
+     */
     FVector CalculateVertexPosition(float Radius, float Angle, float Z) const;
-    FVector CalculateBevelNormal(float Angle, float Alpha, EInnerOuter InnerOuter, EHeightPosition HeightPosition) const;
-    
+
     //~ Begin UV Functions
     FVector2D CalculateWallUV(float Angle, float Z, EInnerOuter InnerOuter) const;
     FVector2D CalculateCapUV(float Angle, float Radius, EHeightPosition HeightPosition) const;
