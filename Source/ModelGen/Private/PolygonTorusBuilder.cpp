@@ -83,9 +83,8 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     // 将原点移动到最底面（底部Z=0）：端盖中心Z坐标为MinorRadius以保持在中间位置
     const FVector StartCenter = FVector(FMath::Cos(StartAngle) * MajorRad, FMath::Sin(StartAngle) * MajorRad, MinorRad);
     const FVector StartNormal = FVector(FMath::Sin(StartAngle), -FMath::Cos(StartAngle), 0.0f);
-    // 根据角度比例动态计算UV中心位置
-    const float AngleRatio = AngleRad / (2.0f * PI);
-    const FVector2D StartCenterUV(0.5f - AngleRatio * 0.4f, 0.5f);
+    // 端盖中心 UV 位置固定为 0.5x0.5
+    const FVector2D StartCenterUV(0.5f, 0.5f);
     const int32 StartCenterIndex = GetOrAddVertex(StartCenter, StartNormal, StartCenterUV);
 
     TArray<int32> NewStartCapEdgeIndices;
@@ -113,8 +112,8 @@ void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
     // 将原点移动到最底面（底部Z=0）：端盖中心Z坐标为MinorRadius以保持在中间位置
     const FVector EndCenter = FVector(FMath::Cos(EndAngle) * MajorRad, FMath::Sin(EndAngle) * MajorRad, MinorRad);
     const FVector EndNormal = FVector(-FMath::Sin(EndAngle), FMath::Cos(EndAngle), 0.0f);
-    // 根据角度比例动态计算UV中心位置
-    const FVector2D EndCenterUV(0.5f + AngleRatio * 0.4f, 0.5f);
+    // 端盖中心 UV 位置固定为 0.5x0.5
+    const FVector2D EndCenterUV(0.5f, 0.5f);
     const int32 EndCenterIndex = GetOrAddVertex(EndCenter, EndNormal, EndCenterUV);
 
     TArray<int32> NewEndCapEdgeIndices;
