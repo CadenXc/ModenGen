@@ -4,18 +4,20 @@
 #include "Pyramid.h"
 #include "ModelGenMeshData.h"
 
+// 全局 UV 缩放因子
+static const float GLOBAL_UV_SCALE = 0.01f;
+
 FPyramidBuilder::FPyramidBuilder(const APyramid& InPyramid)
     : Pyramid(InPyramid)
 {
     Clear();
-    BaseRadius = Pyramid.BaseRadius;
-    Height = Pyramid.Height;
-    Sides = Pyramid.Sides;
-    BevelRadius = Pyramid.BevelRadius;
-    BevelTopRadius = Pyramid.GetBevelTopRadius();
+}
 
-    PrecomputeVertices();
-    PrecomputeUVs();
+void FPyramidBuilder::Clear()
+{
+    FModelGenMeshBuilder::Clear();
+    CosValues.Empty();
+    SinValues.Empty();
 }
 
 bool FPyramidBuilder::Generate(FModelGenMeshData& OutMeshData)
@@ -28,18 +30,36 @@ bool FPyramidBuilder::Generate(FModelGenMeshData& OutMeshData)
     Clear();
     ReserveMemory();
 
-    GenerateBaseFace();
-    GenerateBevelSection();
-    GeneratePyramidSides();
+    // 缓存参数
+    BaseRadius = Pyramid.BaseRadius;
+    Height = Pyramid.Height;
+    Sides = Pyramid.Sides;
+    BevelRadius = Pyramid.BevelRadius;
+
+    // 恢复原始逻辑：
+    // 在原始实现中，底面(Z=0)和倒角顶面(Z=BevelRadius)都使用了 BevelTopRadius。
+    // 这使得倒角区域变成了一个垂直的"棱柱"底座。
+    BevelTopRadius = Pyramid.GetBevelTopRadius();
+
+    TopPoint = FVector(0, 0, Height);
+
+    PrecomputeMath();
+
+    GenerateBase();
+
+    if (BevelRadius > KINDA_SMALL_NUMBER)
+    {
+        GenerateBevel();
+    }
+
+    GenerateSides();
 
     if (!ValidateGeneratedData())
     {
         return false;
     }
 
-    // 计算正确的切线（用于法线贴图等）
     MeshData.CalculateTangents();
-
     OutMeshData = MeshData;
     return true;
 }
@@ -54,392 +74,174 @@ int32 FPyramidBuilder::CalculateTriangleCountEstimate() const
     return Pyramid.CalculateTriangleCountEstimate();
 }
 
-void FPyramidBuilder::GenerateBaseFace()
+void FPyramidBuilder::PrecomputeMath()
 {
-    // 底面也占据完整的 1x1 UV 区域
-    FVector Normal(0, 0, -1);
+    const int32 Segments = FMath::Max(3, Sides);
+    CosValues.SetNum(Segments + 1);
+    SinValues.SetNum(Segments + 1);
 
-    if (BottomVertices.Num() < 3)
+    const float AngleStep = 2.0f * PI / Segments;
+
+    for (int32 i = 0; i <= Segments; ++i)
     {
-        return;
-    }
-
-    TArray<int32> VertexIndices;
-    VertexIndices.Reserve(BottomVertices.Num());
-
-    // 计算底面的边界框，用于映射到 1x1 UV 区域
-    float MinX = BottomVertices[0].X;
-    float MaxX = BottomVertices[0].X;
-    float MinY = BottomVertices[0].Y;
-    float MaxY = BottomVertices[0].Y;
-    
-    for (int32 i = 1; i < BottomVertices.Num(); ++i)
-    {
-        MinX = FMath::Min(MinX, BottomVertices[i].X);
-        MaxX = FMath::Max(MaxX, BottomVertices[i].X);
-        MinY = FMath::Min(MinY, BottomVertices[i].Y);
-        MaxY = FMath::Max(MaxY, BottomVertices[i].Y);
-    }
-    
-    const float RangeX = MaxX - MinX;
-    const float RangeY = MaxY - MinY;
-    
-    // 将底面顶点映射到 1x1 UV 区域
-    for (int32 i = 0; i < BottomVertices.Num(); ++i)
-    {
-        float U, V;
-        if (RangeX > KINDA_SMALL_NUMBER)
-        {
-            U = (BottomVertices[i].X - MinX) / RangeX;
-        }
-        else
-        {
-            U = 0.5f; // 如果 X 范围太小，放在中心
-        }
-        
-        if (RangeY > KINDA_SMALL_NUMBER)
-        {
-            V = (BottomVertices[i].Y - MinY) / RangeY;
-        }
-        else
-        {
-            V = 0.5f; // 如果 Y 范围太小，放在中心
-        }
-        
-        FVector2D UV(U, V);
-        int32 VertexIndex = GetOrAddVertex(BottomVertices[i], Normal, UV);
-        VertexIndices.Add(VertexIndex);
-    }
-
-    // 生成三角形（扇形方式）
-    for (int32 i = 1; i < BottomVertices.Num() - 1; ++i)
-    {
-        int32 V0 = VertexIndices[0];
-        int32 V1 = VertexIndices[i];
-        int32 V2 = VertexIndices[i + 1];
-
-        AddTriangle(V0, V1, V2);
+        float Angle = i * AngleStep;
+        FMath::SinCos(&SinValues[i], &CosValues[i], Angle);
     }
 }
 
-void FPyramidBuilder::GenerateBevelSection()
+FVector FPyramidBuilder::GetRingPos(int32 Index, float Radius, float Z) const
 {
-    if (BevelRadius <= 0.0f)
+    int32 SafeIndex = Index % (Sides + 1);
+    return FVector(Radius * CosValues[SafeIndex], Radius * SinValues[SafeIndex], Z);
+}
+
+void FPyramidBuilder::GenerateBase()
+{
+    // 底面法线向下
+    FVector Normal(0, 0, -1.0f);
+    FVector CenterPos(0, 0, 0);
+    FVector2D CenterUV(0.0f, 0.0f);
+
+    // 1. 创建中心点
+    int32 CenterIndex = AddVertex(CenterPos, Normal, CenterUV);
+
+    // 2. 创建边缘点
+    // 【棱柱逻辑修复】：为了匹配倒角棱柱的底部，这里必须使用 BevelTopRadius
+    TArray<int32> RimIndices;
+    RimIndices.Reserve(Sides + 1);
+
+    for (int32 i = 0; i <= Sides; ++i)
     {
-        return;
+        FVector Pos = GetRingPos(i, BevelTopRadius, 0.0f);
+        FVector2D UV(Pos.X * GLOBAL_UV_SCALE, Pos.Y * GLOBAL_UV_SCALE);
+
+        RimIndices.Add(AddVertex(Pos, Normal, UV));
     }
 
-    // 计算倒角和侧面的高度比例，用于在 1x1 UV 区域中分配
-    const float SideHeight = Height - BevelRadius;
-    const float TotalHeight = Height;
-    
-    // 计算倒角在总高度中的比例（用于 UV V 值分配）
-    const float BevelRatio = (TotalHeight > KINDA_SMALL_NUMBER) ? (BevelRadius / TotalHeight) : 0.0f;
-    
-    // 每个面占据完整的 1x1 UV 区域
-    // 倒角部分：V 从 0 到 BevelRatio
-    // 侧面部分：V 从 BevelRatio 到 1.0
-    const float V_START = 0.0f;
-    const float V_HEIGHT = BevelRatio;
+    // 3. 生成三角扇
+    // 【方向修复】：改为 Center -> Curr -> Next (逆时针)，修正底面渲染反向问题
+    for (int32 i = 0; i < Sides; ++i)
+    {
+        AddTriangle(CenterIndex, RimIndices[i], RimIndices[i + 1]);
+    }
+}
 
+void FPyramidBuilder::GenerateBevel()
+{
+    // 倒角/棱柱部分
+    const float Z_Bottom = 0.0f;
+    const float Z_Top = BevelRadius;
     const bool bSmooth = Pyramid.bSmoothSides;
 
-    // 预计算侧面的法线（用于倒角顶点的光滑）
-    TArray<FVector> SideNormals;
-    TMap<FVector, FVector> SmoothNormalsMap;
-    if (bSmooth)
+    // 【棱柱逻辑修复】：因为是垂直棱柱，上下半径相同，均为 BevelTopRadius
+    float dR = 0.0f; // 半径差为0
+    float dZ = BevelRadius;
+    float SlopeLen = dZ; // 斜边长度等于高度
+
+    // 垂直表面的法线 (XY平面上的径向向量)
+    float NormZ_Comp = 0.0f;
+    float NormR_Comp = 1.0f;
+
+    for (int32 i = 0; i < Sides; ++i)
     {
-        SideNormals.SetNum(Sides);
-        for (int32 i = 0; i < Sides; ++i)
-        {
-            const int32 NextI = (i + 1) % Sides;
-            FVector Edge1 = TopVertices[NextI] - TopVertices[i];
-            FVector Edge2 = PyramidTopPoint - TopVertices[i];
-            SideNormals[i] = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
-        }
+        // 几何位置：上下半径一致
+        FVector P0 = GetRingPos(i, BevelTopRadius, Z_Bottom);      // Bottom Left
+        FVector P1 = GetRingPos(i + 1, BevelTopRadius, Z_Bottom);    // Bottom Right
+        FVector P2 = GetRingPos(i + 1, BevelTopRadius, Z_Top);       // Top Right
+        FVector P3 = GetRingPos(i, BevelTopRadius, Z_Top);         // Top Left
 
-        // 为每个底边顶点计算平均法线（相邻面的法线平均值）
-        for (int32 i = 0; i < Sides; ++i)
-        {
-            const int32 PrevI = (i - 1 + Sides) % Sides;
-            
-            // TopVertices 的光滑法线
-            const FVector& TopPos = TopVertices[i];
-            FVector TopSmoothNormal = (SideNormals[PrevI] + SideNormals[i]).GetSafeNormal();
-            SmoothNormalsMap.Add(TopPos, TopSmoothNormal);
-            
-            // BottomVertices 的光滑法线（与 TopVertices 相同，因为都是侧面的底部）
-            const FVector& BottomPos = BottomVertices[i];
-            SmoothNormalsMap.Add(BottomPos, TopSmoothNormal);
-        }
-    }
-
-    for (int32 i = 0; i < BottomVertices.Num(); ++i)
-    {
-        const int32 NextI = (i + 1) % BottomVertices.Num();
-        const int32 PrevI = (i - 1 + BottomVertices.Num()) % BottomVertices.Num();
-
-        // 计算倒角法线
-        FVector BevelNormal_i = (BottomVertices[i] - FVector(0, 0, BottomVertices[i].Z)).GetSafeNormal();
-        FVector BevelNormal_NextI = (BottomVertices[NextI] - FVector(0, 0, BottomVertices[NextI].Z)).GetSafeNormal();
-        FVector BevelNormal_Top_i = (TopVertices[i] - FVector(0, 0, TopVertices[i].Z)).GetSafeNormal();
-        FVector BevelNormal_Top_NextI = (TopVertices[NextI] - FVector(0, 0, TopVertices[NextI].Z)).GetSafeNormal();
-
-        // 根据光滑选项调整法线
-        FVector Normal_i = BevelNormal_i;
-        FVector Normal_NextI = BevelNormal_NextI;
-        FVector Normal_Top_i = BevelNormal_Top_i;
-        FVector Normal_Top_NextI = BevelNormal_Top_NextI;
+        // 法线
+        FVector N0, N1, N2, N3;
 
         if (bSmooth)
         {
-            // 底部顶点：使用侧面的光滑法线（与侧面共享）
-            Normal_i = SmoothNormalsMap.FindRef(BottomVertices[i]);
-            Normal_NextI = SmoothNormalsMap.FindRef(BottomVertices[NextI]);
-            
-            // 顶部顶点：使用侧面的光滑法线（与侧面共享）
-            Normal_Top_i = SmoothNormalsMap.FindRef(TopVertices[i]);
-            Normal_Top_NextI = SmoothNormalsMap.FindRef(TopVertices[NextI]);
-            
-            // 如果找不到光滑法线，使用倒角法线
-            if (Normal_i.IsNearlyZero())
-            {
-                Normal_i = BevelNormal_i;
-            }
-            if (Normal_NextI.IsNearlyZero())
-            {
-                Normal_NextI = BevelNormal_NextI;
-            }
-            if (Normal_Top_i.IsNearlyZero())
-            {
-                Normal_Top_i = BevelNormal_Top_i;
-            }
-            if (Normal_Top_NextI.IsNearlyZero())
-            {
-                Normal_Top_NextI = BevelNormal_Top_NextI;
-            }
+            auto GetSmoothNorm = [&](int32 Idx) {
+                return FVector(CosValues[Idx] * NormR_Comp, SinValues[Idx] * NormR_Comp, NormZ_Comp);
+                };
+            N0 = GetSmoothNorm(i);
+            N1 = GetSmoothNorm(i + 1);
+            N2 = N1;
+            N3 = N0;
+        }
+        else
+        {
+            // 硬边：面法线 (垂直板)
+            FVector FaceNormal = FVector::CrossProduct(P1 - P0, P3 - P0).GetSafeNormal();
+            N0 = N1 = N2 = N3 = FaceNormal;
         }
 
-        // 每个面占据完整的 1x1 UV 区域，U 从 0 到 1
-        FVector2D UV_Bottom_i(0.0f, V_START);
-        FVector2D UV_Bottom_NextI(1.0f, V_START);
-        FVector2D UV_Top_i(0.0f, V_START + V_HEIGHT);
-        FVector2D UV_Top_NextI(1.0f, V_START + V_HEIGHT);
+        // UV (矩形展开)
+        float W = FVector::Dist(P0, P1);
+        float H = SlopeLen; // 等于 BevelHeight
 
-        int32 V0 = GetOrAddVertex(BottomVertices[i], Normal_i, UV_Bottom_i);
-        int32 V1 = GetOrAddVertex(BottomVertices[NextI], Normal_NextI, UV_Bottom_NextI);
-        int32 V2 = GetOrAddVertex(TopVertices[NextI], Normal_Top_NextI, UV_Top_NextI);
-        int32 V3 = GetOrAddVertex(TopVertices[i], Normal_Top_i, UV_Top_i);
+        FVector2D UV0(0.0f, 0.0f);
+        FVector2D UV1(W * GLOBAL_UV_SCALE, 0.0f);
+        FVector2D UV2(W * GLOBAL_UV_SCALE, H * GLOBAL_UV_SCALE);
+        FVector2D UV3(0.0f, H * GLOBAL_UV_SCALE);
 
-        // 添加两个三角形组成四边形
-        AddTriangle(V0, V3, V2);
-        AddTriangle(V0, V2, V1);
+        int32 V0 = AddVertex(P0, N0, UV0);
+        int32 V1 = AddVertex(P1, N1, UV1);
+        int32 V2 = AddVertex(P2, N2, UV2);
+        int32 V3 = AddVertex(P3, N3, UV3);
+
+        // 连接顺序：V0 -> V3 -> V2 -> V1 (保持之前修正过的侧面方向)
+        AddQuad(V0, V3, V2, V1);
     }
 }
 
-void FPyramidBuilder::GeneratePyramidSides()
+void FPyramidBuilder::GenerateSides()
 {
-    // 计算倒角和侧面的高度比例，用于在 1x1 UV 区域中分配
-    const float SideHeight = Height - BevelRadius;
-    const float TotalHeight = Height;
-    
-    // 计算倒角在总高度中的比例（用于 UV V 值分配）
-    const float BevelRatio = (TotalHeight > KINDA_SMALL_NUMBER) ? (BevelRadius / TotalHeight) : 0.0f;
-    
-    // 每个面占据完整的 1x1 UV 区域
-    // 倒角部分：V 从 0 到 BevelRatio
-    // 侧面部分：V 从 BevelRatio 到 1.0
-    const float V_START = BevelRatio;
-    const float V_HEIGHT = 1.0f - BevelRatio;
+    // 金字塔主体
+    const float Z_Base = BevelRadius;
+    const float R_Base = BevelTopRadius;
 
     const bool bSmooth = Pyramid.bSmoothSides;
 
-    // 预计算所有面的法线（用于光滑计算）
-    TArray<FVector> SideNormals;
-    SideNormals.SetNum(Sides);
-    for (int32 i = 0; i < Sides; ++i)
-    {
-        const int32 NextI = (i + 1) % Sides;
-        FVector Edge1 = TopVertices[NextI] - TopVertices[i];
-        FVector Edge2 = PyramidTopPoint - TopVertices[i];
-        SideNormals[i] = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
-    }
+    // 计算金字塔侧面的解析法线参数
+    float dR = R_Base;
+    float dZ = Height - BevelRadius;
+    float SlantHeight = FMath::Sqrt(dR * dR + dZ * dZ);
 
-    // 预计算每个顶点位置的平滑法线（光滑时）
-    TMap<FVector, FVector> SmoothNormalsMap;
-    if (bSmooth)
-    {
-        // 为每个底边顶点计算平均法线（相邻面的法线平均值）
-        for (int32 i = 0; i < Sides; ++i)
-        {
-            const int32 PrevI = (i - 1 + Sides) % Sides;
-            const FVector& Pos = TopVertices[i];
-            
-            // 计算相邻面的法线平均值（面 PrevI 和面 i）
-            FVector SmoothNormal = (SideNormals[PrevI] + SideNormals[i]).GetSafeNormal();
-            SmoothNormalsMap.Add(Pos, SmoothNormal);
-        }
-        
-        // 为顶部顶点计算平均法线（所有面的法线平均值）
-        FVector TopNormal = FVector::ZeroVector;
-        for (int32 i = 0; i < Sides; ++i)
-        {
-            TopNormal += SideNormals[i];
-        }
-        SmoothNormalsMap.Add(PyramidTopPoint, TopNormal.GetSafeNormal());
-    }
+    float NormZ_Comp = dR / (SlantHeight > KINDA_SMALL_NUMBER ? SlantHeight : 1.0f);
+    float NormR_Comp = dZ / (SlantHeight > KINDA_SMALL_NUMBER ? SlantHeight : 1.0f);
 
     for (int32 i = 0; i < Sides; ++i)
     {
-        const int32 NextI = (i + 1) % Sides;
+        // 位置
+        FVector P0 = GetRingPos(i, R_Base, Z_Base);     // Base Left (Curr)
+        FVector P1 = GetRingPos(i + 1, R_Base, Z_Base);   // Base Right (Next)
+        FVector P_Top = TopPoint;                       // Tip
 
-        FVector CurrentSideNormal = SideNormals[i];
+        // 法线
+        FVector N0, N1, N_Top;
 
-        // 获取平滑法线（光滑时）
-        FVector FinalTopNormal = bSmooth ? SmoothNormalsMap.FindRef(PyramidTopPoint) : CurrentSideNormal;
-        FVector BaseNormal1 = bSmooth ? SmoothNormalsMap.FindRef(TopVertices[i]) : CurrentSideNormal;
-        FVector BaseNormal2 = bSmooth ? SmoothNormalsMap.FindRef(TopVertices[NextI]) : CurrentSideNormal;
-
-        // 如果平滑法线不存在，使用当前面的法线
-        if (BaseNormal1.IsNearlyZero())
+        if (bSmooth)
         {
-            BaseNormal1 = CurrentSideNormal;
+            auto GetConeNormal = [&](int32 Idx) {
+                return FVector(CosValues[Idx] * NormR_Comp, SinValues[Idx] * NormR_Comp, NormZ_Comp);
+                };
+            N0 = GetConeNormal(i);
+            N1 = GetConeNormal(i + 1);
+            N_Top = (N0 + N1).GetSafeNormal();
         }
-        if (BaseNormal2.IsNearlyZero())
+        else
         {
-            BaseNormal2 = CurrentSideNormal;
+            // 硬边法线
+            FVector FaceNormal = FVector::CrossProduct(P1 - P0, P_Top - P0).GetSafeNormal();
+            N0 = N1 = N_Top = FaceNormal;
         }
 
-        // 每个面占据完整的 1x1 UV 区域，U 从 0 到 1
-        FVector2D UV_Top(0.5f, V_START + V_HEIGHT);
-        FVector2D UV_Base1(0.0f, V_START);
-        FVector2D UV_Base2(1.0f, V_START);
+        // UV
+        float EdgeWidth = FVector::Dist(P0, P1);
+        FVector2D UV0(0.0f, 0.0f);
+        FVector2D UV1(EdgeWidth * GLOBAL_UV_SCALE, 0.0f);
+        FVector2D UV_Tip(EdgeWidth * 0.5f * GLOBAL_UV_SCALE, SlantHeight * GLOBAL_UV_SCALE);
 
-        int32 TopVertex = GetOrAddVertex(PyramidTopPoint, FinalTopNormal, UV_Top);
-        int32 V1 = GetOrAddVertex(TopVertices[i], BaseNormal1, UV_Base1);
-        int32 V2 = GetOrAddVertex(TopVertices[NextI], BaseNormal2, UV_Base2);
+        int32 V0 = AddVertex(P0, N0, UV0);
+        int32 V1 = AddVertex(P1, N1, UV1);
+        int32 V_Tip = AddVertex(P_Top, N_Top, UV_Tip);
 
-        AddTriangle(V2, V1, TopVertex);
+        // 三角形连接顺序：V1 -> V0 -> V_Tip
+        AddTriangle(V1, V0, V_Tip);
     }
 }
-
-void FPyramidBuilder::PrecomputeTrigonometricValues()
-{
-    AngleValues.SetNum(Sides);
-    CosValues.SetNum(Sides);
-    SinValues.SetNum(Sides);
-
-    for (int32 i = 0; i < Sides; ++i)
-    {
-        const float Angle = 2.0f * PI * static_cast<float>(i) / Sides;
-        AngleValues[i] = Angle;
-        CosValues[i] = FMath::Cos(Angle);
-        SinValues[i] = FMath::Sin(Angle);
-    }
-}
-
-void FPyramidBuilder::PrecomputeUVScaleValues()
-{
-    UVScaleValues.SetNum(Sides);
-    for (int32 i = 0; i < Sides; ++i)
-    {
-        UVScaleValues[i] = static_cast<float>(i) / Sides;
-    }
-}
-
-void FPyramidBuilder::PrecomputeVertices()
-{
-    PrecomputeTrigonometricValues();
-    InitializeVertices();
-}
-
-void FPyramidBuilder::InitializeVertices()
-{
-    // 底部顶点环（Z=0）
-    BottomVertices.SetNum(Sides);
-    for (int32 i = 0; i < Sides; ++i)
-    {
-        const float X = BevelTopRadius * CosValues[i];
-        const float Y = BevelTopRadius * SinValues[i];
-        BottomVertices[i] = FVector(X, Y, 0.0f);
-    }
-
-    // 顶部顶点环（如果有倒角则在Z=BevelRadius，否则等于底部）
-    if (BevelRadius > 0.0f)
-    {
-        TopVertices.SetNum(Sides);
-        for (int32 i = 0; i < Sides; ++i)
-        {
-            const float X = BevelTopRadius * CosValues[i];
-            const float Y = BevelTopRadius * SinValues[i];
-            TopVertices[i] = FVector(X, Y, BevelRadius);
-        }
-    }
-    else
-    {
-        TopVertices = BottomVertices;
-    }
-
-    // 金字塔顶点
-    PyramidTopPoint = FVector(0, 0, Height);
-}
-
-void FPyramidBuilder::PrecomputeUVs()
-{
-    PrecomputeUVScaleValues();
-
-    // 底部UV - 使用动态半径计算，参考PolygonTorus端面做法
-    BaseUVs.SetNum(Sides);
-    
-    // 计算底面UV区域，使正多边形边长和为1
-    // 使周长归一化为1，计算UV半径
-    const float UVRadius = 1.0f / (2.0f * Sides * FMath::Sin(PI / Sides));
-    const FVector2D BaseCenterUV(0.5f, 0.5f - UVRadius); // 底面中心位置
-    
-    for (int32 i = 0; i < Sides; ++i)
-    {
-        float U = BaseCenterUV.X + CosValues[i] * UVRadius;
-        float V = BaseCenterUV.Y + SinValues[i] * UVRadius;
-        BaseUVs[i] = FVector2D(U, V);
-    }
-
-    // 金字塔侧面UV - 使用归一化的V值
-    PyramidSideUVs.SetNum(Sides);
-    
-    // 计算侧面高度和侧面周长
-    const float SideHeight = Height - BevelRadius;
-    const float SideCircumference = 2.0f * PI * BevelTopRadius;
-    const float SideVHeight = SideHeight / SideCircumference;
-    
-    // 计算底面周长用于倒角V值计算
-    const float BaseCircumference = 2.0f * PI * BevelTopRadius;
-    
-    // 使用原始几何比例，不进行归一化
-    for (int32 i = 0; i < Sides; ++i)
-    {
-        float U = static_cast<float>(i) / Sides;
-        float V = SideVHeight;
-        PyramidSideUVs[i] = FVector2D(U, V);
-    }
-
-    // 倒角UV - 使用倒角高度与底边边长的比例计算V值
-    if (BevelRadius > 0.0f)
-    {
-        BevelUVs.SetNum(Sides);
-        
-        // 计算底面周长和倒角V值范围
-        const float BaseCircumferenceLocal = 2.0f * PI * BevelTopRadius;
-        const float BevelVHeightLocal = BevelRadius / BaseCircumferenceLocal;
-        
-        // 使用原始几何比例，不进行归一化
-        const float V_START = 0.0f;  // 倒角从V=0开始
-        
-        for (int32 i = 0; i < Sides; ++i)
-        {
-            float U = static_cast<float>(i) / Sides;
-            float V = V_START; // 倒角底部V值，使用原始比例
-            BevelUVs[i] = FVector2D(U, V);
-        }
-    }
-}
-

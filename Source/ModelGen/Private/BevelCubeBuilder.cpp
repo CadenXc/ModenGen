@@ -4,16 +4,19 @@
 #include "BevelCube.h"
 #include "ModelGenMeshData.h"
 
+// 全局 UV 缩放因子
+static const float GLOBAL_UV_SCALE = 0.01f;
+
 FBevelCubeBuilder::FBevelCubeBuilder(const ABevelCube& InBevelCube)
     : BevelCube(InBevelCube)
 {
     Clear();
+}
 
-    // 缓存来自BevelCube的几何参数
-    HalfSize = BevelCube.GetHalfSize();
-    InnerOffset = BevelCube.GetInnerOffset();
-    BevelRadius = BevelCube.BevelRadius;
-    BevelSegments = BevelCube.BevelSegments;
+void FBevelCubeBuilder::Clear()
+{
+    FModelGenMeshBuilder::Clear();
+    GridCoordinates.Empty();
 }
 
 bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
@@ -25,28 +28,28 @@ bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
 
     Clear();
     ReserveMemory();
-    
-    // 更新缓存的几何参数
+
     HalfSize = BevelCube.GetHalfSize();
     InnerOffset = BevelCube.GetInnerOffset();
     BevelRadius = BevelCube.BevelRadius;
     BevelSegments = BevelCube.BevelSegments;
-    
-    // 计算是否启用倒角
-    bEnableBevel = BevelSegments > 0 && BevelRadius > 0.0f && HalfSize > InnerOffset;
 
-    // 定义6个面的展开信息，每个面都是1x1的UV全展
-    TArray<FUnfoldedFace> FacesToGenerate = {
-        // U/V轴的定义确保了在UV展开图中所有面的方向是一致的
-        { FVector(0, 1, 0),  FVector(1, 0, 0), FVector(0, 0, -1), FIntPoint(0, 0), TEXT("Front") }, // +Y
-        { FVector(0, -1, 0), FVector(-1, 0, 0),FVector(0, 0, -1), FIntPoint(0, 0), TEXT("Back") },  // -Y
-        { FVector(0, 0, 1),  FVector(1, 0, 0), FVector(0, 1, 0),  FIntPoint(0, 0), TEXT("Top") },   // +Z
-        { FVector(0, 0, -1), FVector(1, 0, 0), FVector(0, -1, 0), FIntPoint(0, 0), TEXT("Bottom")},// -Z
-        { FVector(1, 0, 0),  FVector(0, -1, 0),FVector(0, 0, -1), FIntPoint(0, 0), TEXT("Right") }, // +X
-        { FVector(-1, 0, 0), FVector(0, 1, 0), FVector(0, 0, -1), FIntPoint(0, 0), TEXT("Left") }  // -X
+    bEnableBevel = (BevelSegments > 0) && (BevelRadius > KINDA_SMALL_NUMBER) && (HalfSize > InnerOffset + KINDA_SMALL_NUMBER);
+
+    PrecomputeGrid();
+
+    // 【核心修复】：修正 Top 面 V 轴方向，使其符合右手定则 (U x V = Normal)
+    // Top: U(+X) x V(+Y) = Normal(+Z). 之前 V 是 -Y 导致法线向下(-Z)从而渲染反向。
+    const TArray<FUnfoldedFace> FacesToGenerate = {
+        // Name      Normal      U_Axis (Right)    V_Axis (Down)
+        { FVector(0, 1, 0),  FVector(1, 0, 0), FVector(0, 0,-1), TEXT("Front") }, // +Y
+        { FVector(0,-1, 0),  FVector(-1, 0, 0), FVector(0, 0,-1), TEXT("Back") },  // -Y
+        { FVector(0, 0, 1),  FVector(1, 0, 0), FVector(0, 1, 0), TEXT("Top") },   // +Z (修改处：V改为 +Y)
+        { FVector(0, 0,-1),  FVector(1, 0, 0), FVector(0,-1, 0), TEXT("Bottom")}, // -Z
+        { FVector(1, 0, 0),  FVector(0,-1, 0), FVector(0, 0,-1), TEXT("Right") }, // +X
+        { FVector(-1, 0, 0),  FVector(0, 1, 0), FVector(0, 0,-1), TEXT("Left") }   // -X
     };
 
-    // 循环为每个面生成网格
     for (const FUnfoldedFace& FaceDef : FacesToGenerate)
     {
         GenerateUnfoldedFace(FaceDef);
@@ -57,9 +60,7 @@ bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
         return false;
     }
 
-    // 计算正确的切线（用于法线贴图等）
     MeshData.CalculateTangents();
-
     OutMeshData = MeshData;
     return true;
 }
@@ -74,127 +75,107 @@ int32 FBevelCubeBuilder::CalculateTriangleCountEstimate() const
     return BevelCube.GetTriangleCount();
 }
 
-void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
+void FBevelCubeBuilder::PrecomputeGrid()
 {
-    TArray<float> UPositions;
-    TArray<float> VPositions;
-    
     if (!bEnableBevel)
     {
-        // 无倒角时，只生成主面的4个顶点（一个大正方形）
-        UPositions = { -HalfSize, HalfSize };
-        VPositions = { -HalfSize, HalfSize };
+        GridCoordinates = { -HalfSize, HalfSize };
     }
     else
     {
-        // 有倒角时，生成非均匀分布的顶点
-        const float Step = (HalfSize - InnerOffset) / static_cast<float>(BevelSegments);
-        for (int32 i = 0; i <= BevelSegments; ++i)
-        {
-            const float PosU = -HalfSize + static_cast<float>(i) * Step;
-            UPositions.Add(PosU);
-        }
-        for (int32 i = 0; i <= BevelSegments; ++i)
-        {
-            const float PosU = InnerOffset + static_cast<float>(i) * Step;
-            UPositions.Add(PosU);
-        }
+        const float Range = HalfSize - InnerOffset;
+        const float Step = Range / BevelSegments;
 
-        // V方向使用相同的非均匀分布
         for (int32 i = 0; i <= BevelSegments; ++i)
         {
-            const float PosV = -HalfSize + static_cast<float>(i) * Step;
-            VPositions.Add(PosV);
+            GridCoordinates.Add(-HalfSize + i * Step);
         }
         for (int32 i = 0; i <= BevelSegments; ++i)
         {
-            const float PosV = InnerOffset + static_cast<float>(i) * Step;
-            VPositions.Add(PosV);
+            GridCoordinates.Add(InnerOffset + i * Step);
         }
     }
+}
 
-    const int32 NumU = UPositions.Num();
-    const int32 NumV = VPositions.Num();
+void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
+{
+    const int32 GridSize = GridCoordinates.Num();
+    if (GridSize < 2) return;
 
-    // 创建一个二维数组来存储生成的顶点索引，方便后续连接成面
-    TArray<TArray<int32>> VertexGrid;
-    VertexGrid.SetNum(NumV);
-    for (int32 i = 0; i < NumV; ++i)
+    TArray<int32> VertIndices;
+    VertIndices.SetNumUninitialized(GridSize * GridSize);
+
+    // 1. 生成顶点
+    for (int32 v_idx = 0; v_idx < GridSize; ++v_idx)
     {
-        VertexGrid[i].SetNum(NumU);
-    }
+        const float local_v = GridCoordinates[v_idx];
+        const bool bInMainPlaneV = (FMath::Abs(local_v) <= InnerOffset + KINDA_SMALL_NUMBER);
 
-    // 遍历非均匀网格上的每个点，计算其 3D位置、法线 和 UV坐标
-    for (int32 v_idx = 0; v_idx < NumV; ++v_idx)
-    {
-        const float local_v = VPositions[v_idx];
-        const float v_alpha = (local_v + HalfSize) / (2.0f * HalfSize);
-
-        for (int32 u_idx = 0; u_idx < NumU; ++u_idx)
+        for (int32 u_idx = 0; u_idx < GridSize; ++u_idx)
         {
-            const float local_u = UPositions[u_idx];
-            const float u_alpha = (local_u + HalfSize) / (2.0f * HalfSize);
+            const float local_u = GridCoordinates[u_idx];
+            const bool bInMainPlaneU = (FMath::Abs(local_u) <= InnerOffset + KINDA_SMALL_NUMBER);
 
-            // 计算UV坐标：每个面都是1x1的UV全展，直接映射到[0,1]范围
-            // V方向(v_alpha)需要翻转 (1.0f - ...)，以匹配常见的从上到下的纹理坐标系
-            FVector2D UV(u_alpha, 1.0f - v_alpha);
-
-            // 计算核心点 (CorePoint) 和表面法线 (SurfaceNormal)
-            FVector SurfaceNormal;
             FVector VertexPos;
+            FVector Normal;
 
-            // 判断是否有倒角：只有在启用倒角时才使用软边法线
-            const bool bHasBevel = bEnableBevel;
-            const bool bInMainPlane = (FMath::Abs(local_u) <= InnerOffset) && (FMath::Abs(local_v) <= InnerOffset);
-
-            if (bInMainPlane)
+            if (!bEnableBevel || (bInMainPlaneU && bInMainPlaneV))
             {
-                // 主平面区域：始终使用面的原始法线
-                SurfaceNormal = FaceDef.Normal;
+                Normal = FaceDef.Normal;
                 VertexPos = FaceDef.Normal * HalfSize + FaceDef.U_Axis * local_u + FaceDef.V_Axis * local_v;
             }
             else
             {
-                if (bHasBevel)
+                const float ClampedU = FMath::Clamp(local_u, -InnerOffset, InnerOffset);
+                const float ClampedV = FMath::Clamp(local_v, -InnerOffset, InnerOffset);
+
+                const FVector InnerPoint = FaceDef.Normal * InnerOffset +
+                    FaceDef.U_Axis * ClampedU +
+                    FaceDef.V_Axis * ClampedV;
+
+                const FVector OuterPoint = FaceDef.Normal * HalfSize +
+                    FaceDef.U_Axis * local_u +
+                    FaceDef.V_Axis * local_v;
+
+                FVector Dir = (OuterPoint - InnerPoint);
+                if (!Dir.IsNearlyZero())
                 {
-                    // 有倒角时：软边，使用平滑法线
-                    const FVector InnerPoint = FaceDef.Normal * InnerOffset +
-                        FaceDef.U_Axis * FMath::Clamp(local_u, -InnerOffset, InnerOffset) +
-                        FaceDef.V_Axis * FMath::Clamp(local_v, -InnerOffset, InnerOffset);
-
-                    const FVector OuterPoint = FaceDef.Normal * HalfSize + FaceDef.U_Axis * local_u + FaceDef.V_Axis * local_v;
-                    const FVector Direction = (OuterPoint - InnerPoint).GetSafeNormal();
-
-                    VertexPos = InnerPoint + Direction * BevelRadius;
-                    SurfaceNormal = Direction;
+                    Normal = Dir.GetSafeNormal();
+                    VertexPos = InnerPoint + Normal * BevelRadius;
                 }
                 else
                 {
-                    // 无倒角时：硬边，使用面的原始法线
-                    SurfaceNormal = FaceDef.Normal;
-                    VertexPos = FaceDef.Normal * HalfSize + FaceDef.U_Axis * local_u + FaceDef.V_Axis * local_v;
+                    Normal = FaceDef.Normal;
+                    VertexPos = OuterPoint;
                 }
             }
 
-            // 将原点移动到最底面（底部Z=0）：所有顶点向上偏移HalfSize
             VertexPos += FVector(0, 0, HalfSize);
 
-            // 添加顶点到网格数据，并记录其索引
-            VertexGrid[v_idx][u_idx] = AddVertex(VertexPos, SurfaceNormal, UV);
+            // UV: 因为 V_Axis 已经统一为向下，所以 local_v 增加即为 UV.V 增加
+            // 不需要 1.0 - v
+            float WorldU = (local_u + HalfSize);
+            float WorldV = (local_v + HalfSize);
+            FVector2D UV(WorldU * GLOBAL_UV_SCALE, WorldV * GLOBAL_UV_SCALE);
+
+            VertIndices[v_idx * GridSize + u_idx] = AddVertex(VertexPos, Normal, UV);
         }
     }
 
-    // 再次遍历网格，使用存储的顶点索引来生成四边形（两个三角形）
-    for (int32 v_idx = 0; v_idx < NumV - 1; ++v_idx)
+    // 2. 生成面 (Quads)
+    for (int32 v = 0; v < GridSize - 1; ++v)
     {
-        for (int32 u_idx = 0; u_idx < NumU - 1; ++u_idx)
+        for (int32 u = 0; u < GridSize - 1; ++u)
         {
-            const int32 V00 = VertexGrid[v_idx][u_idx];
-            const int32 V10 = VertexGrid[v_idx + 1][u_idx];
-            const int32 V01 = VertexGrid[v_idx][u_idx + 1];
-            const int32 V11 = VertexGrid[v_idx + 1][u_idx + 1];
+            int32 V00 = VertIndices[v * GridSize + u];
+            int32 V10 = VertIndices[v * GridSize + (u + 1)];
+            int32 V01 = VertIndices[(v + 1) * GridSize + u];
+            int32 V11 = VertIndices[(v + 1) * GridSize + (u + 1)];
 
-            AddQuad(V00, V10, V11, V01); // 注意顶点顺序以保证法线朝外
+            // 【核心修复】：修改连接顺序为 V00 -> V01 -> V11 -> V10
+            // 路径: Down(V01) -> Right(V11) -> Up(V10) -> Left(V00)
+            // 这在屏幕上是逆时针 (CCW)，即正面
+            AddQuad(V00, V01, V11, V10);
         }
     }
 }

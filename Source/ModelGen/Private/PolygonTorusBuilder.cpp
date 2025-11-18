@@ -4,16 +4,26 @@
 #include "PolygonTorus.h"
 #include "ModelGenMeshData.h"
 
+static const float GLOBAL_UV_SCALE = 0.01f;
+
 FPolygonTorusBuilder::FPolygonTorusBuilder(const APolygonTorus& InPolygonTorus)
     : PolygonTorus(InPolygonTorus)
 {
     Clear();
-    ValidateAndClampParameters();
 }
 
-bool FPolygonTorusBuilder::Generate(FModelGenMeshData& OutMeshData) 
+void FPolygonTorusBuilder::Clear()
 {
-    if (!PolygonTorus.IsValid()) 
+    FModelGenMeshBuilder::Clear();
+    MajorAngleCache.Empty();
+    MinorAngleCache.Empty();
+    StartCapRingIndices.Empty();
+    EndCapRingIndices.Empty();
+}
+
+bool FPolygonTorusBuilder::Generate(FModelGenMeshData& OutMeshData)
+{
+    if (PolygonTorus.MajorSegments < 3 || PolygonTorus.MinorSegments < 3)
     {
         return false;
     }
@@ -21,266 +31,279 @@ bool FPolygonTorusBuilder::Generate(FModelGenMeshData& OutMeshData)
     Clear();
     ReserveMemory();
 
-    GenerateTriangles();
+    PrecomputeMath();
 
-    if (PolygonTorus.TorusAngle < 360.0f - KINDA_SMALL_NUMBER) 
+    GenerateTorusSurface();
+
+    if (FMath::Abs(PolygonTorus.TorusAngle) < 360.0f - KINDA_SMALL_NUMBER)
     {
         GenerateEndCaps();
     }
 
-    if (!ValidateGeneratedData()) 
+    if (!ValidateGeneratedData())
     {
         return false;
     }
 
-    // 计算正确的切线（用于法线贴图等）
     MeshData.CalculateTangents();
-
     OutMeshData = MeshData;
     return true;
 }
 
-int32 FPolygonTorusBuilder::CalculateVertexCountEstimate() const 
+int32 FPolygonTorusBuilder::CalculateVertexCountEstimate() const
 {
-    return PolygonTorus.CalculateVertexCountEstimate();
+    // 如果全是硬边，顶点数是面数 * 4
+    return PolygonTorus.MajorSegments * PolygonTorus.MinorSegments * 4;
 }
 
-int32 FPolygonTorusBuilder::CalculateTriangleCountEstimate() const 
+int32 FPolygonTorusBuilder::CalculateTriangleCountEstimate() const
 {
     return PolygonTorus.CalculateTriangleCountEstimate();
 }
 
-void FPolygonTorusBuilder::GenerateEndCaps() 
+void FPolygonTorusBuilder::PrecomputeMath()
 {
-    GenerateAdvancedEndCaps();
+    // 1. Major Angles (路径)
+    const float TorusAngleRad = FMath::DegreesToRadians(PolygonTorus.TorusAngle);
+    const int32 MajorSegs = PolygonTorus.MajorSegments;
+
+    const float StartAngle = -TorusAngleRad / 2.0f;
+    const float MajorStep = TorusAngleRad / MajorSegs;
+
+    // 缓存 N+1 个角度以便插值
+    MajorAngleCache.SetNum(MajorSegs + 1);
+    for (int32 i = 0; i <= MajorSegs; ++i)
+    {
+        float Angle = StartAngle + i * MajorStep;
+        FMath::SinCos(&MajorAngleCache[i].Sin, &MajorAngleCache[i].Cos, Angle);
+    }
+
+    // 2. Minor Angles (截面)
+    const int32 MinorSegs = PolygonTorus.MinorSegments;
+    const float MinorStep = TWO_PI / MinorSegs;
+
+    MinorAngleCache.SetNum(MinorSegs + 1);
+    for (int32 i = 0; i <= MinorSegs; ++i)
+    {
+        // 恢复原逻辑的相位偏移，保证多边形朝向符合预期
+        float Angle = (i * MinorStep) - HALF_PI - (MinorStep * 0.5f);
+        FMath::SinCos(&MinorAngleCache[i].Sin, &MinorAngleCache[i].Cos, Angle);
+    }
 }
 
-
-void FPolygonTorusBuilder::GenerateAdvancedEndCaps()
+// 【核心修复】：翻转圆环表面的渲染方向
+// 之前：V0(i,j) -> V1(i+1,j) -> V2(i+1,j+1) -> V3(i,j+1) (导致法线向内)
+// 修正：V0(i,j) -> V3(i,j+1) -> V2(i+1,j+1) -> V1(i+1,j) (法线向外)
+void FPolygonTorusBuilder::GenerateTorusSurface()
 {
-    if (FMath::IsNearlyEqual(PolygonTorus.TorusAngle, 360.0f) || StartCapIndices.Num() == 0 || EndCapIndices.Num() == 0)
-    {
-        return;
-    }
-
+    const int32 MajorSegs = PolygonTorus.MajorSegments;
+    const int32 MinorSegs = PolygonTorus.MinorSegments;
     const float MajorRad = PolygonTorus.MajorRadius;
     const float MinorRad = PolygonTorus.MinorRadius;
-    const float AngleRad = FMath::DegreesToRadians(PolygonTorus.TorusAngle);
-    const int32 MinorSegs = PolygonTorus.MinorSegments;
-    const float MinorAngleStep = 2.0f * PI / FMath::Max(1, MinorSegs);
-    
-    // 计算周长比例，用于端盖UV计算
-    const float MajorCircumference = 2.0f * PI * MajorRad;
-    const float MinorCircumference = 2.0f * PI * MinorRad;
-    const float CircumferenceRatio = MajorCircumference / MinorCircumference;
-    
-    // 计算小圆环一段的长度，用于端盖UV半径计算
-    const float MinorSegmentLength = MinorCircumference / MinorSegs;
-    const float MajorSegmentLength = MajorCircumference / PolygonTorus.MajorSegments;
 
-    // --- 起始封盖 (Start Cap) ---
-    const float StartAngle = -AngleRad / 2.0f;
-    // 将原点移动到最底面（底部Z=0）：端盖中心Z坐标为MinorRadius以保持在中间位置
-    const FVector StartCenter = FVector(FMath::Cos(StartAngle) * MajorRad, FMath::Sin(StartAngle) * MajorRad, MinorRad);
-    const FVector StartNormal = FVector(FMath::Sin(StartAngle), -FMath::Cos(StartAngle), 0.0f);
-    // 端盖中心 UV 位置固定为 0.5x0.5
-    const FVector2D StartCenterUV(0.5f, 0.5f);
-    const int32 StartCenterIndex = GetOrAddVertex(StartCenter, StartNormal, StartCenterUV);
+    const bool bSmoothVert = PolygonTorus.bSmoothVerticalSection;
+    const bool bSmoothCross = PolygonTorus.bSmoothCrossSection;
 
-    TArray<int32> NewStartCapEdgeIndices;
-    for (int32 i = 0; i < MinorSegs; ++i)
+    StartCapRingIndices.Reserve(MinorSegs);
+    EndCapRingIndices.Reserve(MinorSegs);
+
+    float CurrentU = 0.0f;
+    const float MajorArcStep = (FMath::DegreesToRadians(PolygonTorus.TorusAngle) / MajorSegs) * MajorRad;
+
+    for (int32 i = 0; i < MajorSegs; ++i)
     {
-        const FVector EdgePos = GetPosByIndex(StartCapIndices[i]);
-        const float MinorAngle = (i * MinorAngleStep) - (PI / 2.0f) - (MinorAngleStep / 2.0f);
-        // 端盖的半径应该与小圆环相同，所以UV半径也使用相同的比例
-        // 小圆环半径与主圆环半径的比例
-        const float UVRadius = MinorRad / MajorRad * 0.3f;
-        const FVector2D EdgeUV = StartCenterUV + FVector2D(FMath::Cos(MinorAngle) * UVRadius, FMath::Sin(MinorAngle) * UVRadius);
-        const int32 NewEdgeIndex = GetOrAddVertex(EdgePos, StartNormal, EdgeUV);
-        NewStartCapEdgeIndices.Add(NewEdgeIndex);
+        float NextU = CurrentU + MajorArcStep;
+        float CurrentV = 0.0f;
+
+        const FCachedTrig& Maj0 = MajorAngleCache[i];
+        const FCachedTrig& Maj1 = MajorAngleCache[i + 1];
+
+        // 硬边 Major 法线准备
+        float MajCos_Normal = 0.f, MajSin_Normal = 0.f;
+        if (!bSmoothVert)
+        {
+            float MidCos = (Maj0.Cos + Maj1.Cos) * 0.5f;
+            float MidSin = (Maj0.Sin + Maj1.Sin) * 0.5f;
+            float Len = FMath::Sqrt(MidCos * MidCos + MidSin * MidSin);
+            MajCos_Normal = MidCos / Len;
+            MajSin_Normal = MidSin / Len;
+        }
+
+        for (int32 j = 0; j < MinorSegs; ++j)
+        {
+            const FCachedTrig& Min0 = MinorAngleCache[j];
+            const FCachedTrig& Min1 = MinorAngleCache[j + 1];
+
+            float MinorArcStep = (TWO_PI / MinorSegs) * MinorRad;
+            float NextV = CurrentV + MinorArcStep;
+
+            // 硬边 Minor 法线准备
+            float MinCos_Normal = 0.f, MinSin_Normal = 0.f;
+            if (!bSmoothCross)
+            {
+                float MidCos = (Min0.Cos + Min1.Cos) * 0.5f;
+                float MidSin = (Min0.Sin + Min1.Sin) * 0.5f;
+                float Len = FMath::Sqrt(MidCos * MidCos + MidSin * MidSin);
+                MinCos_Normal = MidCos / Len;
+                MinSin_Normal = MidSin / Len;
+            }
+
+            int32 Indices[4];
+
+            // 定义 4 个角的数据源
+            // 0: (i, j), 1: (i+1, j), 2: (i+1, j+1), 3: (i, j+1)
+            struct FCornerInfo { const FCachedTrig* Maj; const FCachedTrig* Min; float U; float V; };
+            FCornerInfo Corners[4] = {
+                { &Maj0, &Min0, CurrentU, CurrentV },
+                { &Maj1, &Min0, NextU,    CurrentV },
+                { &Maj1, &Min1, NextU,    NextV },
+                { &Maj0, &Min1, CurrentU, NextV }
+            };
+
+            for (int k = 0; k < 4; ++k)
+            {
+                const FCachedTrig& MajP = *Corners[k].Maj;
+                const FCachedTrig& MinP = *Corners[k].Min;
+
+                // 位置
+                float RadialOffset = MinP.Cos * MinorRad;
+                float ZOffset = MinP.Sin * MinorRad;
+                float FinalZ = ZOffset + MinorRad;
+
+                FVector Pos(
+                    (MajorRad + RadialOffset) * MajP.Cos,
+                    (MajorRad + RadialOffset) * MajP.Sin,
+                    FinalZ
+                );
+
+                // 法线
+                float UseMajCos = bSmoothVert ? MajP.Cos : MajCos_Normal;
+                float UseMajSin = bSmoothVert ? MajP.Sin : MajSin_Normal;
+                float UseMinCos = bSmoothCross ? MinP.Cos : MinCos_Normal;
+                float UseMinSin = bSmoothCross ? MinP.Sin : MinSin_Normal;
+
+                FVector Normal(
+                    UseMinCos * UseMajCos,
+                    UseMinCos * UseMajSin,
+                    UseMinSin
+                );
+                Normal.Normalize();
+
+                // UV
+                FVector2D UV(Corners[k].U * GLOBAL_UV_SCALE, Corners[k].V * GLOBAL_UV_SCALE);
+
+                Indices[k] = GetOrAddVertex(Pos, Normal, UV);
+            }
+
+            // 【修改处】：反转连接顺序以修正渲染方向
+            // 原顺序 0,1,2,3 导致法线向内
+            // 新顺序 0,3,2,1 产生向外的法线
+            AddQuad(Indices[0], Indices[3], Indices[2], Indices[1]);
+
+            // 收集端盖索引
+            // Start Cap: i=0. 
+            // 我们需要收集这一圈的左侧边。
+            // 原本取 0 (i,j) 和 3 (i,j+1)。
+            // 只需要存 Indices[0] 即可代表 V(0, j)
+            if (i == 0)
+            {
+                StartCapRingIndices.Add(Indices[0]);
+            }
+            // End Cap: i=End.
+            // 需要收集右侧边。
+            // 原本取 1 (i+1, j) 和 2 (i+1, j+1)。
+            // 存 Indices[1] 代表 V(End, j)
+            if (i == MajorSegs - 1)
+            {
+                EndCapRingIndices.Add(Indices[1]);
+            }
+
+            CurrentV = NextV;
+        }
+        CurrentU = NextU;
+    }
+}
+
+void FPolygonTorusBuilder::GenerateEndCaps()
+{
+    // Start Cap
+    CreateCap(StartCapRingIndices, true);
+
+    // End Cap
+    CreateCap(EndCapRingIndices, false);
+}
+
+void FPolygonTorusBuilder::CreateCap(const TArray<int32>& RingIndices, bool bIsStart)
+{
+    if (RingIndices.Num() < 3) return;
+
+    // 1. 计算端盖中心和法线
+    const float TorusAngleRad = FMath::DegreesToRadians(PolygonTorus.TorusAngle);
+    const float Angle = bIsStart ? (-TorusAngleRad / 2.0f) : (TorusAngleRad / 2.0f);
+
+    float CosA, SinA;
+    FMath::SinCos(&SinA, &CosA, Angle);
+
+    // 中心位置：Z轴也需要偏移 (MinorRad)
+    FVector CenterPos(
+        PolygonTorus.MajorRadius * CosA,
+        PolygonTorus.MajorRadius * SinA,
+        PolygonTorus.MinorRadius
+    );
+
+    // 法线: Start(-Tangent), End(+Tangent)
+    FVector Normal = bIsStart ?
+        FVector(SinA, -CosA, 0.0f) :
+        FVector(-SinA, CosA, 0.0f);
+
+    // 2. 创建新的 Cap 顶点 (硬边)
+    TArray<int32> CapVertices;
+    CapVertices.Reserve(RingIndices.Num());
+
+    // 沿用之前的 UV 计算逻辑，这里从 RingIndices 获取位置计算 Planar UV
+    for (int32 Idx : RingIndices)
+    {
+        FVector Pos = GetPosByIndex(Idx);
+
+        // Planar UV: Local X (Horizontal dist from major ring), Local Y (Z height)
+        // H_Dist: Distance from CenterPos in XY plane? No, dist from Major Radius arc.
+        // Simple approx: Len(XY) - MajorRadius.
+        float R_Current = FVector2D(Pos.X, Pos.Y).Size();
+        float LocalX = R_Current - PolygonTorus.MajorRadius;
+        float LocalY = Pos.Z - PolygonTorus.MinorRadius;
+
+        FVector2D UV(LocalX * GLOBAL_UV_SCALE, LocalY * GLOBAL_UV_SCALE);
+
+        CapVertices.Add(AddVertex(Pos, Normal, UV));
     }
 
-    for (int32 i = 0; i < NewStartCapEdgeIndices.Num(); ++i)
-    {
-        const int32 CurrentIndex = NewStartCapEdgeIndices[i];
-        const int32 NextIndex = NewStartCapEdgeIndices[(i + 1) % NewStartCapEdgeIndices.Num()];
-        AddTriangle(StartCenterIndex, NextIndex, CurrentIndex);
-    }
+    // 添加中心点 UV=(0,0)
+    int32 CenterIdx = AddVertex(CenterPos, Normal, FVector2D(0, 0));
 
-    // --- 终止封盖 (End Cap) ---
-    const float EndAngle = AngleRad / 2.0f;
-    // 将原点移动到最底面（底部Z=0）：端盖中心Z坐标为MinorRadius以保持在中间位置
-    const FVector EndCenter = FVector(FMath::Cos(EndAngle) * MajorRad, FMath::Sin(EndAngle) * MajorRad, MinorRad);
-    const FVector EndNormal = FVector(-FMath::Sin(EndAngle), FMath::Cos(EndAngle), 0.0f);
-    // 端盖中心 UV 位置固定为 0.5x0.5
-    const FVector2D EndCenterUV(0.5f, 0.5f);
-    const int32 EndCenterIndex = GetOrAddVertex(EndCenter, EndNormal, EndCenterUV);
-
-    TArray<int32> NewEndCapEdgeIndices;
-    for (int32 i = 0; i < MinorSegs; ++i)
+    // 3. 生成三角扇
+    // RingIndices 来自 Minor 循环 (0..Segs-1)，是闭合圆环
+    const int32 NumVerts = CapVertices.Num();
+    for (int32 i = 0; i < NumVerts; ++i)
     {
-        const FVector EdgePos = GetPosByIndex(EndCapIndices[i]);
-        const float MinorAngle = (i * MinorAngleStep) - (PI / 2.0f) - (MinorAngleStep / 2.0f);
-        // 端盖的半径应该与小圆环相同，所以UV半径也使用相同的比例
-        // 小圆环半径与主圆环半径的比例
-        const float UVRadius = MinorRad / MajorRad * 0.3f;
-        const FVector2D EdgeUV = EndCenterUV + FVector2D(FMath::Cos(MinorAngle) * UVRadius, FMath::Sin(MinorAngle) * UVRadius);
-        const int32 NewEdgeIndex = GetOrAddVertex(EdgePos, EndNormal, EdgeUV);
-        NewEndCapEdgeIndices.Add(NewEdgeIndex);
-    }
+        int32 V_Curr = CapVertices[i];
+        int32 V_Next = CapVertices[(i + 1) % NumVerts]; // 闭合
 
-    for (int32 i = 0; i < NewEndCapEdgeIndices.Num(); ++i)
-    {
-        const int32 CurrentIndex = NewEndCapEdgeIndices[i];
-        const int32 NextIndex = NewEndCapEdgeIndices[(i + 1) % NewEndCapEdgeIndices.Num()];
-        AddTriangle(EndCenterIndex, CurrentIndex, NextIndex);
+        if (bIsStart)
+        {
+            // Start Cap (Look Back): Center -> Next -> Curr (Check winding)
+            // Minor loop goes CCW in (R,Z) plane?
+            // Let's try standard: Center, Next, Curr
+            AddTriangle(CenterIdx, V_Next, V_Curr);
+        }
+        else
+        {
+            // End Cap (Look Forward): Center -> Curr -> Next
+            AddTriangle(CenterIdx, V_Curr, V_Next);
+        }
     }
 }
 
 void FPolygonTorusBuilder::ValidateAndClampParameters()
 {
-    if (PolygonTorus.MajorSegments < 3 || PolygonTorus.MajorSegments > 256)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("主分段数 %d 超出有效范围 [3, 256]，建议调整"), PolygonTorus.MajorSegments);
-    }
-
-    if (PolygonTorus.MinorSegments < 3 || PolygonTorus.MinorSegments > 256)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("次分段数 %d 超出有效范围 [3, 256]，建议调整"), PolygonTorus.MinorSegments);
-    }
-
-    if (PolygonTorus.MajorRadius < 1.0f)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("主半径 %f 小于最小值 1.0，建议调整"), PolygonTorus.MajorRadius);
-    }
-
-    if (PolygonTorus.MinorRadius < 1.0f)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("次半径 %f 小于最小值 1.0，建议调整"), PolygonTorus.MinorRadius);
-    }
-
-    if (PolygonTorus.MinorRadius > PolygonTorus.MajorRadius * 0.9f)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("次半径 %f 超过主半径的 90%% (%f)，建议调整"),
-            PolygonTorus.MinorRadius, PolygonTorus.MajorRadius * 0.9f);
-    }
-
-    if (PolygonTorus.TorusAngle < 1.0f || PolygonTorus.TorusAngle > 360.0f)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("圆环角度 %f 超出有效范围 [1.0, 360.0]，建议调整"), PolygonTorus.TorusAngle);
-    }
-}
-
-void FPolygonTorusBuilder::GenerateTriangles()
-{
-    // 获取圆环参数
-    const float MajorRad = PolygonTorus.MajorRadius;
-    const float MinorRad = PolygonTorus.MinorRadius;
-    const int32 MajorSegs = PolygonTorus.MajorSegments;
-    const int32 MinorSegs = PolygonTorus.MinorSegments;
-    const float TorusAngle = PolygonTorus.TorusAngle;
-    const float AngleRad = FMath::DegreesToRadians(TorusAngle);
-
-    const bool bSmoothCross = PolygonTorus.bSmoothCrossSection;
-    const bool bSmoothVert = PolygonTorus.bSmoothVerticalSection;
-
-    const float StartAngle = -AngleRad / 2.0f;
-    const float MajorAngleStep = AngleRad / FMath::Max(1, MajorSegs);
-    const float MinorAngleStep = 2.0f * PI / FMath::Max(1, MinorSegs);
-
-    const bool bIsFullCircle = FMath::IsNearlyEqual(TorusAngle, 360.0f);
-
-    StartCapIndices.Empty(MinorSegs);
-    EndCapIndices.Empty(MinorSegs);
-
-    for (int32 MajorIndex = 0; MajorIndex < MajorSegs; ++MajorIndex)
-    {
-        for (int32 MinorIndex = 0; MinorIndex < MinorSegs; ++MinorIndex)
-        {
-            const float MajorAngles[2] = {
-                StartAngle + MajorIndex * MajorAngleStep,
-                StartAngle + (MajorIndex + 1) * MajorAngleStep
-            };
-            const float MinorAngles[2] = {
-                (MinorIndex * MinorAngleStep) - (PI / 2.0f) - (MinorAngleStep / 2.0f),
-                ((MinorIndex + 1) * MinorAngleStep) - (PI / 2.0f) - (MinorAngleStep / 2.0f)
-            };
-
-            FVector QuadPositions[4];
-            FVector QuadNormals[4];
-            FVector2D QuadUVs[4];
-
-            const float MajorAngle_FaceCenter = bSmoothVert ? 0.0f : (MajorAngles[0] + MajorAngles[1]) * 0.5f;
-            const float MinorAngle_FaceCenter = bSmoothCross ? 0.0f : (MinorAngles[0] + MinorAngles[1]) * 0.5f;
-
-            for (int i = 0; i < 2; ++i) // Major
-            {
-                for (int j = 0; j < 2; ++j) // Minor
-                {
-                    const int CornerIndex = i * 2 + j;
-
-                    const float CurrentMajorAngle = MajorAngles[i];
-                    const float CurrentMinorAngle = MinorAngles[j];
-
-                    const float NormalMajorAngle = bSmoothVert ? CurrentMajorAngle : MajorAngle_FaceCenter;
-                    const float NormalMinorAngle = bSmoothCross ? CurrentMinorAngle : MinorAngle_FaceCenter;
-
-                    // 计算位置
-                    const float MajorCos_Pos = FMath::Cos(CurrentMajorAngle);
-                    const float MajorSin_Pos = FMath::Sin(CurrentMajorAngle);
-                    const float MinorCos_Pos = FMath::Cos(CurrentMinorAngle);
-                    const float MinorSin_Pos = FMath::Sin(CurrentMinorAngle);
-
-                    const float RadialOffset = MinorCos_Pos * MinorRad;
-                    const float ZOffset = MinorSin_Pos * MinorRad;
-                    // 将原点移动到最底面（底部Z=0）：所有顶点向上偏移MinorRadius
-                    const float AdjustedZ = ZOffset + MinorRad;
-
-                    QuadPositions[CornerIndex] = FVector(
-                        (MajorRad + RadialOffset) * MajorCos_Pos,
-                        (MajorRad + RadialOffset) * MajorSin_Pos,
-                        AdjustedZ
-                    );
-
-                    // 计算法线
-                    const float MajorCos_Norm = FMath::Cos(NormalMajorAngle);
-                    const float MajorSin_Norm = FMath::Sin(NormalMajorAngle);
-                    const float MinorCos_Norm = FMath::Cos(NormalMinorAngle);
-                    const float MinorSin_Norm = FMath::Sin(NormalMinorAngle);
-
-                    QuadNormals[CornerIndex] = FVector(
-                        MinorCos_Norm * MajorCos_Norm,
-                        MinorCos_Norm * MajorSin_Norm,
-                        MinorSin_Norm
-                    ).GetSafeNormal();
-
-                    // 每个段占据完整的 1x1 UV 区域，类似于 Pyramid 的侧面
-                    // U坐标：在当前段内从 0 到 1（每个段独立）
-                    const float UCoord = static_cast<float>(i) / 1.0f; // i 是 0 或 1，所以 U 是 0 或 1
-                    // V坐标：沿次环方向从 0 到 1（每个段独立）
-                    const float VCoord = static_cast<float>(MinorIndex + j) / MinorSegs;
-                    QuadUVs[CornerIndex] = FVector2D(UCoord, VCoord);
-                }
-            }
-
-            // 获取或创建四边形的四个顶点
-            const int32 V0 = GetOrAddVertex(QuadPositions[0], QuadNormals[0], QuadUVs[0]);
-            const int32 V1 = GetOrAddVertex(QuadPositions[1], QuadNormals[1], QuadUVs[1]);
-            const int32 V2 = GetOrAddVertex(QuadPositions[2], QuadNormals[2], QuadUVs[2]);
-            const int32 V3 = GetOrAddVertex(QuadPositions[3], QuadNormals[3], QuadUVs[3]);
-
-            if (MajorIndex == 0)
-            {
-                StartCapIndices.Add(V0);
-            }
-            if (MajorIndex == MajorSegs - 1)
-            {
-                EndCapIndices.Add(V2);
-            }
-
-            AddTriangle(V0, V1, V2);
-            AddTriangle(V1, V3, V2);
-
-        }
-    }
+    // No-op
 }

@@ -1,10 +1,5 @@
 // Copyright (c) 2024. All rights reserved.
 
-/**
- * @file PyramidBuilder.h
- * @brief 金字塔网格构建器
- */
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -17,40 +12,38 @@ class MODELGEN_API FPyramidBuilder : public FModelGenMeshBuilder
 public:
     explicit FPyramidBuilder(const APyramid& InPyramid);
 
+    //~ Begin FModelGenMeshBuilder Interface
     virtual bool Generate(FModelGenMeshData& OutMeshData) override;
     virtual int32 CalculateVertexCountEstimate() const override;
     virtual int32 CalculateTriangleCountEstimate() const override;
+    //~ End FModelGenMeshBuilder Interface
 
 private:
     const APyramid& Pyramid;
 
+    // Geometry Params
     float BaseRadius;
     float Height;
     int32 Sides;
     float BevelRadius;
-    float BevelTopRadius;
+    float BevelTopRadius; // 倒角结束处的半径（即金字塔主体底部的半径）
 
-    TArray<FVector> BottomVertices;
-    TArray<FVector> TopVertices;
-    FVector PyramidTopPoint;
-
-    TArray<FVector2D> BaseUVs;
-    TArray<FVector2D> PyramidSideUVs;
-    TArray<FVector2D> BevelUVs;
-
-    TArray<float> AngleValues;
+    // Cache
     TArray<float> CosValues;
     TArray<float> SinValues;
-    TArray<float> UVScaleValues;
 
-    void PrecomputeVertices();
-    void PrecomputeUVs();
-    void PrecomputeTrigonometricValues();
-    void PrecomputeUVScaleValues();
+    // Internal States
+    FVector TopPoint; // 金字塔尖端
 
-    void InitializeVertices();
+    // Helpers
+    void Clear();
+    void PrecomputeMath();
 
-    void GenerateBaseFace();
-    void GenerateBevelSection();
-    void GeneratePyramidSides();
+    // 几何生成
+    void GenerateBase();   // 底面
+    void GenerateBevel();  // 底部倒角/裙边 (Skirt)
+    void GenerateSides();  // 金字塔主体
+
+    // 工具函数：根据索引获取环上的位置
+    FVector GetRingPos(int32 Index, float Radius, float Z) const;
 };

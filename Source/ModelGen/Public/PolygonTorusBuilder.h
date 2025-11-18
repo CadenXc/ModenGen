@@ -1,15 +1,10 @@
 // Copyright (c) 2024. All rights reserved.
 
-/**
- * @file PolygonTorusBuilder.h
- * @brief 圆环生成器
- */
-
 #pragma once
 
+#include "CoreMinimal.h"
 #include "ModelGenMeshBuilder.h"
 
- // Forward declarations
 class APolygonTorus;
 
 class MODELGEN_API FPolygonTorusBuilder : public FModelGenMeshBuilder
@@ -26,13 +21,27 @@ public:
 private:
     const APolygonTorus& PolygonTorus;
 
-    // 用于存储封盖边缘顶点索引的数组
-    TArray<int32> StartCapIndices;
-    TArray<int32> EndCapIndices;
+    // --- Cache Data ---
+    struct FCachedTrig
+    {
+        float Cos;
+        float Sin;
+    };
+    TArray<FCachedTrig> MajorAngleCache;
+    TArray<FCachedTrig> MinorAngleCache;
 
-    void GenerateTriangles();
+    // 记录端盖的边缘索引
+    TArray<int32> StartCapRingIndices;
+    TArray<int32> EndCapRingIndices;
+
+    // --- Internal Helpers ---
+    void Clear();
+    void PrecomputeMath();
+
+    void GenerateTorusSurface();
+
     void GenerateEndCaps();
-    void GenerateAdvancedEndCaps();
-    void ValidateAndClampParameters();
+    void CreateCap(const TArray<int32>& RingIndices, bool bIsStart);
 
+    void ValidateAndClampParameters();
 };
