@@ -43,24 +43,30 @@ private:
     TArray<int32> TopCapRing;       // 顶部端盖边缘环（倒角连接点）
     TArray<int32> BottomCapRing;    // 底部端盖边缘环（倒角连接点）
 
-    // 倒角参数
-    float TopBevelHeight;
-    float BottomBevelHeight;
-    float TopBevelRadius;
-    float BottomBevelRadius;
-    float TopBevelStartZ;
-    float BottomBevelStartZ;
-    int32 BevelSegments;
-
     TArray<int32> GenerateVertexRing(float Radius, float Z, int32 Sides);
     TArray<int32> GenerateVertexRing(float Radius, float Z, int32 Sides, float VCoord, const FVector2D& UVOffset, const FVector2D& UVScale);
-    void GenerateCapGeometry(float Z, int32 Sides, float Radius, EHeightPosition HeightPosition, const TArray<int32>& EdgeRing = TArray<int32>());
+    void GenerateCapGeometry(float Z, int32 Sides, float Radius, EHeightPosition HeightPosition);
+    void GenerateCapTrianglesFromRing(const TArray<int32>& CapRing, EHeightPosition HeightPosition);
     void GenerateBevelGeometry(EHeightPosition HeightPosition);
+    void CalculateBevelPosition(bool bIsTop, int32 RingIndex, int32 BevelSections, float Theta, 
+        float CenterZ, float CenterRadius, float BevelRadius, int32 SideIndex, float AngleStep,
+        const TArray<int32>& SideRing, FVector& OutPosition);
+    FVector CalculateBevelNormal(bool bIsTop, int32 RingIndex, int32 BevelSections, 
+        const FVector& Position, float CenterZ, float CenterRadius, int32 SideIndex, float AngleStep,
+        const TArray<int32>& SideRing);
+    int32 CreateBevelVertex(bool bIsTop, int32 RingIndex, int32 BevelSections, 
+        const FVector& Position, const FVector& Normal, float Alpha, float Radius, float HalfHeight,
+        EHeightPosition HeightPosition, const TArray<int32>& SideRing, int32 SideIndex);
     float CalculateBentRadius(float BaseRadius, float HeightRatio);
-    float CalculateBevelHeight(float Radius);
+    float CalculateBevelHeight(float Radius) const;
     float CalculateHeightRatio(float Z);
     float CalculateAngleStep(int32 Sides);
     void CalculateAngles();
+    
+    //~ Begin UV Functions
+    FVector2D CalculateWallUV(float Angle, float Z) const;
+    FVector2D CalculateCapUV(float Angle, float Radius, EHeightPosition HeightPosition) const;
+    FVector2D CalculateBevelUV(float Angle, float Alpha, EHeightPosition HeightPosition, float Radius, float Z) const;
 
     void CreateSideGeometry();
     void GenerateEndCaps();

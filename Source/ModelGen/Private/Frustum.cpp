@@ -52,14 +52,13 @@ int32 AFrustum::CalculateVertexCountEstimate() const
     if (!IsValid()) return 0;
 
     const int32 MaxSides = FMath::Max(TopSides, BottomSides);
-    const int32 BaseVertices = TopSides + BottomSides;
-    // 中间分段数 = HeightSegments，实际分段数 = HeightSegments + 1（0表示只有顶部和底部）
-    const int32 SideVertices = HeightSegments * MaxSides;
+    const int32 BaseVertices = TopSides + BottomSides + 2; // 加中心点
+    const int32 SideVertices = (HeightSegments + 1) * MaxSides; // 包括顶部和底部
     
     int32 BevelVertices = 0;
-    if (BevelRadius > 0.0f)
+    if (BevelRadius > 0.0f && BevelSegments > 0)
     {
-        BevelVertices = (TopSides + BottomSides + HeightSegments * MaxSides);
+        BevelVertices = (TopSides + BottomSides) * (BevelSegments + 1) * 2; // 顶部和底部倒角，每个有 (Segments + 1) 环
     }
 
     return BaseVertices + SideVertices + BevelVertices;
@@ -71,13 +70,12 @@ int32 AFrustum::CalculateTriangleCountEstimate() const
 
     const int32 MaxSides = FMath::Max(TopSides, BottomSides);
     const int32 BaseTriangles = TopSides + BottomSides;
-    // 实际分段数 = HeightSegments + 1（0表示只有顶部和底部）
-    const int32 SideTriangles = HeightSegments * MaxSides * 2;  // 中间分段数 = HeightSegments
+    const int32 SideTriangles = HeightSegments * MaxSides * 2;
     
     int32 BevelTriangles = 0;
-    if (BevelRadius > 0.0f)
+    if (BevelRadius > 0.0f && BevelSegments > 0)
     {
-        BevelTriangles = (TopSides + BottomSides + HeightSegments * MaxSides) * 2;
+        BevelTriangles = (TopSides + BottomSides) * BevelSegments * 2 * 2; // 每个倒角部分有 Segments 个 quad
     }
 
     return BaseTriangles + SideTriangles + BevelTriangles;
@@ -270,6 +268,24 @@ void AFrustum::SetArcAngle(float NewArcAngle)
             {
                 ArcAngle = OldArcAngle;
                 UE_LOG(LogTemp, Warning, TEXT("SetArcAngle: 网格生成失败，参数已恢复为 %f"), OldArcAngle);
+            }
+        }
+    }
+}
+
+void AFrustum::SetBevelSegments(int32 NewBevelSegments)
+{
+    if (NewBevelSegments >= 0 && NewBevelSegments <= 12 && NewBevelSegments != BevelSegments)
+    {
+        int32 OldBevelSegments = BevelSegments;
+        BevelSegments = NewBevelSegments;
+        
+        if (ProceduralMeshComponent)
+        {
+            if (!TryGenerateMeshInternal())
+            {
+                BevelSegments = OldBevelSegments;
+                UE_LOG(LogTemp, Warning, TEXT("SetBevelSegments: 网格生成失败，参数已恢复为 %d"), OldBevelSegments);
             }
         }
     }

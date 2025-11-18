@@ -75,7 +75,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HollowPrism|Bevel", 
         meta = (ClampMin = "0", ClampMax = "4", UIMin = "0", UIMax = "4", 
         DisplayName = "Bevel Sections", ToolTip = "倒角分段数。0表示不启用倒角"))
-    int32 BevelSegments = 0;
+    int32 BevelSegments = 2;
 
     UFUNCTION(BlueprintCallable, Category = "HollowPrism|Parameters")
     void SetBevelSegments(int32 NewBevelSegments);

@@ -94,6 +94,6 @@ private:
     //~ Begin UV Functions
     FVector2D CalculateWallUV(float Angle, float Z, EInnerOuter InnerOuter) const;
     FVector2D CalculateCapUV(float Angle, float Radius, EHeightPosition HeightPosition) const;
-    FVector2D CalculateBevelUV(float Angle, float Alpha, EInnerOuter InnerOuter, EHeightPosition HeightPosition) const;
+    FVector2D CalculateBevelUV(float Angle, float Alpha, EInnerOuter InnerOuter, EHeightPosition HeightPosition, float Radius, float Z) const;
     FVector2D CalculateEndCapUVWithRadius(float Angle, float Z, float Radius, EEndCapType EndCapType) const;
 };

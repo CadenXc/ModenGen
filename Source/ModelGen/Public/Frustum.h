@@ -70,8 +70,15 @@ public:
         meta = (ClampMin = "0.0", ClampMax = "250", UIMin = "0.0", UIMax = "250", DisplayName = "Bevel Radius"))
     float BevelRadius = 0.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Bevel", 
+        meta = (ClampMin = "0", ClampMax = "12", UIMin = "0", UIMax = "12", DisplayName = "Bevel Segments"))
+    int32 BevelSegments = 2;
+
     UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
     void SetBevelRadius(float NewBevelRadius);
+
+    UFUNCTION(BlueprintCallable, Category = "Frustum|Parameters")
+    void SetBevelSegments(int32 NewBevelSegments);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Bending", 
         meta = (ClampMin = "-1.0", ClampMax = "1.0", DisplayName = "Bend Amount"))
