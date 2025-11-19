@@ -3,6 +3,7 @@
 #include "PolygonTorusBuilder.h"
 #include "PolygonTorus.h"
 #include "ModelGenMeshData.h"
+#include "Math/UnrealMathUtility.h"
 
 static const float GLOBAL_UV_SCALE = 0.01f;
 
@@ -80,7 +81,7 @@ void FPolygonTorusBuilder::PrecomputeMath()
 
     // 2. Minor Angles (截面)
     const int32 MinorSegs = PolygonTorus.MinorSegments;
-    const float MinorStep = TWO_PI / MinorSegs;
+    const float MinorStep = 2.0f * PI / MinorSegs;
 
     MinorAngleCache.SetNum(MinorSegs + 1);
     for (int32 i = 0; i <= MinorSegs; ++i)
@@ -134,7 +135,7 @@ void FPolygonTorusBuilder::GenerateTorusSurface()
             const FCachedTrig& Min0 = MinorAngleCache[j];
             const FCachedTrig& Min1 = MinorAngleCache[j + 1];
 
-            float MinorArcStep = (TWO_PI / MinorSegs) * MinorRad;
+            float MinorArcStep = (2.0f * PI / MinorSegs) * MinorRad;
             float NextV = CurrentV + MinorArcStep;
 
             // 硬边 Minor 法线准备

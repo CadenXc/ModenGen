@@ -109,15 +109,14 @@ void FHollowPrismBuilder::ComputeVerticalProfile(EInnerOuter InnerOuter, TArray<
 {
     OutProfile.Empty();
 
-    const float HalfHeight = HollowPrism.GetHalfHeight();
     const float BevelR = bEnableBevel ? HollowPrism.BevelRadius : 0.0f;
     const int32 Segments = bEnableBevel ? BevelSegments : 0;
 
     const float BaseRadius = (InnerOuter == EInnerOuter::Inner) ? HollowPrism.InnerRadius : HollowPrism.OuterRadius;
     const float Sign = (InnerOuter == EInnerOuter::Inner) ? 1.0f : -1.0f;
 
-    const float TopArcCenterZ = HalfHeight - BevelR;
-    const float BottomArcCenterZ = -HalfHeight + BevelR;
+    const float TopArcCenterZ = HollowPrism.Height - BevelR;
+    const float BottomArcCenterZ = BevelR;
     const float ArcCenterR = BaseRadius + (Sign * BevelR);
 
     float CurrentV = 0.0f;

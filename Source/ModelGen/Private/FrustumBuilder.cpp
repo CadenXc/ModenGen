@@ -121,13 +121,11 @@ TArray<FVector2D> FFrustumBuilder::GetRingPos2D(float Radius, int32 Sides) const
 
 void FFrustumBuilder::GenerateSides()
 {
-    const float HalfHeight = Frustum.GetHalfHeight();
-
     // V 坐标累加器 (世界单位)
     float CurrentV = 0.0f;
 
-    float TopZ = HalfHeight;
-    float BottomZ = -HalfHeight;
+    float TopZ = Frustum.Height;
+    float BottomZ = 0.0f;
 
     const float TopR = Frustum.TopRadius;
     const float BottomR = Frustum.BottomRadius;
@@ -158,7 +156,7 @@ void FFrustumBuilder::GenerateSides()
     {
         const float Alpha = static_cast<float>(h) / Segments;
         const float CurrentZ = FMath::Lerp(BottomZ, TopZ, Alpha);
-        const float HeightRatio = (CurrentZ + Frustum.GetHalfHeight()) / Frustum.Height;
+        const float HeightRatio = CurrentZ / Frustum.Height;
 
         // 计算插值半径用于 UV V 增量计算
         const float CurrentBaseRadius = FMath::Lerp(BottomR, TopR, Alpha);
@@ -247,7 +245,6 @@ void FFrustumBuilder::GenerateSides()
 
 void FFrustumBuilder::GenerateBevels()
 {
-    const float HalfHeight = Frustum.GetHalfHeight();
     const float MinRadius = FMath::Min(Frustum.TopRadius, Frustum.BottomRadius);
     const float BevelR = FMath::Min(Frustum.BevelRadius, MinRadius);
     const int32 Segments = Frustum.BevelSegments;
@@ -263,7 +260,7 @@ void FFrustumBuilder::GenerateBevels()
 
     // --- Top Bevel ---
     TArray<int32> PreviousTopRing = TopSideRing;
-    const float ArcCenterZ = HalfHeight - BevelR;
+    const float ArcCenterZ = Frustum.Height - BevelR;
     const float ArcCenterR = Frustum.TopRadius - BevelR;
 
     float CurrentV_Top = BottomBevelArc + SideVLength;
@@ -295,7 +292,7 @@ void FFrustumBuilder::GenerateBevels()
 
     // --- Bottom Bevel ---
     TArray<int32> PreviousBottomRing = BottomSideRing;
-    const float BottomArcCenterZ = -HalfHeight + BevelR;
+    const float BottomArcCenterZ = BevelR;
     const float BottomArcCenterR = Frustum.BottomRadius - BevelR;
 
     float CurrentV_Bottom = BottomBevelArc;
@@ -330,12 +327,12 @@ void FFrustumBuilder::GenerateCaps()
 {
     if (TopCapRing.Num() >= 3 && Frustum.TopRadius > KINDA_SMALL_NUMBER)
     {
-        CreateCapDisk(Frustum.GetHalfHeight(), TopCapRing, true);
+        CreateCapDisk(Frustum.Height, TopCapRing, true);
     }
 
     if (BottomCapRing.Num() >= 3 && Frustum.BottomRadius > KINDA_SMALL_NUMBER)
     {
-        CreateCapDisk(-Frustum.GetHalfHeight(), BottomCapRing, false);
+        CreateCapDisk(0.0f, BottomCapRing, false);
     }
 }
 
@@ -344,7 +341,7 @@ void FFrustumBuilder::CreateCapDisk(float Z, const TArray<int32>& BoundaryRing, 
     FVector CenterPos(0.0f, 0.0f, Z);
     if (FMath::Abs(Frustum.BendAmount) > KINDA_SMALL_NUMBER)
     {
-        float H = (Z + Frustum.GetHalfHeight()) / Frustum.Height;
+        float H = Z / Frustum.Height;
         CenterPos = ApplyBend(CenterPos, 0.0f, H);
     }
 
@@ -442,7 +439,7 @@ TArray<int32> FFrustumBuilder::CreateVertexRing(const FRingContext& Context, flo
     TArray<int32> Indices;
     Indices.Reserve(Context.Sides + 1);
 
-    const float HeightRatio = (Context.Z + Frustum.GetHalfHeight()) / Frustum.Height;
+    const float HeightRatio = Context.Z / Frustum.Height;
     const float AngleStep = (Context.Sides > 0) ? (ArcAngleRadians / Context.Sides) : 0.0f;
 
     for (int32 i = 0; i <= Context.Sides; ++i)
