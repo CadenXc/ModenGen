@@ -54,10 +54,15 @@ private:
     // Helper to stitch two rings
     void StitchRings(const TArray<int32>& RingA, const TArray<int32>& RingB);
 
-    // Helper to calculate 2D ring positions (Added this declaration)
+    // Helper to calculate 2D ring positions
     TArray<FVector2D> GetRingPos2D(float Radius, int32 Sides) const;
 
+    // Standard ring creation (defaults to horizontal normal)
     TArray<int32> CreateVertexRing(const FRingContext& Context, float VCoord);
+
+    // Specialized ring creation for bevels with normal interpolation
+    TArray<int32> CreateBevelRing(const FRingContext& Context, float VCoord, float NormalAlpha, bool bIsTopBevel);
+
     void CreateCapDisk(float Z, const TArray<int32>& BoundaryRing, bool bIsTop);
     void CreateCutPlaneSurface(float Angle, const TArray<int32>& ProfileIndices, bool bIsStartFace);
 

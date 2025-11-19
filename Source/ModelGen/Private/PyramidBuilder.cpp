@@ -28,15 +28,11 @@ bool FPyramidBuilder::Generate(FModelGenMeshData& OutMeshData)
     Clear();
     ReserveMemory();
 
-    // 缓存参数
     BaseRadius = Pyramid.BaseRadius;
     Height = Pyramid.Height;
     Sides = Pyramid.Sides;
     BevelRadius = Pyramid.BevelRadius;
 
-    // 恢复原始逻辑：
-    // 在原始实现中，底面(Z=0)和倒角顶面(Z=BevelRadius)都使用了 BevelTopRadius。
-    // 这使得倒角区域变成了一个垂直的"棱柱"底座。
     BevelTopRadius = Pyramid.GetBevelTopRadius();
 
     TopPoint = FVector(0, 0, Height);
@@ -45,12 +41,7 @@ bool FPyramidBuilder::Generate(FModelGenMeshData& OutMeshData)
 
     GenerateBase();
 
-    if (BevelRadius > KINDA_SMALL_NUMBER)
-    {
-        GenerateBevel();
-    }
-
-    GenerateSides();
+    GenerateSlices();
 
     if (!ValidateGeneratedData())
     {
@@ -95,16 +86,12 @@ FVector FPyramidBuilder::GetRingPos(int32 Index, float Radius, float Z) const
 
 void FPyramidBuilder::GenerateBase()
 {
-    // 底面法线向下
     FVector Normal(0, 0, -1.0f);
     FVector CenterPos(0, 0, 0);
     FVector2D CenterUV(0.0f, 0.0f);
 
-    // 1. 创建中心点
-    int32 CenterIndex = AddVertex(CenterPos, Normal, CenterUV);
+    int32 CenterIndex = GetOrAddVertex(CenterPos, Normal, CenterUV);
 
-    // 2. 创建边缘点
-    // 【棱柱逻辑修复】：为了匹配倒角棱柱的底部，这里必须使用 BevelTopRadius
     TArray<int32> RimIndices;
     RimIndices.Reserve(Sides + 1);
 
@@ -113,133 +100,111 @@ void FPyramidBuilder::GenerateBase()
         FVector Pos = GetRingPos(i, BevelTopRadius, 0.0f);
         FVector2D UV(Pos.X * ModelGenConstants::GLOBAL_UV_SCALE, Pos.Y * ModelGenConstants::GLOBAL_UV_SCALE);
 
-        RimIndices.Add(AddVertex(Pos, Normal, UV));
+        RimIndices.Add(GetOrAddVertex(Pos, Normal, UV));
     }
 
-    // 3. 生成三角扇
-    // 【方向修复】：改为 Center -> Curr -> Next (逆时针)，修正底面渲染反向问题
     for (int32 i = 0; i < Sides; ++i)
     {
         AddTriangle(CenterIndex, RimIndices[i], RimIndices[i + 1]);
     }
 }
 
-void FPyramidBuilder::GenerateBevel()
+void FPyramidBuilder::GenerateSlices()
 {
-    // 倒角/棱柱部分
     const float Z_Bottom = 0.0f;
-    const float Z_Top = BevelRadius;
-    const bool bSmooth = Pyramid.bSmoothSides;
+    const float Z_Mid = BevelRadius;
+    const float Z_Top = Height;
 
-    // 【棱柱逻辑修复】：因为是垂直棱柱，上下半径相同，均为 BevelTopRadius
-    float dR = 0.0f; // 半径差为0
-    float dZ = BevelRadius;
-    float SlopeLen = dZ; // 斜边长度等于高度
+    // 1. 准备圆锥法线参数
+    float SideH = Height - BevelRadius;
+    float SideSlopeLen = FMath::Sqrt(BevelTopRadius * BevelTopRadius + SideH * SideH);
 
-    // 垂直表面的法线 (XY平面上的径向向量)
-    float NormZ_Comp = 0.0f;
-    float NormR_Comp = 1.0f;
+    float ConeNormZ = BevelTopRadius / (SideSlopeLen > KINDA_SMALL_NUMBER ? SideSlopeLen : 1.0f);
+    float ConeNormR = SideH / (SideSlopeLen > KINDA_SMALL_NUMBER ? SideSlopeLen : 1.0f);
+
+    // 2. 准备圆柱法线参数
+    float CylNormZ = 0.0f;
+    float CylNormR = 1.0f;
+
+    // 3. 准备倒角斜边长
+    float BevelSlopeLen = BevelRadius;
 
     for (int32 i = 0; i < Sides; ++i)
     {
-        // 几何位置：上下半径一致
-        FVector P0 = GetRingPos(i, BevelTopRadius, Z_Bottom);      // Bottom Left
-        FVector P1 = GetRingPos(i + 1, BevelTopRadius, Z_Bottom);    // Bottom Right
-        FVector P2 = GetRingPos(i + 1, BevelTopRadius, Z_Top);       // Top Right
-        FVector P3 = GetRingPos(i, BevelTopRadius, Z_Top);         // Top Left
+        // --- 位置计算 ---
+        FVector P_Bot_L = GetRingPos(i, BevelTopRadius, Z_Bottom);
+        FVector P_Bot_R = GetRingPos(i + 1, BevelTopRadius, Z_Bottom);
+        FVector P_Mid_L = GetRingPos(i, BevelTopRadius, Z_Mid);
+        FVector P_Mid_R = GetRingPos(i + 1, BevelTopRadius, Z_Mid);
+        FVector P_Tip = TopPoint;
 
-        // 法线
-        FVector N0, N1, N2, N3;
+        // --- 法线计算 ---
+        FVector N_Bevel_L, N_Bevel_R, N_Bevel_TL, N_Bevel_TR;
+        FVector N_Side_L, N_Side_R, N_Side_Tip;
 
-        if (bSmooth)
+        if (Pyramid.bSmoothSides)
         {
-            auto GetSmoothNorm = [&](int32 Idx) {
-                return FVector(CosValues[Idx] * NormR_Comp, SinValues[Idx] * NormR_Comp, NormZ_Comp);
+            auto GetCylNormal = [&](int32 Idx) {
+                return FVector(CosValues[Idx] * CylNormR, SinValues[Idx] * CylNormR, CylNormZ);
                 };
-            N0 = GetSmoothNorm(i);
-            N1 = GetSmoothNorm(i + 1);
-            N2 = N1;
-            N3 = N0;
-        }
-        else
-        {
-            // 硬边：面法线 (垂直板)
-            FVector FaceNormal = FVector::CrossProduct(P1 - P0, P3 - P0).GetSafeNormal();
-            N0 = N1 = N2 = N3 = FaceNormal;
-        }
+            N_Bevel_L = GetCylNormal(i);
+            N_Bevel_R = GetCylNormal(i + 1);
+            N_Bevel_TL = N_Bevel_L;
+            N_Bevel_TR = N_Bevel_R;
 
-        // UV (矩形展开)
-        float W = FVector::Dist(P0, P1);
-        float H = SlopeLen; // 等于 BevelHeight
-
-        FVector2D UV0(0.0f, 0.0f);
-        FVector2D UV1(W * ModelGenConstants::GLOBAL_UV_SCALE, 0.0f);
-        FVector2D UV2(W * ModelGenConstants::GLOBAL_UV_SCALE, H * ModelGenConstants::GLOBAL_UV_SCALE);
-        FVector2D UV3(0.0f, H * ModelGenConstants::GLOBAL_UV_SCALE);
-
-        int32 V0 = AddVertex(P0, N0, UV0);
-        int32 V1 = AddVertex(P1, N1, UV1);
-        int32 V2 = AddVertex(P2, N2, UV2);
-        int32 V3 = AddVertex(P3, N3, UV3);
-
-        // 连接顺序：V0 -> V3 -> V2 -> V1 (保持之前修正过的侧面方向)
-        AddQuad(V0, V3, V2, V1);
-    }
-}
-
-void FPyramidBuilder::GenerateSides()
-{
-    // 金字塔主体
-    const float Z_Base = BevelRadius;
-    const float R_Base = BevelTopRadius;
-
-    const bool bSmooth = Pyramid.bSmoothSides;
-
-    // 计算金字塔侧面的解析法线参数
-    float dR = R_Base;
-    float dZ = Height - BevelRadius;
-    float SlantHeight = FMath::Sqrt(dR * dR + dZ * dZ);
-
-    float NormZ_Comp = dR / (SlantHeight > KINDA_SMALL_NUMBER ? SlantHeight : 1.0f);
-    float NormR_Comp = dZ / (SlantHeight > KINDA_SMALL_NUMBER ? SlantHeight : 1.0f);
-
-    for (int32 i = 0; i < Sides; ++i)
-    {
-        // 位置
-        FVector P0 = GetRingPos(i, R_Base, Z_Base);     // Base Left (Curr)
-        FVector P1 = GetRingPos(i + 1, R_Base, Z_Base);   // Base Right (Next)
-        FVector P_Top = TopPoint;                       // Tip
-
-        // 法线
-        FVector N0, N1, N_Top;
-
-        if (bSmooth)
-        {
             auto GetConeNormal = [&](int32 Idx) {
-                return FVector(CosValues[Idx] * NormR_Comp, SinValues[Idx] * NormR_Comp, NormZ_Comp);
+                return FVector(CosValues[Idx] * ConeNormR, SinValues[Idx] * ConeNormR, ConeNormZ);
                 };
-            N0 = GetConeNormal(i);
-            N1 = GetConeNormal(i + 1);
-            N_Top = (N0 + N1).GetSafeNormal();
+            N_Side_L = GetConeNormal(i);
+            N_Side_R = GetConeNormal(i + 1);
+
+            N_Side_Tip = (N_Side_L + N_Side_R).GetSafeNormal();
         }
         else
         {
-            // 硬边法线
-            FVector FaceNormal = FVector::CrossProduct(P1 - P0, P_Top - P0).GetSafeNormal();
-            N0 = N1 = N_Top = FaceNormal;
+            FVector FaceN_Bevel = FVector::CrossProduct(P_Bot_R - P_Bot_L, P_Mid_L - P_Bot_L).GetSafeNormal();
+            N_Bevel_L = N_Bevel_R = N_Bevel_TL = N_Bevel_TR = FaceN_Bevel;
+
+            FVector FaceN_Side = FVector::CrossProduct(P_Mid_R - P_Mid_L, P_Tip - P_Mid_L).GetSafeNormal();
+            N_Side_L = N_Side_R = N_Side_Tip = FaceN_Side;
         }
 
-        // UV
-        float EdgeWidth = FVector::Dist(P0, P1);
-        FVector2D UV0(0.0f, 0.0f);
-        FVector2D UV1(EdgeWidth * ModelGenConstants::GLOBAL_UV_SCALE, 0.0f);
-        FVector2D UV_Tip(EdgeWidth * 0.5f * ModelGenConstants::GLOBAL_UV_SCALE, SlantHeight * ModelGenConstants::GLOBAL_UV_SCALE);
+        // --- UV 计算 ---
+        float W_Bot = FVector::Dist(P_Bot_L, P_Bot_R);
 
-        int32 V0 = AddVertex(P0, N0, UV0);
-        int32 V1 = AddVertex(P1, N1, UV1);
-        int32 V_Tip = AddVertex(P_Top, N_Top, UV_Tip);
+        FVector2D UV_Bot_L(0.0f, 0.0f);
+        FVector2D UV_Bot_R(W_Bot * ModelGenConstants::GLOBAL_UV_SCALE, 0.0f);
+        FVector2D UV_Mid_L(0.0f, BevelSlopeLen * ModelGenConstants::GLOBAL_UV_SCALE);
+        FVector2D UV_Mid_R(W_Bot * ModelGenConstants::GLOBAL_UV_SCALE, BevelSlopeLen * ModelGenConstants::GLOBAL_UV_SCALE);
 
-        // 三角形连接顺序：V1 -> V0 -> V_Tip
-        AddTriangle(V1, V0, V_Tip);
+        float TotalV = (BevelSlopeLen + SideSlopeLen) * ModelGenConstants::GLOBAL_UV_SCALE;
+        float HalfW = W_Bot * 0.5f * ModelGenConstants::GLOBAL_UV_SCALE;
+        FVector2D UV_Tip(HalfW, TotalV);
+
+        // --- 顶点生成与索引 ---
+
+        // 【UV修正】：因为几何反转了（左变右），UV也要反转以匹配纹理方向
+        // Bevel
+        // V0 (BotL) 用 UV_Bot_R (逻辑上的右UV)
+        // V1 (BotR) 用 UV_Bot_L (逻辑上的左UV)
+        int32 V0 = GetOrAddVertex(P_Bot_L, N_Bevel_L, UV_Bot_R);
+        int32 V1 = GetOrAddVertex(P_Bot_R, N_Bevel_R, UV_Bot_L);
+        // V2 (MidR) 用 UV_Mid_L
+        // V3 (MidL) 用 UV_Mid_R
+        int32 V2 = GetOrAddVertex(P_Mid_R, N_Bevel_TR, UV_Mid_L);
+        int32 V3 = GetOrAddVertex(P_Mid_L, N_Bevel_TL, UV_Mid_R);
+
+        // Side
+        int32 V_Side_L = GetOrAddVertex(P_Mid_L, N_Side_L, UV_Mid_R);
+        int32 V_Side_R = GetOrAddVertex(P_Mid_R, N_Side_R, UV_Mid_L);
+        int32 V_Side_Top = GetOrAddVertex(P_Tip, N_Side_Tip, UV_Tip);
+
+        // --- 面生成 ---
+
+        // 倒角面: V0 -> V3 -> V2 -> V1
+        AddQuad(V0, V3, V2, V1);
+
+        // 侧面: V_Side_R -> V_Side_L -> V_Side_Top
+        AddTriangle(V_Side_R, V_Side_L, V_Side_Top);
     }
 }

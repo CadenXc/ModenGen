@@ -52,7 +52,6 @@ bool FPolygonTorusBuilder::Generate(FModelGenMeshData& OutMeshData)
 
 int32 FPolygonTorusBuilder::CalculateVertexCountEstimate() const
 {
-    // 如果全是硬边，顶点数是面数 * 4
     return PolygonTorus.MajorSegments * PolygonTorus.MinorSegments * 4;
 }
 
@@ -63,14 +62,12 @@ int32 FPolygonTorusBuilder::CalculateTriangleCountEstimate() const
 
 void FPolygonTorusBuilder::PrecomputeMath()
 {
-    // 1. Major Angles (路径)
     const float TorusAngleRad = FMath::DegreesToRadians(PolygonTorus.TorusAngle);
     const int32 MajorSegs = PolygonTorus.MajorSegments;
 
     const float StartAngle = -TorusAngleRad / 2.0f;
     const float MajorStep = TorusAngleRad / MajorSegs;
 
-    // 缓存 N+1 个角度以便插值
     MajorAngleCache.SetNum(MajorSegs + 1);
     for (int32 i = 0; i <= MajorSegs; ++i)
     {
@@ -78,22 +75,17 @@ void FPolygonTorusBuilder::PrecomputeMath()
         FMath::SinCos(&MajorAngleCache[i].Sin, &MajorAngleCache[i].Cos, Angle);
     }
 
-    // 2. Minor Angles (截面)
     const int32 MinorSegs = PolygonTorus.MinorSegments;
     const float MinorStep = 2.0f * PI / MinorSegs;
 
     MinorAngleCache.SetNum(MinorSegs + 1);
     for (int32 i = 0; i <= MinorSegs; ++i)
     {
-        // 恢复原逻辑的相位偏移，保证多边形朝向符合预期
         float Angle = (i * MinorStep) - HALF_PI - (MinorStep * 0.5f);
         FMath::SinCos(&MinorAngleCache[i].Sin, &MinorAngleCache[i].Cos, Angle);
     }
 }
 
-// 【核心修复】：翻转圆环表面的渲染方向
-// 之前：V0(i,j) -> V1(i+1,j) -> V2(i+1,j+1) -> V3(i,j+1) (导致法线向内)
-// 修正：V0(i,j) -> V3(i,j+1) -> V2(i+1,j+1) -> V1(i+1,j) (法线向外)
 void FPolygonTorusBuilder::GenerateTorusSurface()
 {
     const int32 MajorSegs = PolygonTorus.MajorSegments;
@@ -118,7 +110,6 @@ void FPolygonTorusBuilder::GenerateTorusSurface()
         const FCachedTrig& Maj0 = MajorAngleCache[i];
         const FCachedTrig& Maj1 = MajorAngleCache[i + 1];
 
-        // 硬边 Major 法线准备
         float MajCos_Normal = 0.f, MajSin_Normal = 0.f;
         if (!bSmoothVert)
         {
@@ -137,7 +128,6 @@ void FPolygonTorusBuilder::GenerateTorusSurface()
             float MinorArcStep = (2.0f * PI / MinorSegs) * MinorRad;
             float NextV = CurrentV + MinorArcStep;
 
-            // 硬边 Minor 法线准备
             float MinCos_Normal = 0.f, MinSin_Normal = 0.f;
             if (!bSmoothCross)
             {
@@ -150,8 +140,6 @@ void FPolygonTorusBuilder::GenerateTorusSurface()
 
             int32 Indices[4];
 
-            // 定义 4 个角的数据源
-            // 0: (i, j), 1: (i+1, j), 2: (i+1, j+1), 3: (i, j+1)
             struct FCornerInfo { const FCachedTrig* Maj; const FCachedTrig* Min; float U; float V; };
             FCornerInfo Corners[4] = {
                 { &Maj0, &Min0, CurrentU, CurrentV },
@@ -165,7 +153,6 @@ void FPolygonTorusBuilder::GenerateTorusSurface()
                 const FCachedTrig& MajP = *Corners[k].Maj;
                 const FCachedTrig& MinP = *Corners[k].Min;
 
-                // 位置
                 float RadialOffset = MinP.Cos * MinorRad;
                 float ZOffset = MinP.Sin * MinorRad;
                 float FinalZ = ZOffset + MinorRad;
@@ -176,7 +163,6 @@ void FPolygonTorusBuilder::GenerateTorusSurface()
                     FinalZ
                 );
 
-                // 法线
                 float UseMajCos = bSmoothVert ? MajP.Cos : MajCos_Normal;
                 float UseMajSin = bSmoothVert ? MajP.Sin : MajSin_Normal;
                 float UseMinCos = bSmoothCross ? MinP.Cos : MinCos_Normal;
@@ -189,30 +175,17 @@ void FPolygonTorusBuilder::GenerateTorusSurface()
                 );
                 Normal.Normalize();
 
-                // UV
                 FVector2D UV(Corners[k].U * ModelGenConstants::GLOBAL_UV_SCALE, Corners[k].V * ModelGenConstants::GLOBAL_UV_SCALE);
 
                 Indices[k] = GetOrAddVertex(Pos, Normal, UV);
             }
 
-            // 【修改处】：反转连接顺序以修正渲染方向
-            // 原顺序 0,1,2,3 导致法线向内
-            // 新顺序 0,3,2,1 产生向外的法线
             AddQuad(Indices[0], Indices[3], Indices[2], Indices[1]);
 
-            // 收集端盖索引
-            // Start Cap: i=0. 
-            // 我们需要收集这一圈的左侧边。
-            // 原本取 0 (i,j) 和 3 (i,j+1)。
-            // 只需要存 Indices[0] 即可代表 V(0, j)
             if (i == 0)
             {
                 StartCapRingIndices.Add(Indices[0]);
             }
-            // End Cap: i=End.
-            // 需要收集右侧边。
-            // 原本取 1 (i+1, j) 和 2 (i+1, j+1)。
-            // 存 Indices[1] 代表 V(End, j)
             if (i == MajorSegs - 1)
             {
                 EndCapRingIndices.Add(Indices[1]);
@@ -226,10 +199,7 @@ void FPolygonTorusBuilder::GenerateTorusSurface()
 
 void FPolygonTorusBuilder::GenerateEndCaps()
 {
-    // Start Cap
     CreateCap(StartCapRingIndices, true);
-
-    // End Cap
     CreateCap(EndCapRingIndices, false);
 }
 
@@ -237,39 +207,40 @@ void FPolygonTorusBuilder::CreateCap(const TArray<int32>& RingIndices, bool bIsS
 {
     if (RingIndices.Num() < 3) return;
 
-    // 1. 计算端盖中心和法线
     const float TorusAngleRad = FMath::DegreesToRadians(PolygonTorus.TorusAngle);
     const float Angle = bIsStart ? (-TorusAngleRad / 2.0f) : (TorusAngleRad / 2.0f);
 
     float CosA, SinA;
     FMath::SinCos(&SinA, &CosA, Angle);
 
-    // 中心位置：Z轴也需要偏移 (MinorRad)
     FVector CenterPos(
         PolygonTorus.MajorRadius * CosA,
         PolygonTorus.MajorRadius * SinA,
         PolygonTorus.MinorRadius
     );
 
-    // 法线: Start(-Tangent), End(+Tangent)
     FVector Normal = bIsStart ?
         FVector(SinA, -CosA, 0.0f) :
         FVector(-SinA, CosA, 0.0f);
 
-    // 2. 创建新的 Cap 顶点 (硬边)
     TArray<int32> CapVertices;
     CapVertices.Reserve(RingIndices.Num());
 
-    // 沿用之前的 UV 计算逻辑，这里从 RingIndices 获取位置计算 Planar UV
     for (int32 Idx : RingIndices)
     {
         FVector Pos = GetPosByIndex(Idx);
 
-        // Planar UV: Local X (Horizontal dist from major ring), Local Y (Z height)
-        // H_Dist: Distance from CenterPos in XY plane? No, dist from Major Radius arc.
-        // Simple approx: Len(XY) - MajorRadius.
         float R_Current = FVector2D(Pos.X, Pos.Y).Size();
+
+        // 水平距离 (Local X)
         float LocalX = R_Current - PolygonTorus.MajorRadius;
+
+        // 【核心修复】：如果是起始面 (Start Face)，反转 LocalX 以修复纹理镜像
+        if (bIsStart)
+        {
+            LocalX = -LocalX;
+        }
+
         float LocalY = Pos.Z - PolygonTorus.MinorRadius;
 
         FVector2D UV(LocalX * ModelGenConstants::GLOBAL_UV_SCALE, LocalY * ModelGenConstants::GLOBAL_UV_SCALE);
@@ -277,27 +248,20 @@ void FPolygonTorusBuilder::CreateCap(const TArray<int32>& RingIndices, bool bIsS
         CapVertices.Add(AddVertex(Pos, Normal, UV));
     }
 
-    // 添加中心点 UV=(0,0)
     int32 CenterIdx = AddVertex(CenterPos, Normal, FVector2D(0, 0));
 
-    // 3. 生成三角扇
-    // RingIndices 来自 Minor 循环 (0..Segs-1)，是闭合圆环
     const int32 NumVerts = CapVertices.Num();
     for (int32 i = 0; i < NumVerts; ++i)
     {
         int32 V_Curr = CapVertices[i];
-        int32 V_Next = CapVertices[(i + 1) % NumVerts]; // 闭合
+        int32 V_Next = CapVertices[(i + 1) % NumVerts];
 
         if (bIsStart)
         {
-            // Start Cap (Look Back): Center -> Next -> Curr (Check winding)
-            // Minor loop goes CCW in (R,Z) plane?
-            // Let's try standard: Center, Next, Curr
             AddTriangle(CenterIdx, V_Next, V_Curr);
         }
         else
         {
-            // End Cap (Look Forward): Center -> Curr -> Next
             AddTriangle(CenterIdx, V_Curr, V_Next);
         }
     }

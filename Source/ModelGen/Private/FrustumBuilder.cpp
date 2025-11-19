@@ -117,9 +117,48 @@ TArray<FVector2D> FFrustumBuilder::GetRingPos2D(float Radius, int32 Sides) const
     return Positions;
 }
 
+TArray<int32> FFrustumBuilder::CreateBevelRing(const FRingContext& Context, float VCoord, float NormalAlpha, bool bIsTopBevel)
+{
+    TArray<int32> Indices;
+    Indices.Reserve(Context.Sides + 1);
+
+    const float HeightRatio = Context.Z / Frustum.Height;
+    const float AngleStep = (Context.Sides > 0) ? (ArcAngleRadians / Context.Sides) : 0.0f;
+
+    FVector VerticalNormal(0.0f, 0.0f, bIsTopBevel ? 1.0f : -1.0f);
+
+    for (int32 i = 0; i <= Context.Sides; ++i)
+    {
+        const float Angle = StartAngle + (i * AngleStep);
+        float SinA, CosA;
+        FMath::SinCos(&SinA, &CosA, Angle);
+
+        FVector Pos(Context.Radius * CosA, Context.Radius * SinA, Context.Z);
+        Pos = ApplyBend(Pos, Context.Radius, HeightRatio);
+
+        FVector HorizontalNormal(CosA, SinA, 0.0f);
+
+        if (FMath::Abs(Frustum.BendAmount) > KINDA_SMALL_NUMBER)
+        {
+            float BendNormalZ = Frustum.BendAmount * FMath::Cos(HeightRatio * PI);
+            HorizontalNormal.Z += BendNormalZ;
+            HorizontalNormal.Normalize();
+        }
+
+        FVector SmoothNormal = FMath::Lerp(HorizontalNormal, VerticalNormal, NormalAlpha).GetSafeNormal();
+
+        float CurrentRadius = FVector2D(Pos.X, Pos.Y).Size();
+        float U = (Angle - StartAngle) * CurrentRadius;
+        FVector2D UV(U * ModelGenConstants::GLOBAL_UV_SCALE, VCoord * ModelGenConstants::GLOBAL_UV_SCALE);
+
+        Indices.Add(GetOrAddVertex(Pos, SmoothNormal, UV));
+    }
+
+    return Indices;
+}
+
 void FFrustumBuilder::GenerateSides()
 {
-    // V 坐标累加器 (世界单位)
     float CurrentV = 0.0f;
 
     float TopZ = Frustum.Height;
@@ -136,7 +175,6 @@ void FFrustumBuilder::GenerateSides()
         TopZ -= EffectiveBevel;
         BottomZ += EffectiveBevel;
 
-        // 如果有底部倒角，侧壁从倒角上方开始，V 偏移为倒角弧长
         CurrentV = (PI * EffectiveBevel) * 0.5f;
     }
 
@@ -156,12 +194,10 @@ void FFrustumBuilder::GenerateSides()
         const float CurrentZ = FMath::Lerp(BottomZ, TopZ, Alpha);
         const float HeightRatio = CurrentZ / Frustum.Height;
 
-        // 计算插值半径用于 UV V 增量计算
         const float CurrentBaseRadius = FMath::Lerp(BottomR, TopR, Alpha);
 
         if (h > 0)
         {
-            // 累加斜边距离
             const float dZ = CurrentZ - PrevZ;
             const float dR = CurrentBaseRadius - PrevRadius;
             const float SlantDist = FMath::Sqrt(dZ * dZ + dR * dR);
@@ -172,6 +208,7 @@ void FFrustumBuilder::GenerateSides()
         PrevRadius = CurrentBaseRadius;
 
         int32 CurrentSides = (h == Segments) ? Frustum.TopSides : Frustum.BottomSides;
+
         TArray<int32> CurrentRingIndices;
         CurrentRingIndices.Reserve(CurrentSides + 1);
 
@@ -210,11 +247,8 @@ void FFrustumBuilder::GenerateSides()
                 Normal.Normalize();
             }
 
-            // 【UV 缩放】：U = 弧长 * Scale, V = 距离 * Scale
-            float FinalRadius = FVector2D(FinalPos.X, FinalPos.Y).Size();
             float CurrentAngle = StartAngle + i * AngleStep;
-            float U = (CurrentAngle - StartAngle) * FinalRadius;
-
+            float U = (CurrentAngle - StartAngle) * CurrentRadius;
             FVector2D UV(U * ModelGenConstants::GLOBAL_UV_SCALE, CurrentV * ModelGenConstants::GLOBAL_UV_SCALE);
 
             CurrentRingIndices.Add(GetOrAddVertex(FinalPos, Normal, UV));
@@ -250,7 +284,6 @@ void FFrustumBuilder::GenerateBevels()
     const float BevelArcLength = (PI * BevelR) * 0.5f;
     const float V_Step = BevelArcLength / Segments;
 
-    // 计算侧壁的 V 长度，用于顶部倒角的起始 V
     float SideSlantH = Frustum.Height - 2.0f * BevelR;
     float SideSlantR = Frustum.TopRadius - Frustum.BottomRadius;
     float SideVLength = FMath::Sqrt(SideSlantH * SideSlantH + SideSlantR * SideSlantR);
@@ -258,8 +291,10 @@ void FFrustumBuilder::GenerateBevels()
 
     // --- Top Bevel ---
     TArray<int32> PreviousTopRing = TopSideRing;
-    const float ArcCenterZ = Frustum.Height - BevelR;
-    const float ArcCenterR = Frustum.TopRadius - BevelR;
+
+    float WallTopZ = Frustum.Height - BevelR;
+    float WallTopR = FMath::Lerp(Frustum.BottomRadius, Frustum.TopRadius, WallTopZ / Frustum.Height);
+    float CapTopR = Frustum.TopRadius - BevelR;
 
     float CurrentV_Top = BottomBevelArc + SideVLength;
 
@@ -270,12 +305,16 @@ void FFrustumBuilder::GenerateBevels()
         const float Alpha = static_cast<float>(i) / Segments;
         const float Angle = Alpha * HALF_PI;
 
+        float DiffR = WallTopR - CapTopR;
+        float CurrentR = CapTopR + DiffR * FMath::Cos(Angle);
+        float CurrentZ = WallTopZ + BevelR * FMath::Sin(Angle);
+
         FRingContext Ctx;
-        Ctx.Z = ArcCenterZ + BevelR * FMath::Sin(Angle);
-        Ctx.Radius = ArcCenterR + BevelR * FMath::Cos(Angle);
+        Ctx.Z = CurrentZ;
+        Ctx.Radius = CurrentR;
         Ctx.Sides = Frustum.TopSides;
 
-        TArray<int32> CurrentRing = CreateVertexRing(Ctx, CurrentV_Top);
+        TArray<int32> CurrentRing = CreateBevelRing(Ctx, CurrentV_Top, Alpha, true);
 
         StitchRings(PreviousTopRing, CurrentRing);
 
@@ -290,8 +329,10 @@ void FFrustumBuilder::GenerateBevels()
 
     // --- Bottom Bevel ---
     TArray<int32> PreviousBottomRing = BottomSideRing;
-    const float BottomArcCenterZ = BevelR;
-    const float BottomArcCenterR = Frustum.BottomRadius - BevelR;
+
+    float WallBotZ = BevelR;
+    float WallBotR = FMath::Lerp(Frustum.BottomRadius, Frustum.TopRadius, WallBotZ / Frustum.Height);
+    float CapBotR = Frustum.BottomRadius - BevelR;
 
     float CurrentV_Bottom = BottomBevelArc;
 
@@ -302,12 +343,16 @@ void FFrustumBuilder::GenerateBevels()
         const float Alpha = static_cast<float>(i) / Segments;
         const float Angle = Alpha * HALF_PI;
 
+        float DiffR = WallBotR - CapBotR;
+        float CurrentR = CapBotR + DiffR * FMath::Cos(Angle);
+        float CurrentZ = WallBotZ - BevelR * FMath::Sin(Angle);
+
         FRingContext Ctx;
-        Ctx.Z = BottomArcCenterZ - BevelR * FMath::Sin(Angle);
-        Ctx.Radius = BottomArcCenterR + BevelR * FMath::Cos(Angle);
+        Ctx.Z = CurrentZ;
+        Ctx.Radius = CurrentR;
         Ctx.Sides = Frustum.BottomSides;
 
-        TArray<int32> CurrentRing = CreateVertexRing(Ctx, CurrentV_Bottom);
+        TArray<int32> CurrentRing = CreateBevelRing(Ctx, CurrentV_Bottom, Alpha, false);
 
         StitchRings(CurrentRing, PreviousBottomRing);
 
@@ -345,7 +390,6 @@ void FFrustumBuilder::CreateCapDisk(float Z, const TArray<int32>& BoundaryRing, 
 
     FVector Normal(0.0f, 0.0f, bIsTop ? 1.0f : -1.0f);
 
-    // 【UV 缩放】：World XY * Scale
     FVector2D CenterUV(CenterPos.X * ModelGenConstants::GLOBAL_UV_SCALE, CenterPos.Y * ModelGenConstants::GLOBAL_UV_SCALE);
     int32 CenterIndex = AddVertex(CenterPos, Normal, CenterUV);
 
@@ -355,10 +399,9 @@ void FFrustumBuilder::CreateCapDisk(float Z, const TArray<int32>& BoundaryRing, 
     for (int32 SrcIdx : BoundaryRing)
     {
         FVector Pos = GetPosByIndex(SrcIdx);
-        // 【UV 缩放】：World XY * Scale
         FVector2D UV(Pos.X * ModelGenConstants::GLOBAL_UV_SCALE, Pos.Y * ModelGenConstants::GLOBAL_UV_SCALE);
 
-        CapVertices.Add(AddVertex(Pos, Normal, UV));
+        CapVertices.Add(GetOrAddVertex(Pos, Normal, UV));
     }
 
     for (int32 i = 0; i < CapVertices.Num() - 1; ++i)
@@ -387,6 +430,7 @@ void FFrustumBuilder::GenerateCutPlanes()
     CreateCutPlaneSurface(EndAngleVal, EndSliceIndices, false);
 }
 
+// 【核心修复】：修正纹理镜像问题
 void FFrustumBuilder::CreateCutPlaneSurface(float Angle, const TArray<int32>& ProfileIndices, bool bIsStartFace)
 {
     if (ProfileIndices.Num() < 2) return;
@@ -410,23 +454,37 @@ void FFrustumBuilder::CreateCutPlaneSurface(float Angle, const TArray<int32>& Pr
         FVector P1_Inner(0.0f, 0.0f, P1_Outer.Z);
         FVector P2_Inner(0.0f, 0.0f, P2_Outer.Z);
 
-        // 【UV 缩放】：World Coordinates * Scale
+        FVector N1_Outer = PlaneNormal;
+        FVector N2_Outer = PlaneNormal;
+
+        if (bEnableBevel)
+        {
+            if (Idx1 < MeshData.Normals.Num()) N1_Outer = MeshData.Normals[Idx1];
+            if (Idx2 < MeshData.Normals.Num()) N2_Outer = MeshData.Normals[Idx2];
+        }
+
         auto GetCutUV = [&](const FVector& P) {
             float R = FVector2D(P.X, P.Y).Size();
-            return FVector2D(R * ModelGenConstants::GLOBAL_UV_SCALE, P.Z * ModelGenConstants::GLOBAL_UV_SCALE);
+            // 【核心修复】：反转 StartFace 的 U 坐标以修复纹理镜像
+            // StartFace: 边缘在左，中心在右，纹理应该从右向左读 (或UV从大到小)
+            // 如果 U = -R，则左侧(大R)是负大，右侧(0)是0。从左到右是 U 增加。
+            float U = bIsStartFace ? -R : R;
+            return FVector2D(U * ModelGenConstants::GLOBAL_UV_SCALE, P.Z * ModelGenConstants::GLOBAL_UV_SCALE);
             };
 
         int32 V_In1 = AddVertex(P1_Inner, PlaneNormal, GetCutUV(P1_Inner));
-        int32 V_Out1 = AddVertex(P1_Outer, PlaneNormal, GetCutUV(P1_Outer));
-        int32 V_Out2 = AddVertex(P2_Outer, PlaneNormal, GetCutUV(P2_Outer));
+        int32 V_Out1 = AddVertex(P1_Outer, N1_Outer, GetCutUV(P1_Outer));
+        int32 V_Out2 = AddVertex(P2_Outer, N2_Outer, GetCutUV(P2_Outer));
         int32 V_In2 = AddVertex(P2_Inner, PlaneNormal, GetCutUV(P2_Inner));
 
         if (bIsStartFace)
         {
+            // Inner1 -> Inner2 -> Outer2 -> Outer1
             AddQuad(V_In1, V_In2, V_Out2, V_Out1);
         }
         else
         {
+            // Inner1 -> Outer1 -> Outer2 -> Inner2
             AddQuad(V_In1, V_Out1, V_Out2, V_In2);
         }
     }
@@ -434,42 +492,7 @@ void FFrustumBuilder::CreateCutPlaneSurface(float Angle, const TArray<int32>& Pr
 
 TArray<int32> FFrustumBuilder::CreateVertexRing(const FRingContext& Context, float VCoord)
 {
-    TArray<int32> Indices;
-    Indices.Reserve(Context.Sides + 1);
-
-    const float HeightRatio = Context.Z / Frustum.Height;
-    const float AngleStep = (Context.Sides > 0) ? (ArcAngleRadians / Context.Sides) : 0.0f;
-
-    for (int32 i = 0; i <= Context.Sides; ++i)
-    {
-        const float Angle = StartAngle + (i * AngleStep);
-        float SinA, CosA;
-        FMath::SinCos(&SinA, &CosA, Angle);
-
-        FVector Pos(Context.Radius * CosA, Context.Radius * SinA, Context.Z);
-
-        Pos = ApplyBend(Pos, Context.Radius, HeightRatio);
-
-        FVector Normal(CosA, SinA, 0.0f);
-
-        if (FMath::Abs(Frustum.BendAmount) > KINDA_SMALL_NUMBER)
-        {
-            float NormalZ = Frustum.BendAmount * FMath::Cos(HeightRatio * PI);
-            Normal.Z += NormalZ;
-            Normal.Normalize();
-        }
-
-        // U = ArcLength = Angle * Radius
-        float CurrentRadius = FVector2D(Pos.X, Pos.Y).Size();
-        float U = (Angle - StartAngle) * CurrentRadius;
-
-        // 【UV 缩放】：Scale applied here
-        FVector2D UV(U * ModelGenConstants::GLOBAL_UV_SCALE, VCoord * ModelGenConstants::GLOBAL_UV_SCALE);
-
-        Indices.Add(GetOrAddVertex(Pos, Normal, UV));
-    }
-
-    return Indices;
+    return CreateBevelRing(Context, VCoord, 0.0f, false);
 }
 
 FVector FFrustumBuilder::ApplyBend(const FVector& BasePos, float BaseRadius, float HeightRatio) const

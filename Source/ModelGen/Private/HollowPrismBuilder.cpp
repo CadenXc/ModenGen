@@ -5,6 +5,8 @@
 #include "ModelGenMeshData.h"
 #include "ModelGenConstants.h"
 
+static const float GLOBAL_UV_SCALE = 0.01f;
+
 FHollowPrismBuilder::FHollowPrismBuilder(const AHollowPrism& InHollowPrism)
     : HollowPrism(InHollowPrism)
 {
@@ -192,9 +194,6 @@ void FHollowPrismBuilder::ComputeVerticalProfile(EInnerOuter InnerOuter, TArray<
     }
 }
 
-// 【核心修复】：修正侧壁和倒角的渲染方向
-// 之前：Outer 使用 V00->V01... (逆时针), Inner 使用 V00->V10... (顺时针)
-// 修正：交换顺序，因为 "S" 增加的方向在某些坐标系视角下可能导致左右反转
 void FHollowPrismBuilder::GenerateSideGeometry(EInnerOuter InnerOuter)
 {
     const TArray<FCachedTrig>& AngleCache = (InnerOuter == EInnerOuter::Inner) ? InnerAngleCache : OuterAngleCache;
@@ -256,40 +255,33 @@ void FHollowPrismBuilder::GenerateSideGeometry(EInnerOuter InnerOuter)
         EndIndices.Add(GridIndices[Sides][p]);
     }
 
-    // --- 缝合 Quad (修复部分) ---
     for (int32 s = 0; s < Sides; ++s)
     {
         for (int32 p = 0; p < Profile.Num() - 1; ++p)
         {
-            int32 V00 = GridIndices[s][p];     // Top Left
-            int32 V10 = GridIndices[s + 1][p];   // Top Right
-            int32 V01 = GridIndices[s][p + 1];   // Bottom Left
-            int32 V11 = GridIndices[s + 1][p + 1]; // Bottom Right
+            int32 V00 = GridIndices[s][p];
+            int32 V10 = GridIndices[s + 1][p];
+            int32 V01 = GridIndices[s][p + 1];
+            int32 V11 = GridIndices[s + 1][p + 1];
 
             if (InnerOuter == EInnerOuter::Outer)
             {
-                // 外壁：修正为 V00 -> V10 -> V11 -> V01
-                // 这通常是 "顺时针" 顺序，但在特定的 Grid 排列下可能对应向外的面
                 AddQuad(V00, V10, V11, V01);
             }
             else
             {
-                // 内壁：修正为 V00 -> V01 -> V11 -> V10
-                // 与外壁相反，使其面向圆心
                 AddQuad(V00, V01, V11, V10);
             }
         }
     }
 }
+
 void FHollowPrismBuilder::GenerateCaps()
 {
     CreateCapDisk(TopInnerCapRing, TopOuterCapRing, true);
     CreateCapDisk(BottomInnerCapRing, BottomOuterCapRing, false);
 }
 
-// 【核心修复】：翻转上下底的渲染方向
-// 之前：Top(Inner->Outer...), Bottom(Inner->InnerNext...)
-// 修正：Top(Inner->InnerNext...), Bottom(Inner->Outer...)
 void FHollowPrismBuilder::CreateCapDisk(const TArray<int32>& InnerRing, const TArray<int32>& OuterRing, bool bIsTop)
 {
     if (InnerRing.Num() < 2 || OuterRing.Num() < 2) return;
@@ -327,18 +319,15 @@ void FHollowPrismBuilder::CreateCapDisk(const TArray<int32>& InnerRing, const TA
 
         if (bIsTop)
         {
-            // Top Cap: Normal Up.
-            // Changed winding to: Inner -> InnerNext -> OuterNext -> Outer
             AddQuad(NewInnerRing[IdxIn_Curr], NewInnerRing[IdxIn_Next], NewOuterRing[IdxOut_Next], NewOuterRing[IdxOut_Curr]);
         }
         else
         {
-            // Bottom Cap: Normal Down.
-            // Changed winding to: Inner -> Outer -> OuterNext -> InnerNext
             AddQuad(NewInnerRing[IdxIn_Curr], NewOuterRing[IdxOut_Curr], NewOuterRing[IdxOut_Next], NewInnerRing[IdxIn_Next]);
         }
     }
 }
+
 void FHollowPrismBuilder::GenerateCutPlanes()
 {
     if (HollowPrism.IsFullCircle()) return;
@@ -373,8 +362,9 @@ void FHollowPrismBuilder::CreateCutPlane(float Angle, const TArray<int32>& Inner
         float R_In = FVector2D(P_In.X, P_In.Y).Size();
         float R_Out = FVector2D(P_Out.X, P_Out.Y).Size();
 
-        FVector2D UV_In(R_In * ModelGenConstants::GLOBAL_UV_SCALE, P_In.Z * ModelGenConstants::GLOBAL_UV_SCALE);
-        FVector2D UV_Out(R_Out * ModelGenConstants::GLOBAL_UV_SCALE, P_Out.Z * ModelGenConstants::GLOBAL_UV_SCALE);
+        // 【核心修复】：所有端盖的 U 坐标都反转（-Radius），统一水平翻转纹理
+        FVector2D UV_In(-R_In * ModelGenConstants::GLOBAL_UV_SCALE, P_In.Z * ModelGenConstants::GLOBAL_UV_SCALE);
+        FVector2D UV_Out(-R_Out * ModelGenConstants::GLOBAL_UV_SCALE, P_Out.Z * ModelGenConstants::GLOBAL_UV_SCALE);
 
         NewInner.Add(AddVertex(P_In, Normal, UV_In));
         NewOuter.Add(AddVertex(P_Out, Normal, UV_Out));
@@ -383,31 +373,12 @@ void FHollowPrismBuilder::CreateCutPlane(float Angle, const TArray<int32>& Inner
     // 生成面
     for (int32 i = 0; i < NumPoints - 1; ++i)
     {
-        // Indices are top-to-bottom based on profile generation order (Top->Bottom)
-        // But let's verify Z order.
-        // Profile generation: Top(0) -> Bottom(Num-1)
-        // So i=0 is Higher Z, i+1 is Lower Z.
-
         if (bIsStartFace)
         {
-            // Start Face: Normal points "Back" (-Tangent)
-            // View from outside: Left is Outer, Right is Inner.
-            // Z is decreasing.
-            // CCW: Outer_Curr -> Inner_Curr -> Inner_Next -> Outer_Next
-            // Wait, let's check cross product.
-            // Vector Right (Inner-Outer) x Vector Down (Next-Curr) = -Normal?
-            // Let's stick to standard logic:
-            // Start Face should look CCW when facing -Tangent.
-            // That usually means Inner -> Outer if Z goes Up.
-            // Here Z goes Down.
-
-            // Let's try: Inner[i] -> Outer[i] -> Outer[i+1] -> Inner[i+1]
             AddQuad(NewInner[i], NewOuter[i], NewOuter[i + 1], NewInner[i + 1]);
         }
         else
         {
-            // End Face: Normal points "Forward" (+Tangent)
-            // Reverse of Start Face
             AddQuad(NewInner[i], NewInner[i + 1], NewOuter[i + 1], NewOuter[i]);
         }
     }

@@ -63,7 +63,7 @@ public:
     /** 横切面光滑 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Smoothing", 
         meta = (DisplayName = "Smooth Cross Section", ToolTip = "Smooth cross sections"))
-    bool bSmoothCrossSection = false;
+    bool bSmoothCrossSection = true;
 
     UFUNCTION(BlueprintCallable, Category = "PolygonTorus|Parameters")
     void SetSmoothCrossSection(bool bNewSmoothCrossSection);
@@ -71,7 +71,7 @@ public:
     /** 竖面光滑 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PolygonTorus|Smoothing", 
         meta = (DisplayName = "Smooth Vertical Section", ToolTip = "Smooth vertical sections"))
-    bool bSmoothVerticalSection = false;
+    bool bSmoothVerticalSection = true;
 
     UFUNCTION(BlueprintCallable, Category = "PolygonTorus|Parameters")
     void SetSmoothVerticalSection(bool bNewSmoothVerticalSection);
