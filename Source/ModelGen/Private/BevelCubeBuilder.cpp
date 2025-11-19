@@ -3,9 +3,7 @@
 #include "BevelCubeBuilder.h"
 #include "BevelCube.h"
 #include "ModelGenMeshData.h"
-
-// 全局 UV 缩放因子
-static const float GLOBAL_UV_SCALE = 0.01f;
+#include "ModelGenConstants.h"
 
 FBevelCubeBuilder::FBevelCubeBuilder(const ABevelCube& InBevelCube)
     : BevelCube(InBevelCube)
@@ -156,7 +154,7 @@ void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
             // 不需要 1.0 - v
             float WorldU = (local_u + HalfSize);
             float WorldV = (local_v + HalfSize);
-            FVector2D UV(WorldU * GLOBAL_UV_SCALE, WorldV * GLOBAL_UV_SCALE);
+            FVector2D UV(WorldU * ModelGenConstants::GLOBAL_UV_SCALE, WorldV * ModelGenConstants::GLOBAL_UV_SCALE);
 
             VertIndices[v_idx * GridSize + u_idx] = AddVertex(VertexPos, Normal, UV);
         }

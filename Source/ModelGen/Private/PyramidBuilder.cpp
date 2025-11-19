@@ -3,9 +3,7 @@
 #include "PyramidBuilder.h"
 #include "Pyramid.h"
 #include "ModelGenMeshData.h"
-
-// 全局 UV 缩放因子
-static const float GLOBAL_UV_SCALE = 0.01f;
+#include "ModelGenConstants.h"
 
 FPyramidBuilder::FPyramidBuilder(const APyramid& InPyramid)
     : Pyramid(InPyramid)
@@ -113,7 +111,7 @@ void FPyramidBuilder::GenerateBase()
     for (int32 i = 0; i <= Sides; ++i)
     {
         FVector Pos = GetRingPos(i, BevelTopRadius, 0.0f);
-        FVector2D UV(Pos.X * GLOBAL_UV_SCALE, Pos.Y * GLOBAL_UV_SCALE);
+        FVector2D UV(Pos.X * ModelGenConstants::GLOBAL_UV_SCALE, Pos.Y * ModelGenConstants::GLOBAL_UV_SCALE);
 
         RimIndices.Add(AddVertex(Pos, Normal, UV));
     }
@@ -175,9 +173,9 @@ void FPyramidBuilder::GenerateBevel()
         float H = SlopeLen; // 等于 BevelHeight
 
         FVector2D UV0(0.0f, 0.0f);
-        FVector2D UV1(W * GLOBAL_UV_SCALE, 0.0f);
-        FVector2D UV2(W * GLOBAL_UV_SCALE, H * GLOBAL_UV_SCALE);
-        FVector2D UV3(0.0f, H * GLOBAL_UV_SCALE);
+        FVector2D UV1(W * ModelGenConstants::GLOBAL_UV_SCALE, 0.0f);
+        FVector2D UV2(W * ModelGenConstants::GLOBAL_UV_SCALE, H * ModelGenConstants::GLOBAL_UV_SCALE);
+        FVector2D UV3(0.0f, H * ModelGenConstants::GLOBAL_UV_SCALE);
 
         int32 V0 = AddVertex(P0, N0, UV0);
         int32 V1 = AddVertex(P1, N1, UV1);
@@ -234,8 +232,8 @@ void FPyramidBuilder::GenerateSides()
         // UV
         float EdgeWidth = FVector::Dist(P0, P1);
         FVector2D UV0(0.0f, 0.0f);
-        FVector2D UV1(EdgeWidth * GLOBAL_UV_SCALE, 0.0f);
-        FVector2D UV_Tip(EdgeWidth * 0.5f * GLOBAL_UV_SCALE, SlantHeight * GLOBAL_UV_SCALE);
+        FVector2D UV1(EdgeWidth * ModelGenConstants::GLOBAL_UV_SCALE, 0.0f);
+        FVector2D UV_Tip(EdgeWidth * 0.5f * ModelGenConstants::GLOBAL_UV_SCALE, SlantHeight * ModelGenConstants::GLOBAL_UV_SCALE);
 
         int32 V0 = AddVertex(P0, N0, UV0);
         int32 V1 = AddVertex(P1, N1, UV1);

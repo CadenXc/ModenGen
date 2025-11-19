@@ -3,8 +3,7 @@
 #include "HollowPrismBuilder.h"
 #include "HollowPrism.h"
 #include "ModelGenMeshData.h"
-
-static const float GLOBAL_UV_SCALE = 0.01f;
+#include "ModelGenConstants.h"
 
 FHollowPrismBuilder::FHollowPrismBuilder(const AHollowPrism& InHollowPrism)
     : HollowPrism(InHollowPrism)
@@ -229,7 +228,7 @@ void FHollowPrismBuilder::GenerateSideGeometry(EInnerOuter InnerOuter)
             FVector Normal(Point.Normal.X * CosA, Point.Normal.X * SinA, Point.Normal.Z);
 
             float U = CurrentAngleDelta * Point.Radius;
-            FVector2D UV(U * GLOBAL_UV_SCALE, Point.V * GLOBAL_UV_SCALE);
+            FVector2D UV(U * ModelGenConstants::GLOBAL_UV_SCALE, Point.V * ModelGenConstants::GLOBAL_UV_SCALE);
 
             int32 VertIdx = GetOrAddVertex(Pos, Normal, UV);
             GridIndices[s].Add(VertIdx);
@@ -303,7 +302,7 @@ void FHollowPrismBuilder::CreateCapDisk(const TArray<int32>& InnerRing, const TA
             for (int32 SrcIdx : SrcRing)
             {
                 FVector Pos = GetPosByIndex(SrcIdx);
-                FVector2D UV(Pos.X * GLOBAL_UV_SCALE, Pos.Y * GLOBAL_UV_SCALE);
+                FVector2D UV(Pos.X * ModelGenConstants::GLOBAL_UV_SCALE, Pos.Y * ModelGenConstants::GLOBAL_UV_SCALE);
                 OutRing.Add(AddVertex(Pos, Normal, UV));
             }
         };
@@ -374,8 +373,8 @@ void FHollowPrismBuilder::CreateCutPlane(float Angle, const TArray<int32>& Inner
         float R_In = FVector2D(P_In.X, P_In.Y).Size();
         float R_Out = FVector2D(P_Out.X, P_Out.Y).Size();
 
-        FVector2D UV_In(R_In * GLOBAL_UV_SCALE, P_In.Z * GLOBAL_UV_SCALE);
-        FVector2D UV_Out(R_Out * GLOBAL_UV_SCALE, P_Out.Z * GLOBAL_UV_SCALE);
+        FVector2D UV_In(R_In * ModelGenConstants::GLOBAL_UV_SCALE, P_In.Z * ModelGenConstants::GLOBAL_UV_SCALE);
+        FVector2D UV_Out(R_Out * ModelGenConstants::GLOBAL_UV_SCALE, P_Out.Z * ModelGenConstants::GLOBAL_UV_SCALE);
 
         NewInner.Add(AddVertex(P_In, Normal, UV_In));
         NewOuter.Add(AddVertex(P_Out, Normal, UV_Out));

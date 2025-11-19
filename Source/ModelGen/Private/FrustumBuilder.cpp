@@ -3,9 +3,7 @@
 #include "FrustumBuilder.h"
 #include "Frustum.h"
 #include "ModelGenMeshData.h"
-
-// 全局 UV 缩放因子 (100 units = 1 UV tile)
-static const float GLOBAL_UV_SCALE = 0.01f;
+#include "ModelGenConstants.h"
 
 FFrustumBuilder::FFrustumBuilder(const AFrustum& InFrustum)
     : Frustum(InFrustum)
@@ -217,7 +215,7 @@ void FFrustumBuilder::GenerateSides()
             float CurrentAngle = StartAngle + i * AngleStep;
             float U = (CurrentAngle - StartAngle) * FinalRadius;
 
-            FVector2D UV(U * GLOBAL_UV_SCALE, CurrentV * GLOBAL_UV_SCALE);
+            FVector2D UV(U * ModelGenConstants::GLOBAL_UV_SCALE, CurrentV * ModelGenConstants::GLOBAL_UV_SCALE);
 
             CurrentRingIndices.Add(GetOrAddVertex(FinalPos, Normal, UV));
         }
@@ -348,7 +346,7 @@ void FFrustumBuilder::CreateCapDisk(float Z, const TArray<int32>& BoundaryRing, 
     FVector Normal(0.0f, 0.0f, bIsTop ? 1.0f : -1.0f);
 
     // 【UV 缩放】：World XY * Scale
-    FVector2D CenterUV(CenterPos.X * GLOBAL_UV_SCALE, CenterPos.Y * GLOBAL_UV_SCALE);
+    FVector2D CenterUV(CenterPos.X * ModelGenConstants::GLOBAL_UV_SCALE, CenterPos.Y * ModelGenConstants::GLOBAL_UV_SCALE);
     int32 CenterIndex = AddVertex(CenterPos, Normal, CenterUV);
 
     TArray<int32> CapVertices;
@@ -358,7 +356,7 @@ void FFrustumBuilder::CreateCapDisk(float Z, const TArray<int32>& BoundaryRing, 
     {
         FVector Pos = GetPosByIndex(SrcIdx);
         // 【UV 缩放】：World XY * Scale
-        FVector2D UV(Pos.X * GLOBAL_UV_SCALE, Pos.Y * GLOBAL_UV_SCALE);
+        FVector2D UV(Pos.X * ModelGenConstants::GLOBAL_UV_SCALE, Pos.Y * ModelGenConstants::GLOBAL_UV_SCALE);
 
         CapVertices.Add(AddVertex(Pos, Normal, UV));
     }
@@ -415,7 +413,7 @@ void FFrustumBuilder::CreateCutPlaneSurface(float Angle, const TArray<int32>& Pr
         // 【UV 缩放】：World Coordinates * Scale
         auto GetCutUV = [&](const FVector& P) {
             float R = FVector2D(P.X, P.Y).Size();
-            return FVector2D(R * GLOBAL_UV_SCALE, P.Z * GLOBAL_UV_SCALE);
+            return FVector2D(R * ModelGenConstants::GLOBAL_UV_SCALE, P.Z * ModelGenConstants::GLOBAL_UV_SCALE);
             };
 
         int32 V_In1 = AddVertex(P1_Inner, PlaneNormal, GetCutUV(P1_Inner));
@@ -466,7 +464,7 @@ TArray<int32> FFrustumBuilder::CreateVertexRing(const FRingContext& Context, flo
         float U = (Angle - StartAngle) * CurrentRadius;
 
         // 【UV 缩放】：Scale applied here
-        FVector2D UV(U * GLOBAL_UV_SCALE, VCoord * GLOBAL_UV_SCALE);
+        FVector2D UV(U * ModelGenConstants::GLOBAL_UV_SCALE, VCoord * ModelGenConstants::GLOBAL_UV_SCALE);
 
         Indices.Add(GetOrAddVertex(Pos, Normal, UV));
     }

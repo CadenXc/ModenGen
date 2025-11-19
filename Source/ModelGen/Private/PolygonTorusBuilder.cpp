@@ -4,8 +4,7 @@
 #include "PolygonTorus.h"
 #include "ModelGenMeshData.h"
 #include "Math/UnrealMathUtility.h"
-
-static const float GLOBAL_UV_SCALE = 0.01f;
+#include "ModelGenConstants.h"
 
 FPolygonTorusBuilder::FPolygonTorusBuilder(const APolygonTorus& InPolygonTorus)
     : PolygonTorus(InPolygonTorus)
@@ -191,7 +190,7 @@ void FPolygonTorusBuilder::GenerateTorusSurface()
                 Normal.Normalize();
 
                 // UV
-                FVector2D UV(Corners[k].U * GLOBAL_UV_SCALE, Corners[k].V * GLOBAL_UV_SCALE);
+                FVector2D UV(Corners[k].U * ModelGenConstants::GLOBAL_UV_SCALE, Corners[k].V * ModelGenConstants::GLOBAL_UV_SCALE);
 
                 Indices[k] = GetOrAddVertex(Pos, Normal, UV);
             }
@@ -273,7 +272,7 @@ void FPolygonTorusBuilder::CreateCap(const TArray<int32>& RingIndices, bool bIsS
         float LocalX = R_Current - PolygonTorus.MajorRadius;
         float LocalY = Pos.Z - PolygonTorus.MinorRadius;
 
-        FVector2D UV(LocalX * GLOBAL_UV_SCALE, LocalY * GLOBAL_UV_SCALE);
+        FVector2D UV(LocalX * ModelGenConstants::GLOBAL_UV_SCALE, LocalY * ModelGenConstants::GLOBAL_UV_SCALE);
 
         CapVertices.Add(AddVertex(Pos, Normal, UV));
     }
