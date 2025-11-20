@@ -64,8 +64,9 @@ void ACustomModelActor::GenerateMesh()
     UE_LOG(LogTemp, Log, TEXT("World: %s"), GetWorld() ? TEXT("可用") : TEXT("不可用"));
     UE_LOG(LogTemp, Log, TEXT("StaticMeshComponent: %s"), StaticMeshComponent ? TEXT("存在") : TEXT("不存在"));
     
-    // 使用工厂创建模型Actor
-    AActor* ModelActor = UCustomModelFactory::CreateModelActor(ModelTypeName, GetWorld(), GetActorLocation(), GetActorRotation());
+    // 使用工厂创建模型Actor（使用默认参数）
+    TMap<FString, FString> EmptyParameters;
+    AActor* ModelActor = UCustomModelFactory::CreateModelActorWithParams(ModelTypeName, EmptyParameters, GetWorld(), GetActorLocation(), GetActorRotation());
     
     if (ModelActor)
     {

@@ -558,25 +558,48 @@ TArray<int32> FFrustumBuilder::CreateVertexRing(const FRingContext& Context, flo
 
 FVector FFrustumBuilder::ApplyBend(const FVector& BasePos, float BaseRadius, float HeightRatio) const
 {
-    if (FMath::Abs(Frustum.BendAmount) < KINDA_SMALL_NUMBER)
-    {
-        return BasePos;
-    }
-
     if (BaseRadius < KINDA_SMALL_NUMBER)
     {
         return BasePos;
     }
 
-    const float BendFactor = FMath::Sin(HeightRatio * PI);
-
-    float BentRadius = BaseRadius * (1.0f - Frustum.BendAmount * BendFactor);
-
     const bool bIsCapRing = (HeightRatio < KINDA_SMALL_NUMBER) || (HeightRatio > (1.0f - KINDA_SMALL_NUMBER));
-
-    if (!bIsCapRing && Frustum.MinBendRadius > KINDA_SMALL_NUMBER)
+    
+    // 检查是否在倒角范围内（倒角部分不受最小弯曲半径影响）
+    bool bIsBevelRegion = false;
+    if (bEnableBevel && Frustum.Height > KINDA_SMALL_NUMBER)
+    {
+        const float TopBevelHeight = CalculateBevelHeight(Frustum.TopRadius);
+        const float BottomBevelHeight = CalculateBevelHeight(Frustum.BottomRadius);
+        
+        // 计算倒角区域的 HeightRatio 范围
+        const float BottomBevelRatio = BottomBevelHeight / Frustum.Height;
+        const float TopBevelRatio = 1.0f - (TopBevelHeight / Frustum.Height);
+        
+        // 检查是否在底部倒角或顶部倒角范围内
+        bIsBevelRegion = (HeightRatio <= BottomBevelRatio) || (HeightRatio >= TopBevelRatio);
+    }
+    
+    float BentRadius = BaseRadius;
+    
+    // 如果有弯曲，先计算弯曲后的半径
+    if (FMath::Abs(Frustum.BendAmount) > KINDA_SMALL_NUMBER)
+    {
+        const float BendFactor = FMath::Sin(HeightRatio * PI);
+        BentRadius = BaseRadius * (1.0f - Frustum.BendAmount * BendFactor);
+    }
+    
+    // 应用最小弯曲半径限制（即使 BendAmount 为 0 也要检查）
+    // 但倒角部分不受最小弯曲半径影响
+    if (!bIsCapRing && !bIsBevelRegion && Frustum.MinBendRadius > KINDA_SMALL_NUMBER)
     {
         BentRadius = FMath::Max(BentRadius, Frustum.MinBendRadius);
+    }
+
+    // 如果半径没有变化，直接返回原始位置
+    if (FMath::IsNearlyEqual(BentRadius, BaseRadius))
+    {
+        return BasePos;
     }
 
     const float Scale = BentRadius / BaseRadius;

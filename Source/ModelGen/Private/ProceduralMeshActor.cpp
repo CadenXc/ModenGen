@@ -438,8 +438,6 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
   // 5. 创建 BodySetup 并生成碰撞
   SetupBodySetupAndCollision(StaticMesh);
 
-  StaticMesh->AddToRoot();
-
   StaticMesh->CreateNavCollision(true);
 
   return StaticMesh;
@@ -452,14 +450,16 @@ UStaticMesh* AProceduralMeshActor::ConvertProceduralMeshToStaticMesh()
 // 辅助函数：创建并初始化 StaticMesh 对象
 UStaticMesh* AProceduralMeshActor::CreateStaticMeshObject() const
 {
+  // 使用 RF_Public 和 RF_Transient，让 StaticMesh 可以被垃圾回收器管理
+  // StaticMeshComponent 会通过 SetStaticMesh() 持有引用，所以不需要 AddToRoot()
   UStaticMesh* StaticMesh = NewObject<UStaticMesh>(
-      GetTransientPackage(), NAME_None, RF_Public | RF_Standalone);
+      GetTransientPackage(), NAME_None, RF_Public | RF_Transient);
 
   if (!StaticMesh) {
     return nullptr;
   }
 
-  StaticMesh->SetFlags(RF_Public | RF_Standalone);
+  StaticMesh->SetFlags(RF_Public | RF_Transient);
   StaticMesh->NeverStream = false;
   StaticMesh->LightMapResolution = 64;
   StaticMesh->LightMapCoordinateIndex = 1;
@@ -609,28 +609,7 @@ bool AProceduralMeshActor::BuildStaticMeshGeometryFromProceduralMesh(UStaticMesh
       EComputeNTBsFlags::Tangents | EComputeNTBsFlags::UseMikkTSpace  // 使用 MikkTSpace 算法计算切线
   );
 
-  // ==================== 关键修复：禁用自动重新计算法线 ====================
-  // 确保至少有一个 SourceModel
-  if (StaticMesh->GetNumSourceModels() == 0)
-  {
-    StaticMesh->AddSourceModel();
-  }
-  
-  // 获取 LOD0 的构建设置
-  FStaticMeshSourceModel& SourceModel = StaticMesh->GetSourceModel(0);
-  
-  // 核心：关闭重算法线，保留 PMC 的法线（包含硬边/软边信息）
-  // 如果不设置这个，BuildFromMeshDescriptions 会忽略 MeshDescription 中的法线并重新计算
-  SourceModel.BuildSettings.bRecomputeNormals = false;
-  
-  // 核心：关闭重算切线（保留我们通过 MikkTSpace 计算的切线）
-  SourceModel.BuildSettings.bRecomputeTangents = false;
-  
-  // 可选：其他有助于精度的设置
-  SourceModel.BuildSettings.bUseHighPrecisionTangentBasis = false;
-  SourceModel.BuildSettings.bRemoveDegenerates = true;
-  SourceModel.BuildSettings.bBuildReversedIndexBuffer = false;
-  // ==================== 修复代码结束 ====================
+
 
   // 7. 构建 StaticMesh
   TArray<const FMeshDescription*> MeshDescPtrs;
