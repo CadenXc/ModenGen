@@ -609,6 +609,29 @@ bool AProceduralMeshActor::BuildStaticMeshGeometryFromProceduralMesh(UStaticMesh
       EComputeNTBsFlags::Tangents | EComputeNTBsFlags::UseMikkTSpace  // 使用 MikkTSpace 算法计算切线
   );
 
+  // ==================== 关键修复：禁用自动重新计算法线 ====================
+  // 确保至少有一个 SourceModel
+  if (StaticMesh->GetNumSourceModels() == 0)
+  {
+    StaticMesh->AddSourceModel();
+  }
+  
+  // 获取 LOD0 的构建设置
+  FStaticMeshSourceModel& SourceModel = StaticMesh->GetSourceModel(0);
+  
+  // 核心：关闭重算法线，保留 PMC 的法线（包含硬边/软边信息）
+  // 如果不设置这个，BuildFromMeshDescriptions 会忽略 MeshDescription 中的法线并重新计算
+  SourceModel.BuildSettings.bRecomputeNormals = false;
+  
+  // 核心：关闭重算切线（保留我们通过 MikkTSpace 计算的切线）
+  SourceModel.BuildSettings.bRecomputeTangents = false;
+  
+  // 可选：其他有助于精度的设置
+  SourceModel.BuildSettings.bUseHighPrecisionTangentBasis = false;
+  SourceModel.BuildSettings.bRemoveDegenerates = true;
+  SourceModel.BuildSettings.bBuildReversedIndexBuffer = false;
+  // ==================== 修复代码结束 ====================
+
   // 7. 构建 StaticMesh
   TArray<const FMeshDescription*> MeshDescPtrs;
   MeshDescPtrs.Emplace(&MeshDescription);

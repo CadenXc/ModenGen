@@ -164,18 +164,48 @@ void FFrustumBuilder::GenerateSides()
     float TopZ = Frustum.Height;
     float BottomZ = 0.0f;
 
-    const float TopR = Frustum.TopRadius;
-    const float BottomR = Frustum.BottomRadius;
+    float TopR = Frustum.TopRadius;
+    float BottomR = Frustum.BottomRadius;
 
+    // 参考旧版本：沿着侧边棱移动来计算倒角起点
     if (bEnableBevel)
     {
-        const float MinRadius = FMath::Min(Frustum.TopRadius, Frustum.BottomRadius);
-        const float EffectiveBevel = FMath::Min(Frustum.BevelRadius, MinRadius);
+        const float TopBevelHeight = CalculateBevelHeight(Frustum.TopRadius);
+        const float BottomBevelHeight = CalculateBevelHeight(Frustum.BottomRadius);
 
-        TopZ -= EffectiveBevel;
-        BottomZ += EffectiveBevel;
+        // 计算侧边棱的方向向量（从底部到顶部）
+        const float RadiusDiff = Frustum.TopRadius - Frustum.BottomRadius;
+        const float SideLength = FMath::Sqrt(RadiusDiff * RadiusDiff + Frustum.Height * Frustum.Height);
 
-        CurrentV = (PI * EffectiveBevel) * 0.5f;
+        if (SideLength > KINDA_SMALL_NUMBER)
+        {
+            // 侧边方向向量的归一化分量
+            const float RadiusDir = RadiusDiff / SideLength;
+            const float HeightDir = Frustum.Height / SideLength;
+
+            // 顶部：沿着棱向下移动
+            TopR = Frustum.TopRadius - TopBevelHeight * RadiusDir;
+            TopZ = Frustum.Height - TopBevelHeight * HeightDir;
+
+            // 底部：沿着棱向上移动
+            BottomR = Frustum.BottomRadius + BottomBevelHeight * RadiusDir;
+            BottomZ = BottomBevelHeight * HeightDir;
+
+            // 计算倒角弧长用于UV
+            const float BevelArcLength = (PI * FMath::Max(TopBevelHeight, BottomBevelHeight)) * 0.5f;
+            CurrentV = BevelArcLength;
+        }
+        else
+        {
+            // 如果侧边长度为0（圆柱体），使用简单计算
+            const float MinRadius = FMath::Min(Frustum.TopRadius, Frustum.BottomRadius);
+            const float EffectiveBevel = FMath::Min(Frustum.BevelRadius, MinRadius);
+
+            TopZ -= EffectiveBevel;
+            BottomZ += EffectiveBevel;
+
+            CurrentV = (PI * EffectiveBevel) * 0.5f;
+        }
     }
 
     TArray<FVector2D> BottomRef = GetRingPos2D(BottomR, Frustum.BottomSides);
@@ -277,6 +307,8 @@ void FFrustumBuilder::GenerateSides()
 
 void FFrustumBuilder::GenerateBevels()
 {
+    const float TopBevelHeight = CalculateBevelHeight(Frustum.TopRadius);
+    const float BottomBevelHeight = CalculateBevelHeight(Frustum.BottomRadius);
     const float MinRadius = FMath::Min(Frustum.TopRadius, Frustum.BottomRadius);
     const float BevelR = FMath::Min(Frustum.BevelRadius, MinRadius);
     const int32 Segments = Frustum.BevelSegments;
@@ -284,17 +316,34 @@ void FFrustumBuilder::GenerateBevels()
     const float BevelArcLength = (PI * BevelR) * 0.5f;
     const float V_Step = BevelArcLength / Segments;
 
-    float SideSlantH = Frustum.Height - 2.0f * BevelR;
+    // 计算侧边棱的方向向量（从底部到顶部）
+    const float RadiusDiff = Frustum.TopRadius - Frustum.BottomRadius;
+    const float SideLength = FMath::Sqrt(RadiusDiff * RadiusDiff + Frustum.Height * Frustum.Height);
+    
+    // 计算侧边高度（减去倒角后的高度）
+    float SideSlantH = Frustum.Height - TopBevelHeight - BottomBevelHeight;
     float SideSlantR = Frustum.TopRadius - Frustum.BottomRadius;
     float SideVLength = FMath::Sqrt(SideSlantH * SideSlantH + SideSlantR * SideSlantR);
-    float BottomBevelArc = (PI * BevelR) * 0.5f;
+    float BottomBevelArc = (PI * BottomBevelHeight) * 0.5f;
 
     // --- Top Bevel ---
     TArray<int32> PreviousTopRing = TopSideRing;
 
-    float WallTopZ = Frustum.Height - BevelR;
-    float WallTopR = FMath::Lerp(Frustum.BottomRadius, Frustum.TopRadius, WallTopZ / Frustum.Height);
-    float CapTopR = Frustum.TopRadius - BevelR;
+    // 参考旧版本：沿着侧边棱计算倒角起点
+    float WallTopZ, WallTopR;
+    if (SideLength > KINDA_SMALL_NUMBER)
+    {
+        const float HeightDir = Frustum.Height / SideLength;
+        const float RadiusDir = RadiusDiff / SideLength;
+        WallTopZ = Frustum.Height - TopBevelHeight * HeightDir;
+        WallTopR = Frustum.TopRadius - TopBevelHeight * RadiusDir;
+    }
+    else
+    {
+        WallTopZ = Frustum.Height - TopBevelHeight;
+        WallTopR = Frustum.TopRadius - TopBevelHeight;
+    }
+    float CapTopR = Frustum.TopRadius - TopBevelHeight;
 
     float CurrentV_Top = BottomBevelArc + SideVLength;
 
@@ -307,7 +356,7 @@ void FFrustumBuilder::GenerateBevels()
 
         float DiffR = WallTopR - CapTopR;
         float CurrentR = CapTopR + DiffR * FMath::Cos(Angle);
-        float CurrentZ = WallTopZ + BevelR * FMath::Sin(Angle);
+        float CurrentZ = WallTopZ + TopBevelHeight * FMath::Sin(Angle);
 
         FRingContext Ctx;
         Ctx.Z = CurrentZ;
@@ -330,9 +379,21 @@ void FFrustumBuilder::GenerateBevels()
     // --- Bottom Bevel ---
     TArray<int32> PreviousBottomRing = BottomSideRing;
 
-    float WallBotZ = BevelR;
-    float WallBotR = FMath::Lerp(Frustum.BottomRadius, Frustum.TopRadius, WallBotZ / Frustum.Height);
-    float CapBotR = Frustum.BottomRadius - BevelR;
+    // 参考旧版本：沿着侧边棱计算倒角起点
+    float WallBotZ, WallBotR;
+    if (SideLength > KINDA_SMALL_NUMBER)
+    {
+        const float HeightDir = Frustum.Height / SideLength;
+        const float RadiusDir = RadiusDiff / SideLength;
+        WallBotZ = BottomBevelHeight * HeightDir;
+        WallBotR = Frustum.BottomRadius + BottomBevelHeight * RadiusDir;
+    }
+    else
+    {
+        WallBotZ = BottomBevelHeight;
+        WallBotR = Frustum.BottomRadius + BottomBevelHeight;
+    }
+    float CapBotR = Frustum.BottomRadius - BottomBevelHeight;
 
     float CurrentV_Bottom = BottomBevelArc;
 
@@ -345,7 +406,7 @@ void FFrustumBuilder::GenerateBevels()
 
         float DiffR = WallBotR - CapBotR;
         float CurrentR = CapBotR + DiffR * FMath::Cos(Angle);
-        float CurrentZ = WallBotZ - BevelR * FMath::Sin(Angle);
+        float CurrentZ = WallBotZ - BottomBevelHeight * FMath::Sin(Angle);
 
         FRingContext Ctx;
         Ctx.Z = CurrentZ;
@@ -520,4 +581,9 @@ FVector FFrustumBuilder::ApplyBend(const FVector& BasePos, float BaseRadius, flo
 
     const float Scale = BentRadius / BaseRadius;
     return FVector(BasePos.X * Scale, BasePos.Y * Scale, BasePos.Z);
+}
+
+float FFrustumBuilder::CalculateBevelHeight(float Radius) const
+{
+    return FMath::Min(Frustum.BevelRadius, Radius);
 }

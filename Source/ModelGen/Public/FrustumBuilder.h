@@ -67,4 +67,5 @@ private:
     void CreateCutPlaneSurface(float Angle, const TArray<int32>& ProfileIndices, bool bIsStartFace);
 
     FVector ApplyBend(const FVector& BasePos, float BaseRadius, float HeightRatio) const;
+    float CalculateBevelHeight(float Radius) const;
 };
