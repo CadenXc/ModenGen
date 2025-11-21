@@ -148,6 +148,10 @@ TArray<int32> FFrustumBuilder::CreateBevelRing(const FRingContext& Context, floa
         FVector SmoothNormal = FMath::Lerp(HorizontalNormal, VerticalNormal, NormalAlpha).GetSafeNormal();
 
         float CurrentRadius = FVector2D(Pos.X, Pos.Y).Size();
+        // 【核心修复】：参考正方体的UV计算方式，确保UV从0开始
+        // 正方体：WorldU = local_u + HalfSize，使得UV范围从0到2*HalfSize
+        // Frustum倒角侧面：U = (Angle - StartAngle) * CurrentRadius，从0开始
+        // 为了与正方体一致，U坐标已经从0开始，无需额外偏移
         float U = (Angle - StartAngle) * CurrentRadius;
         FVector2D UV(U * ModelGenConstants::GLOBAL_UV_SCALE, VCoord * ModelGenConstants::GLOBAL_UV_SCALE);
 
@@ -159,6 +163,9 @@ TArray<int32> FFrustumBuilder::CreateBevelRing(const FRingContext& Context, floa
 
 void FFrustumBuilder::GenerateSides()
 {
+    // 【核心修复】：参考正方体的UV计算方式，确保V坐标从0开始
+    // 正方体：WorldV = local_v + HalfSize，使得UV范围从0到2*HalfSize
+    // Frustum侧面：V坐标应该从0开始累积
     float CurrentV = 0.0f;
 
     float TopZ = Frustum.Height;
@@ -191,9 +198,7 @@ void FFrustumBuilder::GenerateSides()
             BottomR = Frustum.BottomRadius + BottomBevelHeight * RadiusDir;
             BottomZ = BottomBevelHeight * HeightDir;
 
-            // 计算倒角弧长用于UV
-            const float BevelArcLength = (PI * FMath::Max(TopBevelHeight, BottomBevelHeight)) * 0.5f;
-            CurrentV = BevelArcLength;
+            // 计算倒角弧长（V坐标从0开始，不需要偏移）
         }
         else
         {
@@ -204,7 +209,7 @@ void FFrustumBuilder::GenerateSides()
             TopZ -= EffectiveBevel;
             BottomZ += EffectiveBevel;
 
-            CurrentV = (PI * EffectiveBevel) * 0.5f;
+            // V坐标从0开始，不需要偏移
         }
     }
 
@@ -278,8 +283,12 @@ void FFrustumBuilder::GenerateSides()
             }
 
             float CurrentAngle = StartAngle + i * AngleStep;
+            // 【核心修复】：参考正方体的UV计算方式，确保UV从0开始
+            // 正方体：WorldU = local_u + HalfSize，WorldV = local_v + HalfSize，使得UV范围从0开始
+            // Frustum侧面：U从0开始，V也从0开始累积
             float U = (CurrentAngle - StartAngle) * CurrentRadius;
-            FVector2D UV(U * ModelGenConstants::GLOBAL_UV_SCALE, CurrentV * ModelGenConstants::GLOBAL_UV_SCALE);
+            float V = CurrentV;  // V坐标从0开始累积
+            FVector2D UV(U * ModelGenConstants::GLOBAL_UV_SCALE, V * ModelGenConstants::GLOBAL_UV_SCALE);
 
             CurrentRingIndices.Add(GetOrAddVertex(FinalPos, Normal, UV));
         }

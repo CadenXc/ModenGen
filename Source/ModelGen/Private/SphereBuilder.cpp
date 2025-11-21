@@ -179,6 +179,13 @@ void FSphereBuilder::GenerateHorizontalCap(float Phi, bool bIsBottom)
     
     const int32 CapSegments = Sides;
     
+    // 安全检查：确保有足够的分段数
+    if (CapSegments < 2)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("GenerateHorizontalCap: CapSegments 太小 (%d)，跳过端盖生成"), CapSegments);
+        return;
+    }
+    
     // 计算端盖中心点：横截断平面的圆的中心
     // 在Phi角度处，圆的中心在Z轴上，距离球心的距离是 Radius * Cos(Phi)
     float CenterZ = Radius * FMath::Cos(Phi);
@@ -206,7 +213,9 @@ void FSphereBuilder::GenerateHorizontalCap(float Phi, bool bIsBottom)
     {
         float Theta = StartTheta + (static_cast<float>(i) / CapSegments) * ThetaRange;
         FVector Pos = GetSpherePoint(Theta, Phi);
-        FVector Normal = CenterNormal; // 端盖法线统一
+        // 使用球面法线，确保与球面网格边界顶点完全一致（位置、法线、UV都相同）
+        // 这样 GetOrAddVertex 会返回已存在的顶点索引，而不是创建新顶点
+        FVector Normal = GetSphereNormal(Theta, Phi);
         FVector2D UV(Pos.X * ModelGenConstants::GLOBAL_UV_SCALE, 
                       Pos.Y * ModelGenConstants::GLOBAL_UV_SCALE);
         
@@ -214,17 +223,41 @@ void FSphereBuilder::GenerateHorizontalCap(float Phi, bool bIsBottom)
     }
     
     // 生成三角形（从中心到边界）
+    // 确保有足够的边界顶点
+    if (BoundaryVertices.Num() < CapSegments + 1)
+    {
+        UE_LOG(LogTemp, Error, TEXT("GenerateHorizontalCap: 边界顶点数量不足 %d < %d"), BoundaryVertices.Num(), CapSegments + 1);
+        return;
+    }
+    
+    // 验证中心点和边界顶点索引有效
+    if (CenterIndex < 0 || CenterIndex >= MeshData.Vertices.Num())
+    {
+        UE_LOG(LogTemp, Error, TEXT("GenerateHorizontalCap: 中心点索引无效 %d (顶点数=%d)"), CenterIndex, MeshData.Vertices.Num());
+        return;
+    }
+    
     for (int32 i = 0; i < CapSegments; ++i)
     {
+        int32 V0 = BoundaryVertices[i];
+        int32 V1 = BoundaryVertices[i + 1];
+        
+        // 验证索引有效性
+        if (V0 < 0 || V0 >= MeshData.Vertices.Num() || V1 < 0 || V1 >= MeshData.Vertices.Num())
+        {
+            UE_LOG(LogTemp, Error, TEXT("GenerateHorizontalCap: 边界顶点索引无效 [%d, %d] (顶点数=%d)"), V0, V1, MeshData.Vertices.Num());
+            continue;
+        }
+        
         if (bIsBottom)
         {
             // 底部端盖：从外部看是逆时针（Center -> V[i] -> V[i+1]）
-            AddTriangle(CenterIndex, BoundaryVertices[i], BoundaryVertices[i + 1]);
+            AddTriangle(CenterIndex, V0, V1);
         }
         else
         {
             // 顶部端盖：从外部看是逆时针（Center -> V[i+1] -> V[i]）
-            AddTriangle(CenterIndex, BoundaryVertices[i + 1], BoundaryVertices[i]);
+            AddTriangle(CenterIndex, V1, V0);
         }
     }
 }
@@ -242,6 +275,13 @@ void FSphereBuilder::GenerateVerticalCap(float Theta, bool bIsStart)
     const bool bHasHorizontalCut = (HorizontalCut > KINDA_SMALL_NUMBER);
     
     const int32 CapSegments = Sides;
+    
+    // 安全检查：确保有足够的分段数
+    if (CapSegments < 2)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("GenerateVerticalCap: CapSegments 太小 (%d)，跳过端盖生成"), CapSegments);
+        return;
+    }
     
     // 计算端盖中心点
     // 如果有横截断，使用横截断平面的中心点（与横截断端盖使用相同的中心点）
@@ -283,7 +323,8 @@ void FSphereBuilder::GenerateVerticalCap(float Theta, bool bIsStart)
     {
         float Phi = StartPhi + (static_cast<float>(i) / CapSegments) * PhiRange;
         FVector Pos = GetSpherePoint(Theta, Phi);
-        FVector Normal = NormalDir; // 端盖法线统一
+        // 使用球面法线，确保与球面网格边界顶点一致
+        FVector Normal = GetSphereNormal(Theta, Phi);
         FVector2D UV(Pos.X * ModelGenConstants::GLOBAL_UV_SCALE, 
                       Pos.Y * ModelGenConstants::GLOBAL_UV_SCALE);
         
@@ -291,19 +332,43 @@ void FSphereBuilder::GenerateVerticalCap(float Theta, bool bIsStart)
     }
     
     // 生成三角形（从中心到边界，确保从外部看是逆时针）
+    // 确保有足够的边界顶点
+    if (BoundaryVertices.Num() < CapSegments + 1)
+    {
+        UE_LOG(LogTemp, Error, TEXT("GenerateVerticalCap: 边界顶点数量不足 %d < %d"), BoundaryVertices.Num(), CapSegments + 1);
+        return;
+    }
+    
+    // 验证中心点和边界顶点索引有效
+    if (CenterIndex < 0 || CenterIndex >= MeshData.Vertices.Num())
+    {
+        UE_LOG(LogTemp, Error, TEXT("GenerateVerticalCap: 中心点索引无效 %d (顶点数=%d)"), CenterIndex, MeshData.Vertices.Num());
+        return;
+    }
+    
     for (int32 i = 0; i < CapSegments; ++i)
     {
+        int32 V0 = BoundaryVertices[i];
+        int32 V1 = BoundaryVertices[i + 1];
+        
+        // 验证索引有效性
+        if (V0 < 0 || V0 >= MeshData.Vertices.Num() || V1 < 0 || V1 >= MeshData.Vertices.Num())
+        {
+            UE_LOG(LogTemp, Error, TEXT("GenerateVerticalCap: 边界顶点索引无效 [%d, %d] (顶点数=%d)"), V0, V1, MeshData.Vertices.Num());
+            continue;
+        }
+        
         if (bIsStart)
         {
             // 起始端盖：从外部看是逆时针（Center -> V[i] -> V[i+1]）
             // 边界顶点从顶部（i=0）到底部（i=CapSegments）
-            AddTriangle(CenterIndex, BoundaryVertices[i], BoundaryVertices[i + 1]);
+            AddTriangle(CenterIndex, V0, V1);
         }
         else
         {
             // 结束端盖：从外部看是逆时针（Center -> V[i+1] -> V[i]）
             // 需要反转顺序以确保逆时针
-            AddTriangle(CenterIndex, BoundaryVertices[i + 1], BoundaryVertices[i]);
+            AddTriangle(CenterIndex, V1, V0);
         }
     }
 }

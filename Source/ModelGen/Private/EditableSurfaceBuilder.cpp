@@ -4,6 +4,7 @@
 #include "EditableSurface.h"
 #include "ModelGenMeshData.h"
 #include "ModelGenConstants.h"
+#include "Components/SplineComponent.h"
 
 FEditableSurfaceBuilder::FEditableSurfaceBuilder(const AEditableSurface& InSurface)
     : Surface(InSurface)
@@ -29,7 +30,8 @@ bool FEditableSurfaceBuilder::Generate(FModelGenMeshData& OutMeshData)
     Clear();
     ReserveMemory();
 
-    Waypoints = Surface.Waypoints;
+    SplineComponent = Surface.SplineComponent;
+    PathSampleCount = Surface.PathSampleCount;
     SurfaceWidth = Surface.SurfaceWidth;
     bEnableThickness = Surface.bEnableThickness;
     ThicknessValue = Surface.ThicknessValue;
@@ -68,99 +70,56 @@ int32 FEditableSurfaceBuilder::CalculateTriangleCountEstimate() const
 
 FVector FEditableSurfaceBuilder::InterpolatePathPoint(float Alpha) const
 {
-    // TODO: 实现Catmull-Rom样条插值
-    // Alpha: 0.0 到 1.0，表示在路径上的位置
+    // Alpha: 0.0 到 1.0，表示在样条线上的位置（沿距离参数化）
     
-    if (Waypoints.Num() < 2)
+    if (!SplineComponent || SplineComponent->GetNumberOfSplinePoints() < 2)
     {
         return FVector::ZeroVector;
     }
     
-    if (Waypoints.Num() == 2)
-    {
-        return FMath::Lerp(Waypoints[0].Position, Waypoints[1].Position, Alpha);
-    }
+    // 使用样条线的距离参数化（0.0 到 1.0）
+    const float SplineLength = SplineComponent->GetSplineLength();
+    const float Distance = Alpha * SplineLength;
     
-    // 简单的线性插值（后续可以改为Catmull-Rom）
-    const float ScaledAlpha = Alpha * (Waypoints.Num() - 1);
-    const int32 Index = FMath::FloorToInt(ScaledAlpha);
-    const float LocalAlpha = ScaledAlpha - Index;
+    // 获取样条线上该距离处的世界位置，然后转换为本地空间
+    FVector WorldPos = SplineComponent->GetLocationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
+    FVector LocalPos = SplineComponent->GetComponentTransform().InverseTransformPosition(WorldPos);
     
-    if (Index >= Waypoints.Num() - 1)
-    {
-        return Waypoints.Last().Position;
-    }
-    
-    return FMath::Lerp(Waypoints[Index].Position, Waypoints[Index + 1].Position, LocalAlpha);
+    return LocalPos;
 }
 
 FVector FEditableSurfaceBuilder::GetPathTangent(float Alpha) const
 {
-    // 计算路径切线方向，用于确定横截面的方向
+    // 从样条线获取切线方向，用于确定横截面的方向
     
-    if (Waypoints.Num() < 2)
+    if (!SplineComponent || SplineComponent->GetNumberOfSplinePoints() < 2)
     {
         return FVector::ForwardVector;
     }
     
-    // 使用更小的Epsilon来获得更精确的切线
-    const float Epsilon = 0.001f;
-    float Alpha0 = FMath::Max(0.0f, Alpha - Epsilon);
-    float Alpha1 = FMath::Min(1.0f, Alpha + Epsilon);
+    // 使用样条线的距离参数化
+    const float SplineLength = SplineComponent->GetSplineLength();
+    const float Distance = Alpha * SplineLength;
     
-    // 如果Alpha在端点，使用单侧差分
-    if (Alpha <= Epsilon)
+    // 获取样条线上该距离处的切线方向（世界空间），然后转换为本地空间
+    FVector WorldTangent = SplineComponent->GetDirectionAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
+    FVector LocalTangent = SplineComponent->GetComponentTransform().InverseTransformVectorNoScale(WorldTangent);
+    
+    LocalTangent.Normalize();
+    
+    if (LocalTangent.IsNearlyZero())
     {
-        Alpha0 = 0.0f;
-        Alpha1 = FMath::Min(Epsilon * 2.0f, 1.0f);
-    }
-    else if (Alpha >= 1.0f - Epsilon)
-    {
-        Alpha0 = FMath::Max(1.0f - Epsilon * 2.0f, 0.0f);
-        Alpha1 = 1.0f;
+        LocalTangent = FVector::ForwardVector;
     }
     
-    FVector P0 = InterpolatePathPoint(Alpha0);
-    FVector P1 = InterpolatePathPoint(Alpha1);
-    
-    FVector Tangent = (P1 - P0).GetSafeNormal();
-    if (Tangent.IsNearlyZero())
-    {
-        // 如果切线为零，尝试使用相邻路点的方向
-        if (Waypoints.Num() >= 2)
-        {
-            const float ScaledAlpha = Alpha * (Waypoints.Num() - 1);
-            const int32 Index = FMath::Clamp(FMath::FloorToInt(ScaledAlpha), 0, Waypoints.Num() - 2);
-            Tangent = (Waypoints[Index + 1].Position - Waypoints[Index].Position).GetSafeNormal();
-        }
-        
-        if (Tangent.IsNearlyZero())
-        {
-            Tangent = FVector::ForwardVector;
-        }
-    }
-    
-    return Tangent;
+    return LocalTangent;
 }
 
 float FEditableSurfaceBuilder::GetPathWidth(float Alpha) const
 {
-    // 根据Alpha插值计算宽度
-    if (Waypoints.Num() < 2)
-    {
-        return SurfaceWidth;
-    }
-    
-    const float ScaledAlpha = Alpha * (Waypoints.Num() - 1);
-    const int32 Index = FMath::FloorToInt(ScaledAlpha);
-    const float LocalAlpha = ScaledAlpha - Index;
-    
-    if (Index >= Waypoints.Num() - 1)
-    {
-        return Waypoints.Last().Width;
-    }
-    
-    return FMath::Lerp(Waypoints[Index].Width, Waypoints[Index + 1].Width, LocalAlpha);
+    // 当前使用统一的SurfaceWidth，后续可以根据样条线点或路点插值
+    // TODO: 可以基于样条线点的自定义数据或路点数组进行宽度插值
+    return SurfaceWidth;
 }
 
 TArray<int32> FEditableSurfaceBuilder::GenerateCrossSection(const FVector& Center, const FVector& Forward, 
@@ -216,17 +175,17 @@ TArray<int32> FEditableSurfaceBuilder::GenerateCrossSection(const FVector& Cente
 void FEditableSurfaceBuilder::GenerateSurfaceMesh()
 {
     // 实现曲面网格生成逻辑
-    // 1. 沿路径采样点
+    // 1. 沿样条线采样点
     // 2. 在每个点生成横截面
     // 3. 连接相邻截面形成网格
     // 4. 处理平滑度和护坡
     
-    if (Waypoints.Num() < 2)
+    if (!SplineComponent || SplineComponent->GetNumberOfSplinePoints() < 2)
     {
         return;
     }
     
-    const int32 PathSegments = FMath::Max(1, Waypoints.Num() - 1) * 4; // 每个路点之间4个分段
+    const int32 PathSegments = PathSampleCount - 1; // 使用PathSampleCount分段
     const int32 WidthSegments = FMath::Max(2, SideSmoothness + 1);
     
     // 记录前面顶点起始索引

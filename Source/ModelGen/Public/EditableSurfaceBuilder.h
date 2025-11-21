@@ -7,6 +7,7 @@
 #include "EditableSurface.h"
 
 class AEditableSurface;
+class USplineComponent;
 
 class MODELGEN_API FEditableSurfaceBuilder : public FModelGenMeshBuilder
 {
@@ -25,7 +26,8 @@ private:
     const AEditableSurface& Surface;
 
     // Configuration
-    TArray<FSurfaceWaypoint> Waypoints;
+    USplineComponent* SplineComponent;
+    int32 PathSampleCount;
     float SurfaceWidth;
     bool bEnableThickness;
     float ThicknessValue;

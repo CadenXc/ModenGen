@@ -9,6 +9,7 @@
 
 #include "CoreMinimal.h"
 #include "ProceduralMeshActor.h"
+#include "Components/SplineComponent.h"
 #include "EditableSurface.generated.h"
 
 class FEditableSurfaceBuilder;
@@ -129,11 +130,35 @@ public:
 
     virtual void GenerateMesh() override;
 
+    /** 样条线组件（用于定义路径） */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "EditableSurface|Spline",
+        meta = (DisplayName = "样条线组件"))
+    USplineComponent* SplineComponent;
+
+    /** 路径采样分段数（用于从样条线生成网格，默认20） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
+        meta = (ClampMin = "4", ClampMax = "200", UIMin = "4", UIMax = "200", DisplayName = "路径采样分段数"))
+    int32 PathSampleCount = 20;
+
+    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
+    void SetPathSampleCount(int32 NewPathSampleCount);
+
+    /** 从路点数组更新样条线 */
+    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
+    void UpdateSplineFromWaypoints();
+
+    /** 从样条线更新路点数组 */
+    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
+    void UpdateWaypointsFromSpline();
+
 private:
     bool TryGenerateMeshInternal();
     
     // 初始化默认路点
     void InitializeDefaultWaypoints();
+    
+    // 初始化样条线组件
+    void InitializeSplineComponent();
 
 public:
     virtual bool IsValid() const override;
