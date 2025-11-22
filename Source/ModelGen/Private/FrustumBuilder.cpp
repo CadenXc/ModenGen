@@ -117,7 +117,7 @@ TArray<FVector2D> FFrustumBuilder::GetRingPos2D(float Radius, int32 Sides) const
     return Positions;
 }
 
-TArray<int32> FFrustumBuilder::CreateBevelRing(const FRingContext& Context, float VCoord, float NormalAlpha, bool bIsTopBevel)
+TArray<int32> FFrustumBuilder::CreateBevelRing(const FRingContext& Context, float VCoord, float NormalAlpha, bool bIsTopBevel, float OverrideRadius)
 {
     TArray<int32> Indices;
     Indices.Reserve(Context.Sides + 1);
@@ -147,12 +147,8 @@ TArray<int32> FFrustumBuilder::CreateBevelRing(const FRingContext& Context, floa
 
         FVector SmoothNormal = FMath::Lerp(HorizontalNormal, VerticalNormal, NormalAlpha).GetSafeNormal();
 
-        float CurrentRadius = FVector2D(Pos.X, Pos.Y).Size();
-        // 【核心修复】：参考正方体的UV计算方式，确保UV从0开始
-        // 正方体：WorldU = local_u + HalfSize，使得UV范围从0到2*HalfSize
-        // Frustum倒角侧面：U = (Angle - StartAngle) * CurrentRadius，从0开始
-        // 为了与正方体一致，U坐标已经从0开始，无需额外偏移
-        float U = (Angle - StartAngle) * CurrentRadius;
+        float UVRadius = (OverrideRadius > 0.0f) ? OverrideRadius : FVector2D(Pos.X, Pos.Y).Size();
+        float U = (Angle - StartAngle) * UVRadius;
         FVector2D UV(U * ModelGenConstants::GLOBAL_UV_SCALE, VCoord * ModelGenConstants::GLOBAL_UV_SCALE);
 
         Indices.Add(GetOrAddVertex(Pos, SmoothNormal, UV));
@@ -163,30 +159,26 @@ TArray<int32> FFrustumBuilder::CreateBevelRing(const FRingContext& Context, floa
 
 void FFrustumBuilder::GenerateSides()
 {
-    // 【核心修复】：参考正方体的UV计算方式，确保V坐标从0开始
-    // 正方体：WorldV = local_v + HalfSize，使得UV范围从0到2*HalfSize
-    // Frustum侧面：V坐标应该从0开始累积
-    float CurrentV = 0.0f;
-
     float TopZ = Frustum.Height;
     float BottomZ = 0.0f;
-
     float TopR = Frustum.TopRadius;
     float BottomR = Frustum.BottomRadius;
 
-    // 参考旧版本：沿着侧边棱移动来计算倒角起点
+    float TopBevelHeight = 0.0f;
+    float BottomBevelHeight = 0.0f;
+    float TopBevelArc = 0.0f;
+
     if (bEnableBevel)
     {
-        const float TopBevelHeight = CalculateBevelHeight(Frustum.TopRadius);
-        const float BottomBevelHeight = CalculateBevelHeight(Frustum.BottomRadius);
+        TopBevelHeight = CalculateBevelHeight(Frustum.TopRadius);
+        BottomBevelHeight = CalculateBevelHeight(Frustum.BottomRadius);
 
-        // 计算侧边棱的方向向量（从底部到顶部）
+        // 【核心修复】：恢复旧版逻辑，沿着侧边棱移动计算倒角起点
         const float RadiusDiff = Frustum.TopRadius - Frustum.BottomRadius;
         const float SideLength = FMath::Sqrt(RadiusDiff * RadiusDiff + Frustum.Height * Frustum.Height);
 
         if (SideLength > KINDA_SMALL_NUMBER)
         {
-            // 侧边方向向量的归一化分量
             const float RadiusDir = RadiusDiff / SideLength;
             const float HeightDir = Frustum.Height / SideLength;
 
@@ -197,21 +189,30 @@ void FFrustumBuilder::GenerateSides()
             // 底部：沿着棱向上移动
             BottomR = Frustum.BottomRadius + BottomBevelHeight * RadiusDir;
             BottomZ = BottomBevelHeight * HeightDir;
-
-            // 计算倒角弧长（V坐标从0开始，不需要偏移）
         }
         else
         {
-            // 如果侧边长度为0（圆柱体），使用简单计算
+            // 圆柱体情况
             const float MinRadius = FMath::Min(Frustum.TopRadius, Frustum.BottomRadius);
             const float EffectiveBevel = FMath::Min(Frustum.BevelRadius, MinRadius);
-
             TopZ -= EffectiveBevel;
             BottomZ += EffectiveBevel;
-
-            // V坐标从0开始，不需要偏移
         }
+
+        // 倒角弧长 (用于UV偏移)
+        TopBevelArc = (PI * TopBevelHeight) * 0.5f;
     }
+
+    // 计算侧面几何长度
+    float SideHeight = TopZ - BottomZ;
+    float SideRadiusDiff = TopR - BottomR;
+    float TotalSideLength = FMath::Sqrt(SideHeight * SideHeight + SideRadiusDiff * SideRadiusDiff);
+
+    // V 从高值开始递减
+    float CurrentV = TopBevelArc + TotalSideLength;
+
+    // 统一 UV 参考半径
+    float UVReferenceRadius = FMath::Max(Frustum.TopRadius, Frustum.BottomRadius);
 
     TArray<FVector2D> BottomRef = GetRingPos2D(BottomR, Frustum.BottomSides);
     TArray<FVector2D> TopRef = GetRingPos2D(TopR, Frustum.TopSides);
@@ -236,14 +237,13 @@ void FFrustumBuilder::GenerateSides()
             const float dZ = CurrentZ - PrevZ;
             const float dR = CurrentBaseRadius - PrevRadius;
             const float SlantDist = FMath::Sqrt(dZ * dZ + dR * dR);
-            CurrentV += SlantDist;
+            CurrentV -= SlantDist;
         }
 
         PrevZ = CurrentZ;
         PrevRadius = CurrentBaseRadius;
 
         int32 CurrentSides = (h == Segments) ? Frustum.TopSides : Frustum.BottomSides;
-
         TArray<int32> CurrentRingIndices;
         CurrentRingIndices.Reserve(CurrentSides + 1);
 
@@ -266,7 +266,6 @@ void FFrustumBuilder::GenerateSides()
                 float Ratio = static_cast<float>(i) / Frustum.BottomSides;
                 int32 TopIndex = FMath::Clamp(FMath::RoundToInt(Ratio * Frustum.TopSides), 0, Frustum.TopSides);
                 FVector2D PosEnd = TopRef[TopIndex];
-
                 FVector2D LerpedPos = FMath::Lerp(PosStart, PosEnd, Alpha);
                 FinalPos = FVector(LerpedPos.X, LerpedPos.Y, CurrentZ);
                 Normal = FVector(LerpedPos.X, LerpedPos.Y, 0.0f).GetSafeNormal();
@@ -283,12 +282,8 @@ void FFrustumBuilder::GenerateSides()
             }
 
             float CurrentAngle = StartAngle + i * AngleStep;
-            // 【核心修复】：参考正方体的UV计算方式，确保UV从0开始
-            // 正方体：WorldU = local_u + HalfSize，WorldV = local_v + HalfSize，使得UV范围从0开始
-            // Frustum侧面：U从0开始，V也从0开始累积
-            float U = (CurrentAngle - StartAngle) * CurrentRadius;
-            float V = CurrentV;  // V坐标从0开始累积
-            FVector2D UV(U * ModelGenConstants::GLOBAL_UV_SCALE, V * ModelGenConstants::GLOBAL_UV_SCALE);
+            float U = (CurrentAngle - StartAngle) * UVReferenceRadius;
+            FVector2D UV(U * ModelGenConstants::GLOBAL_UV_SCALE, CurrentV * ModelGenConstants::GLOBAL_UV_SCALE);
 
             CurrentRingIndices.Add(GetOrAddVertex(FinalPos, Normal, UV));
         }
@@ -325,20 +320,13 @@ void FFrustumBuilder::GenerateBevels()
     const float BevelArcLength = (PI * BevelR) * 0.5f;
     const float V_Step = BevelArcLength / Segments;
 
-    // 计算侧边棱的方向向量（从底部到顶部）
+    float UVReferenceRadius = FMath::Max(Frustum.TopRadius, Frustum.BottomRadius);
+
+    // 计算侧边棱信息 (用于几何计算)
     const float RadiusDiff = Frustum.TopRadius - Frustum.BottomRadius;
     const float SideLength = FMath::Sqrt(RadiusDiff * RadiusDiff + Frustum.Height * Frustum.Height);
-    
-    // 计算侧边高度（减去倒角后的高度）
-    float SideSlantH = Frustum.Height - TopBevelHeight - BottomBevelHeight;
-    float SideSlantR = Frustum.TopRadius - Frustum.BottomRadius;
-    float SideVLength = FMath::Sqrt(SideSlantH * SideSlantH + SideSlantR * SideSlantR);
-    float BottomBevelArc = (PI * BottomBevelHeight) * 0.5f;
 
-    // --- Top Bevel ---
-    TArray<int32> PreviousTopRing = TopSideRing;
-
-    // 参考旧版本：沿着侧边棱计算倒角起点
+    // 计算 WallTopZ 和 WallTopR（在 Top Bevel 和 Bottom Bevel 中都需要使用）
     float WallTopZ, WallTopR;
     if (SideLength > KINDA_SMALL_NUMBER)
     {
@@ -352,88 +340,110 @@ void FFrustumBuilder::GenerateBevels()
         WallTopZ = Frustum.Height - TopBevelHeight;
         WallTopR = Frustum.TopRadius - TopBevelHeight;
     }
-    float CapTopR = Frustum.TopRadius - TopBevelHeight;
 
-    float CurrentV_Top = BottomBevelArc + SideVLength;
-
-    for (int32 i = 1; i <= Segments; ++i)
+    // --- Top Bevel ---
     {
-        CurrentV_Top += V_Step;
+        TArray<int32> PreviousTopRing = TopSideRing;
+        float CapTopR = Frustum.TopRadius - TopBevelHeight;
 
-        const float Alpha = static_cast<float>(i) / Segments;
-        const float Angle = Alpha * HALF_PI;
+        float CurrentV_Top = (PI * TopBevelHeight) * 0.5f;
 
-        float DiffR = WallTopR - CapTopR;
-        float CurrentR = CapTopR + DiffR * FMath::Cos(Angle);
-        float CurrentZ = WallTopZ + TopBevelHeight * FMath::Sin(Angle);
+        for (int32 i = 1; i <= Segments; ++i)
+        {
+            CurrentV_Top -= V_Step;
 
-        FRingContext Ctx;
-        Ctx.Z = CurrentZ;
-        Ctx.Radius = CurrentR;
-        Ctx.Sides = Frustum.TopSides;
+            const float Alpha = static_cast<float>(i) / Segments;
+            const float Angle = Alpha * HALF_PI;
 
-        TArray<int32> CurrentRing = CreateBevelRing(Ctx, CurrentV_Top, Alpha, true);
+            float DiffR = WallTopR - CapTopR;
+            float CurrentR = CapTopR + DiffR * FMath::Cos(Angle);
+            float CurrentZ = WallTopZ + TopBevelHeight * FMath::Sin(Angle);
 
-        StitchRings(PreviousTopRing, CurrentRing);
+            FRingContext Ctx;
+            Ctx.Z = CurrentZ;
+            Ctx.Radius = CurrentR;
+            Ctx.Sides = Frustum.TopSides;
 
-        if (CurrentRing.Num() > 0) {
-            StartSliceIndices.Add(CurrentRing[0]);
-            EndSliceIndices.Add(CurrentRing.Last());
+            TArray<int32> CurrentRing = CreateBevelRing(Ctx, CurrentV_Top, Alpha, true, UVReferenceRadius);
+
+            StitchRings(PreviousTopRing, CurrentRing);
+
+            if (CurrentRing.Num() > 0) {
+                StartSliceIndices.Add(CurrentRing[0]);
+                EndSliceIndices.Add(CurrentRing.Last());
+            }
+
+            PreviousTopRing = CurrentRing;
         }
-
-        PreviousTopRing = CurrentRing;
+        TopCapRing = PreviousTopRing;
     }
-    TopCapRing = PreviousTopRing;
 
     // --- Bottom Bevel ---
-    TArray<int32> PreviousBottomRing = BottomSideRing;
-
-    // 参考旧版本：沿着侧边棱计算倒角起点
-    float WallBotZ, WallBotR;
-    if (SideLength > KINDA_SMALL_NUMBER)
     {
-        const float HeightDir = Frustum.Height / SideLength;
-        const float RadiusDir = RadiusDiff / SideLength;
-        WallBotZ = BottomBevelHeight * HeightDir;
-        WallBotR = Frustum.BottomRadius + BottomBevelHeight * RadiusDir;
-    }
-    else
-    {
-        WallBotZ = BottomBevelHeight;
-        WallBotR = Frustum.BottomRadius + BottomBevelHeight;
-    }
-    float CapBotR = Frustum.BottomRadius - BottomBevelHeight;
+        TArray<int32> PreviousBottomRing = BottomSideRing;
 
-    float CurrentV_Bottom = BottomBevelArc;
-
-    for (int32 i = 1; i <= Segments; ++i)
-    {
-        CurrentV_Bottom -= V_Step;
-
-        const float Alpha = static_cast<float>(i) / Segments;
-        const float Angle = Alpha * HALF_PI;
-
-        float DiffR = WallBotR - CapBotR;
-        float CurrentR = CapBotR + DiffR * FMath::Cos(Angle);
-        float CurrentZ = WallBotZ - BottomBevelHeight * FMath::Sin(Angle);
-
-        FRingContext Ctx;
-        Ctx.Z = CurrentZ;
-        Ctx.Radius = CurrentR;
-        Ctx.Sides = Frustum.BottomSides;
-
-        TArray<int32> CurrentRing = CreateBevelRing(Ctx, CurrentV_Bottom, Alpha, false);
-
-        StitchRings(CurrentRing, PreviousBottomRing);
-
-        if (CurrentRing.Num() > 0) {
-            StartSliceIndices.Insert(CurrentRing[0], 0);
-            EndSliceIndices.Insert(CurrentRing.Last(), 0);
+        // 【核心修复】：恢复旧版几何计算
+        float WallBotZ, WallBotR;
+        if (SideLength > KINDA_SMALL_NUMBER)
+        {
+            const float HeightDir = Frustum.Height / SideLength;
+            const float RadiusDir = RadiusDiff / SideLength;
+            WallBotZ = BottomBevelHeight * HeightDir;
+            WallBotR = Frustum.BottomRadius + BottomBevelHeight * RadiusDir;
         }
+        else
+        {
+            WallBotZ = BottomBevelHeight;
+            WallBotR = Frustum.BottomRadius + BottomBevelHeight;
+        }
+        float CapBotR = Frustum.BottomRadius - BottomBevelHeight;
 
-        PreviousBottomRing = CurrentRing;
+        // V 计算
+        const float TopBevelArc = (PI * TopBevelHeight) * 0.5f;
+
+        // 需要计算侧面缩短后的实际长度
+        float SideH_Projected = WallTopZ - WallBotZ;
+        float SideR_Projected = WallTopR - WallBotR;
+        float ActualSideLen = FMath::Sqrt(SideH_Projected * SideH_Projected + SideR_Projected * SideR_Projected);
+
+        float CurrentV_Bottom = TopBevelArc + ActualSideLen;
+
+        for (int32 i = 1; i <= Segments; ++i)
+        {
+            CurrentV_Bottom += V_Step;
+
+            const float Alpha = static_cast<float>(i) / Segments;
+            const float Angle = Alpha * HALF_PI;
+
+            float DiffR = WallBotR - CapBotR;
+            float CurrentR = CapBotR + DiffR * FMath::Cos(Angle);
+            float CurrentZ = WallBotZ - BottomBevelHeight * FMath::Sin(Angle);
+
+            FRingContext Ctx;
+            Ctx.Z = CurrentZ;
+            Ctx.Radius = CurrentR;
+            Ctx.Sides = Frustum.BottomSides;
+
+            TArray<int32> CurrentRing = CreateBevelRing(Ctx, CurrentV_Bottom, Alpha, false, UVReferenceRadius);
+
+            StitchRings(CurrentRing, PreviousBottomRing);
+
+            if (CurrentRing.Num() > 0) {
+                StartSliceIndices.Insert(CurrentRing[0], 0);
+                EndSliceIndices.Insert(CurrentRing.Last(), 0);
+            }
+
+            PreviousBottomRing = CurrentRing;
+        }
+        BottomCapRing = PreviousBottomRing;
     }
-    BottomCapRing = PreviousBottomRing;
+}
+
+// ... (GenerateCaps, CreateCapDisk, GenerateCutPlanes, CreateCutPlaneSurface, CreateVertexRing, ApplyBend, CalculateBevelHeight 保持不变) ...
+// 确保 CalculateBevelHeight 存在
+float FFrustumBuilder::CalculateBevelHeight(float Radius) const
+{
+    return FMath::Min(Frustum.BevelRadius, Radius);
 }
 
 void FFrustumBuilder::GenerateCaps()
@@ -500,7 +510,6 @@ void FFrustumBuilder::GenerateCutPlanes()
     CreateCutPlaneSurface(EndAngleVal, EndSliceIndices, false);
 }
 
-// 【核心修复】：修正纹理镜像问题
 void FFrustumBuilder::CreateCutPlaneSurface(float Angle, const TArray<int32>& ProfileIndices, bool bIsStartFace)
 {
     if (ProfileIndices.Num() < 2) return;
@@ -535,11 +544,9 @@ void FFrustumBuilder::CreateCutPlaneSurface(float Angle, const TArray<int32>& Pr
 
         auto GetCutUV = [&](const FVector& P) {
             float R = FVector2D(P.X, P.Y).Size();
-            // 【核心修复】：反转 StartFace 的 U 坐标以修复纹理镜像
-            // StartFace: 边缘在左，中心在右，纹理应该从右向左读 (或UV从大到小)
-            // 如果 U = -R，则左侧(大R)是负大，右侧(0)是0。从左到右是 U 增加。
             float U = bIsStartFace ? -R : R;
-            return FVector2D(U * ModelGenConstants::GLOBAL_UV_SCALE, P.Z * ModelGenConstants::GLOBAL_UV_SCALE);
+            float V = Frustum.Height - P.Z;
+            return FVector2D(U * ModelGenConstants::GLOBAL_UV_SCALE, V * ModelGenConstants::GLOBAL_UV_SCALE);
             };
 
         int32 V_In1 = AddVertex(P1_Inner, PlaneNormal, GetCutUV(P1_Inner));
@@ -549,12 +556,10 @@ void FFrustumBuilder::CreateCutPlaneSurface(float Angle, const TArray<int32>& Pr
 
         if (bIsStartFace)
         {
-            // Inner1 -> Inner2 -> Outer2 -> Outer1
             AddQuad(V_In1, V_In2, V_Out2, V_Out1);
         }
         else
         {
-            // Inner1 -> Outer1 -> Outer2 -> Inner2
             AddQuad(V_In1, V_Out1, V_Out2, V_In2);
         }
     }
@@ -562,50 +567,44 @@ void FFrustumBuilder::CreateCutPlaneSurface(float Angle, const TArray<int32>& Pr
 
 TArray<int32> FFrustumBuilder::CreateVertexRing(const FRingContext& Context, float VCoord)
 {
-    return CreateBevelRing(Context, VCoord, 0.0f, false);
+    return CreateBevelRing(Context, VCoord, 0.0f, false, 0.0f);
 }
 
 FVector FFrustumBuilder::ApplyBend(const FVector& BasePos, float BaseRadius, float HeightRatio) const
 {
+    if (FMath::Abs(Frustum.BendAmount) < KINDA_SMALL_NUMBER)
+    {
+        return BasePos;
+    }
+
     if (BaseRadius < KINDA_SMALL_NUMBER)
     {
         return BasePos;
     }
 
+    const float BendFactor = FMath::Sin(HeightRatio * PI);
+
+    float BentRadius = BaseRadius * (1.0f - Frustum.BendAmount * BendFactor);
+
     const bool bIsCapRing = (HeightRatio < KINDA_SMALL_NUMBER) || (HeightRatio > (1.0f - KINDA_SMALL_NUMBER));
-    
-    // 检查是否在倒角范围内（倒角部分不受最小弯曲半径影响）
+
     bool bIsBevelRegion = false;
     if (bEnableBevel && Frustum.Height > KINDA_SMALL_NUMBER)
     {
         const float TopBevelHeight = CalculateBevelHeight(Frustum.TopRadius);
         const float BottomBevelHeight = CalculateBevelHeight(Frustum.BottomRadius);
-        
-        // 计算倒角区域的 HeightRatio 范围
+
         const float BottomBevelRatio = BottomBevelHeight / Frustum.Height;
         const float TopBevelRatio = 1.0f - (TopBevelHeight / Frustum.Height);
-        
-        // 检查是否在底部倒角或顶部倒角范围内
+
         bIsBevelRegion = (HeightRatio <= BottomBevelRatio) || (HeightRatio >= TopBevelRatio);
     }
-    
-    float BentRadius = BaseRadius;
-    
-    // 如果有弯曲，先计算弯曲后的半径
-    if (FMath::Abs(Frustum.BendAmount) > KINDA_SMALL_NUMBER)
-    {
-        const float BendFactor = FMath::Sin(HeightRatio * PI);
-        BentRadius = BaseRadius * (1.0f - Frustum.BendAmount * BendFactor);
-    }
-    
-    // 应用最小弯曲半径限制（即使 BendAmount 为 0 也要检查）
-    // 但倒角部分不受最小弯曲半径影响
+
     if (!bIsCapRing && !bIsBevelRegion && Frustum.MinBendRadius > KINDA_SMALL_NUMBER)
     {
         BentRadius = FMath::Max(BentRadius, Frustum.MinBendRadius);
     }
 
-    // 如果半径没有变化，直接返回原始位置
     if (FMath::IsNearlyEqual(BentRadius, BaseRadius))
     {
         return BasePos;
@@ -613,9 +612,4 @@ FVector FFrustumBuilder::ApplyBend(const FVector& BasePos, float BaseRadius, flo
 
     const float Scale = BentRadius / BaseRadius;
     return FVector(BasePos.X * Scale, BasePos.Y * Scale, BasePos.Z);
-}
-
-float FFrustumBuilder::CalculateBevelHeight(float Radius) const
-{
-    return FMath::Min(Frustum.BevelRadius, Radius);
 }

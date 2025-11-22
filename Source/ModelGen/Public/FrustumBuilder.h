@@ -61,7 +61,7 @@ private:
     TArray<int32> CreateVertexRing(const FRingContext& Context, float VCoord);
 
     // Specialized ring creation for bevels with normal interpolation
-    TArray<int32> CreateBevelRing(const FRingContext& Context, float VCoord, float NormalAlpha, bool bIsTopBevel);
+    TArray<int32> CreateBevelRing(const FRingContext& Context, float VCoord, float NormalAlpha, bool bIsTopBevel, float OverrideRadius = 0.0f);
 
     void CreateCapDisk(float Z, const TArray<int32>& BoundaryRing, bool bIsTop);
     void CreateCutPlaneSurface(float Angle, const TArray<int32>& ProfileIndices, bool bIsStartFace);

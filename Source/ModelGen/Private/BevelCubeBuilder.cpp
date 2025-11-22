@@ -150,11 +150,17 @@ void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef)
 
             VertexPos += FVector(0, 0, HalfSize);
 
-            // UV: 因为 V_Axis 已经统一为向下，所以 local_v 增加即为 UV.V 增加
-            // 不需要 1.0 - v
-            float WorldU = (local_u + HalfSize);
-            float WorldV = (local_v + HalfSize);
-            FVector2D UV(WorldU * ModelGenConstants::GLOBAL_UV_SCALE, WorldV * ModelGenConstants::GLOBAL_UV_SCALE);
+            // 【修改前】：依赖物理尺寸和全局缩放，UV值随尺寸变化
+            // float WorldU = (local_u + HalfSize);
+            // float WorldV = (local_v + HalfSize);
+            // FVector2D UV(WorldU * ModelGenConstants::GLOBAL_UV_SCALE, WorldV * ModelGenConstants::GLOBAL_UV_SCALE);
+
+            // 【修改后】：强制归一化到 [0, 1]
+            // local_u 和 local_v 的范围是 [-HalfSize, HalfSize]
+            // 下面的公式将其映射为 [0, 1]，固定为 1 倍平铺
+            float NormalizedU = (local_u + HalfSize) / (2.0f * HalfSize);
+            float NormalizedV = (local_v + HalfSize) / (2.0f * HalfSize);
+            FVector2D UV(NormalizedU, NormalizedV);
 
             VertIndices[v_idx * GridSize + u_idx] = AddVertex(VertexPos, Normal, UV);
         }

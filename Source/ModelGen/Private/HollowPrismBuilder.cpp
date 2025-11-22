@@ -5,8 +5,6 @@
 #include "ModelGenMeshData.h"
 #include "ModelGenConstants.h"
 
-static const float GLOBAL_UV_SCALE = 0.01f;
-
 FHollowPrismBuilder::FHollowPrismBuilder(const AHollowPrism& InHollowPrism)
     : HollowPrism(InHollowPrism)
 {
@@ -116,8 +114,8 @@ void FHollowPrismBuilder::ComputeVerticalProfile(EInnerOuter InnerOuter, TArray<
     const float BaseRadius = (InnerOuter == EInnerOuter::Inner) ? HollowPrism.InnerRadius : HollowPrism.OuterRadius;
     const float Sign = (InnerOuter == EInnerOuter::Inner) ? 1.0f : -1.0f;
 
-    const float TopArcCenterZ = HollowPrism.Height - BevelR;
-    const float BottomArcCenterZ = BevelR;
+    const float TopArcCenterZ = HollowPrism.Height * 0.5f - BevelR;
+    const float BottomArcCenterZ = -HollowPrism.Height * 0.5f + BevelR;
     const float ArcCenterR = BaseRadius + (Sign * BevelR);
 
     float CurrentV = 0.0f;
@@ -204,6 +202,11 @@ void FHollowPrismBuilder::GenerateSideGeometry(EInnerOuter InnerOuter)
 
     if (Profile.Num() < 2) return;
 
+    // 【核心修复】：确定 UV 参考半径（圆柱投影）
+    // 内壁使用 InnerRadius，外壁使用 OuterRadius
+    // 这保证了无论在倒角处半径如何变化，UV 展开都是基于主圆柱面的
+    const float ReferenceRadius = (InnerOuter == EInnerOuter::Inner) ? HollowPrism.InnerRadius : HollowPrism.OuterRadius;
+
     TArray<TArray<int32>> GridIndices;
     GridIndices.SetNum(Sides + 1);
 
@@ -219,6 +222,9 @@ void FHollowPrismBuilder::GenerateSideGeometry(EInnerOuter InnerOuter)
 
         const float CurrentAngleDelta = s * (ArcAngleRadians / Sides);
 
+        // 【核心修复】：U 坐标基于 ReferenceRadius 计算，消除梯形扭曲
+        float U = CurrentAngleDelta * ReferenceRadius;
+
         for (int32 p = 0; p < Profile.Num(); ++p)
         {
             const FVerticalProfilePoint& Point = Profile[p];
@@ -226,7 +232,6 @@ void FHollowPrismBuilder::GenerateSideGeometry(EInnerOuter InnerOuter)
             FVector Pos(Point.Radius * CosA, Point.Radius * SinA, Point.Z);
             FVector Normal(Point.Normal.X * CosA, Point.Normal.X * SinA, Point.Normal.Z);
 
-            float U = CurrentAngleDelta * Point.Radius;
             FVector2D UV(U * ModelGenConstants::GLOBAL_UV_SCALE, Point.V * ModelGenConstants::GLOBAL_UV_SCALE);
 
             int32 VertIdx = GetOrAddVertex(Pos, Normal, UV);
@@ -353,18 +358,23 @@ void FHollowPrismBuilder::CreateCutPlane(float Angle, const TArray<int32>& Inner
     NewInner.Reserve(NumPoints);
     NewOuter.Reserve(NumPoints);
 
+    const float HalfHeight = HollowPrism.GetHalfHeight();
+
     for (int32 i = 0; i < NumPoints; ++i)
     {
         FVector P_In = GetPosByIndex(InnerIndices[i]);
         FVector P_Out = GetPosByIndex(OuterIndices[i]);
 
-        // UV = (Radius, Z) * Scale
+        // UV = (Radius, V_flipped) * Scale
         float R_In = FVector2D(P_In.X, P_In.Y).Size();
         float R_Out = FVector2D(P_Out.X, P_Out.Y).Size();
 
-        // 【核心修复】：所有端盖的 U 坐标都反转（-Radius），统一水平翻转纹理
-        FVector2D UV_In(-R_In * ModelGenConstants::GLOBAL_UV_SCALE, P_In.Z * ModelGenConstants::GLOBAL_UV_SCALE);
-        FVector2D UV_Out(-R_Out * ModelGenConstants::GLOBAL_UV_SCALE, P_Out.Z * ModelGenConstants::GLOBAL_UV_SCALE);
+        // 【核心修复】：反转V值 (HalfHeight - Z) -> (Top=0, Bottom=Height)
+        float V_In = HalfHeight - P_In.Z;
+        float V_Out = HalfHeight - P_Out.Z;
+
+        FVector2D UV_In(-R_In * ModelGenConstants::GLOBAL_UV_SCALE, V_In * ModelGenConstants::GLOBAL_UV_SCALE);
+        FVector2D UV_Out(-R_Out * ModelGenConstants::GLOBAL_UV_SCALE, V_Out * ModelGenConstants::GLOBAL_UV_SCALE);
 
         NewInner.Add(AddVertex(P_In, Normal, UV_In));
         NewOuter.Add(AddVertex(P_Out, Normal, UV_Out));

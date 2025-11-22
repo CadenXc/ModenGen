@@ -102,10 +102,12 @@ void FPolygonTorusBuilder::GenerateTorusSurface()
     float CurrentU = 0.0f;
     const float MajorArcStep = (FMath::DegreesToRadians(PolygonTorus.TorusAngle) / MajorSegs) * MajorRad;
 
+    const float TotalMinorCircumference = (2.0f * PI) * MinorRad;
+
     for (int32 i = 0; i < MajorSegs; ++i)
     {
         float NextU = CurrentU + MajorArcStep;
-        float CurrentV = 0.0f;
+        float CurrentV = TotalMinorCircumference;
 
         const FCachedTrig& Maj0 = MajorAngleCache[i];
         const FCachedTrig& Maj1 = MajorAngleCache[i + 1];
@@ -126,7 +128,7 @@ void FPolygonTorusBuilder::GenerateTorusSurface()
             const FCachedTrig& Min1 = MinorAngleCache[j + 1];
 
             float MinorArcStep = (2.0f * PI / MinorSegs) * MinorRad;
-            float NextV = CurrentV + MinorArcStep;
+            float NextV = CurrentV - MinorArcStep;
 
             float MinCos_Normal = 0.f, MinSin_Normal = 0.f;
             if (!bSmoothCross)
@@ -223,33 +225,46 @@ void FPolygonTorusBuilder::CreateCap(const TArray<int32>& RingIndices, bool bIsS
         FVector(SinA, -CosA, 0.0f) :
         FVector(-SinA, CosA, 0.0f);
 
+    // 核心修复：
+    // 1. LocalY 改为 -P.Z，解决上下颠倒问题。
+    // 2. 如果左右也是反的，可以尝试去掉下方 LocalX 的负号。
+    auto GetCapUV = [&](const FVector& P)
+        {
+            float R_Current = FVector2D(P.X, P.Y).Size();
+
+            // U 轴：径向展开
+            // 如果之后发现左右是反的（镜像的），请删除下面的 if (bIsStart) 块，直接用 LocalX
+            float LocalX = R_Current - PolygonTorus.MajorRadius;
+            
+            // 注意：如果原来的逻辑导致 Start 面左右镜像，可以注释掉下面这句话试试
+            if (bIsStart)
+            {
+                LocalX = -LocalX; 
+            }
+
+            // V 轴：改为负 Z 值
+            // 之前是用 P.Z (导致头脚颠倒)，现在改为 -P.Z (修正为正立)
+            float LocalY = -P.Z; 
+
+            return FVector2D(LocalX * ModelGenConstants::GLOBAL_UV_SCALE, LocalY * ModelGenConstants::GLOBAL_UV_SCALE);
+        };
+
+    // 1. 创建边缘顶点
     TArray<int32> CapVertices;
     CapVertices.Reserve(RingIndices.Num());
 
     for (int32 Idx : RingIndices)
     {
         FVector Pos = GetPosByIndex(Idx);
-
-        float R_Current = FVector2D(Pos.X, Pos.Y).Size();
-
-        // 水平距离 (Local X)
-        float LocalX = R_Current - PolygonTorus.MajorRadius;
-
-        // 【核心修复】：如果是起始面 (Start Face)，反转 LocalX 以修复纹理镜像
-        if (bIsStart)
-        {
-            LocalX = -LocalX;
-        }
-
-        float LocalY = Pos.Z - PolygonTorus.MinorRadius;
-
-        FVector2D UV(LocalX * ModelGenConstants::GLOBAL_UV_SCALE, LocalY * ModelGenConstants::GLOBAL_UV_SCALE);
-
+        FVector2D UV = GetCapUV(Pos); // 使用统一逻辑
         CapVertices.Add(AddVertex(Pos, Normal, UV));
     }
 
-    int32 CenterIdx = AddVertex(CenterPos, Normal, FVector2D(0, 0));
+    // 2. 创建中心顶点 (使用相同的 UV 逻辑)
+    FVector2D CenterUV = GetCapUV(CenterPos);
+    int32 CenterIdx = AddVertex(CenterPos, Normal, CenterUV);
 
+    // 3. 生成三角形
     const int32 NumVerts = CapVertices.Num();
     for (int32 i = 0; i < NumVerts; ++i)
     {
