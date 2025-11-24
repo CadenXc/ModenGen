@@ -114,8 +114,11 @@ void FHollowPrismBuilder::ComputeVerticalProfile(EInnerOuter InnerOuter, TArray<
     const float BaseRadius = (InnerOuter == EInnerOuter::Inner) ? HollowPrism.InnerRadius : HollowPrism.OuterRadius;
     const float Sign = (InnerOuter == EInnerOuter::Inner) ? 1.0f : -1.0f;
 
-    const float TopArcCenterZ = HollowPrism.Height * 0.5f - BevelR;
-    const float BottomArcCenterZ = -HollowPrism.Height * 0.5f + BevelR;
+    // 【核心修复】：调整Z坐标使中心点在底面（Z=0），与其他模型一致
+    // 原来：顶部在Height/2，底部在-Height/2，中心在0
+    // 现在：顶部在Height，底部在0，中心在底面
+    const float TopArcCenterZ = HollowPrism.Height - BevelR;
+    const float BottomArcCenterZ = BevelR;
     const float ArcCenterR = BaseRadius + (Sign * BevelR);
 
     float CurrentV = 0.0f;
@@ -358,7 +361,9 @@ void FHollowPrismBuilder::CreateCutPlane(float Angle, const TArray<int32>& Inner
     NewInner.Reserve(NumPoints);
     NewOuter.Reserve(NumPoints);
 
-    const float HalfHeight = HollowPrism.GetHalfHeight();
+    // 【核心修复】：调整V坐标计算，因为Z坐标已经从[-Height/2, Height/2]改为[0, Height]
+    // 现在Z在[0, Height]范围内，V = Height - Z，使得顶部（Z=Height）的V=0，底部（Z=0）的V=Height
+    const float Height = HollowPrism.Height;
 
     for (int32 i = 0; i < NumPoints; ++i)
     {
@@ -369,9 +374,9 @@ void FHollowPrismBuilder::CreateCutPlane(float Angle, const TArray<int32>& Inner
         float R_In = FVector2D(P_In.X, P_In.Y).Size();
         float R_Out = FVector2D(P_Out.X, P_Out.Y).Size();
 
-        // 【核心修复】：反转V值 (HalfHeight - Z) -> (Top=0, Bottom=Height)
-        float V_In = HalfHeight - P_In.Z;
-        float V_Out = HalfHeight - P_Out.Z;
+        // 【核心修复】：反转V值 (Height - Z) -> (Top=0, Bottom=Height)
+        float V_In = Height - P_In.Z;
+        float V_Out = Height - P_Out.Z;
 
         FVector2D UV_In(-R_In * ModelGenConstants::GLOBAL_UV_SCALE, V_In * ModelGenConstants::GLOBAL_UV_SCALE);
         FVector2D UV_Out(-R_Out * ModelGenConstants::GLOBAL_UV_SCALE, V_Out * ModelGenConstants::GLOBAL_UV_SCALE);

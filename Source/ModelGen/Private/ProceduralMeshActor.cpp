@@ -656,24 +656,25 @@ void AProceduralMeshActor::SetupBodySetupProperties(UBodySetup* BodySetup) const
   if (!BodySetup) {
     return;
   }
-
-  BodySetup->CollisionTraceFlag = CTF_UseDefault;
   
-  BodySetup->bGenerateMirroredCollision = false;
-  BodySetup->bGenerateNonMirroredCollision = true;
-  BodySetup->bDoubleSidedGeometry = true;
-  BodySetup->bSupportUVsAndFaceRemap = false;
-  BodySetup->bConsiderForBounds = true;
+  BodySetup->CollisionTraceFlag = CTF_UseComplexAsSimple;
+  
+  // 【关键修复】关闭双面碰撞，防止角色在落地瞬间被"夹"在网格内部导致卡死
+  BodySetup->bDoubleSidedGeometry = false;
+  
+  // bMeshCollideAll = true 与默认值false不同，需要保留
   BodySetup->bMeshCollideAll = true;
-  BodySetup->PhysicsType = EPhysicsType::PhysType_Default;
+  
+  // 以下属性与默认值相同，已删除：
+  // BodySetup->bSupportUVsAndFaceRemap = false;  // 默认值
+  // BodySetup->bConsiderForBounds = true;  // 默认值
+  // BodySetup->BuildScale3D = FVector(1.0f, 1.0f, 1.0f);  // 默认值
   
   if (ProceduralMeshComponent && ProceduralMeshComponent->ProcMeshBodySetup && ProceduralMeshComponent->ProcMeshBodySetup->PhysMaterial)
   {
     BodySetup->PhysMaterial = ProceduralMeshComponent->ProcMeshBodySetup->PhysMaterial;
     UE_LOG(LogTemp, Log, TEXT("已复制物理材质: %s"), *BodySetup->PhysMaterial->GetName());
   }
-  
-  BodySetup->BuildScale3D = FVector(1.0f, 1.0f, 1.0f);
   
   BodySetup->DefaultInstance.SetCollisionProfileName(TEXT("BlockAll"));
   BodySetup->DefaultInstance.SetEnableGravity(false);
@@ -1161,13 +1162,15 @@ bool AProceduralMeshActor::GenerateComplexCollision(UBodySetup* BodySetup, IPhys
       MaterialIndices.AddZeroed(NewIndices.Num());
 
       // 调用 CreateTriMesh（参考 InitStaticMeshInfo）
+      // 【关键修复】：如果法线指向内部，需要反转法线让碰撞在外部
+      // FlipNormals = true 会反转法线方向，使碰撞在外部
       const bool bError = !PhysXCookingModule->GetPhysXCooking()->CreateTriMesh(
         FName(FPlatformProperties::GetPhysicsFormat()),
         RuntimeCookFlags,
         NewVertices,
         NewIndices,
         MaterialIndices,
-        false,
+        true,  // FlipNormals = true：反转法线，让碰撞在外部
         BodySetup->TriMeshes[0]);
 
       if (!bError)
@@ -1285,13 +1288,15 @@ void AProceduralMeshActor::SetupBodySetupAndCollision(UStaticMesh* StaticMesh) c
       MaterialIndices.AddZeroed(NewIndices.Num());
 
       // 调用 CreateTriMesh（参考 InitStaticMeshInfo）
+      // 【关键修复】：如果法线指向内部，需要反转法线让碰撞在外部
+      // FlipNormals = true 会反转法线方向，使碰撞在外部
       const bool bError = !PhysXCookingModule->GetPhysXCooking()->CreateTriMesh(
         FName(FPlatformProperties::GetPhysicsFormat()),
         RuntimeCookFlags,
         NewVertices,
         NewIndices,
         MaterialIndices,
-        false,
+        true,  // FlipNormals = true：反转法线，让碰撞在外部
         NewBodySetup->TriMeshes[0]);
 
       if (!bError)
