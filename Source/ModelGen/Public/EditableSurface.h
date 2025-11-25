@@ -94,6 +94,23 @@ public:
     UFUNCTION(CallInEditor, Category = "EditableSurface|Tools", meta = (DisplayName = "添加新路点 (+100)"))
         void AddNewWaypoint();
 
+    /** 要删除的路点索引（0 开始，用于删除路点功能） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Tools",
+        meta = (ClampMin = "0", ClampMax = "20", UIMin = "0", UIMax = "20", DisplayName = "删除路点索引"))
+        int32 RemoveWaypointIndex = 0;
+
+    /** * 在编辑器中删除指定位置的路点
+     * 使用 RemoveWaypointIndex 属性作为要删除的路点索引
+     */
+    UFUNCTION(CallInEditor, Category = "EditableSurface|Tools", meta = (DisplayName = "删除路点"))
+        void RemoveWaypoint();
+
+    /** * 在编辑器中删除指定位置的路点（带参数版本，用于蓝图调用）
+     * @param Index 要删除的路点索引（0 开始）
+     */
+    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Tools", meta = (DisplayName = "删除路点(索引)"))
+        void RemoveWaypointByIndex(int32 Index);
+
     /** 曲面宽度 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "曲面宽度"))

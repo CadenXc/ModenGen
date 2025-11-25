@@ -101,6 +101,44 @@ void AEditableSurface::AddNewWaypoint()
 #endif
 }
 
+void AEditableSurface::RemoveWaypoint()
+{
+    // 使用 RemoveWaypointIndex 属性作为索引
+    RemoveWaypointByIndex(RemoveWaypointIndex);
+}
+
+void AEditableSurface::RemoveWaypointByIndex(int32 Index)
+{
+    // 检查索引是否有效
+    if (Index < 0 || Index >= Waypoints.Num())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("RemoveWaypointByIndex: 无效的索引 %d，当前路点数量: %d"), Index, Waypoints.Num());
+        return;
+    }
+
+    // 确保删除后至少还有2个路点（样条线至少需要2个点）
+    if (Waypoints.Num() <= 2)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("RemoveWaypointByIndex: 无法删除，样条线至少需要2个路点"));
+        return;
+    }
+
+    // 删除指定索引的路点
+    Waypoints.RemoveAt(Index);
+
+    // 更新计数器以保持一致
+    WaypointCount = Waypoints.Num();
+
+    // 立即刷新
+    UpdateSplineFromWaypoints();
+    GenerateMesh();
+
+#if WITH_EDITOR
+    // 通知编辑器属性已更改，以便 Undo/Redo 工作
+    Modify();
+#endif
+}
+
 void AEditableSurface::InitializeDefaultWaypoints()
 {
     if (Waypoints.Num() > 0) return;
