@@ -40,13 +40,23 @@ bool FEditableSurfaceBuilder::Generate(FModelGenMeshData& OutMeshData)
     RightSlopeGradient = Surface.RightSlopeGradient;
     LeftSlopeLength = Surface.LeftSlopeLength;
     LeftSlopeGradient = Surface.LeftSlopeGradient;
+    TextureMapping = Surface.TextureMapping;
+
+    // 【需求3】：如果厚度关闭，强制生成极薄的厚度
+    // 我们不修改成员变量 bEnableThickness，而是修改用于生成的临时变量
+    float GenerationThickness = bEnableThickness ? ThicknessValue : 0.01f;
+
+    // 使用成员变量临时存储（为了 GenerateThickness 能访问），生成完恢复
+    float OriginalThickness = ThicknessValue;
+    ThicknessValue = GenerationThickness;
 
     GenerateSurfaceMesh();
-    
-    if (bEnableThickness)
-    {
-        GenerateThickness();
-    }
+
+    // 总是生成厚度几何体（因为我们现在总是有一个有效的 ThicknessValue）
+    GenerateThickness();
+
+    // 恢复
+    ThicknessValue = OriginalThickness;
 
     if (!ValidateGeneratedData())
     {
@@ -58,6 +68,7 @@ bool FEditableSurfaceBuilder::Generate(FModelGenMeshData& OutMeshData)
     return true;
 }
 
+// ... (Calculate counts, GetPathSample, GetPathWidth unchanged) ...
 int32 FEditableSurfaceBuilder::CalculateVertexCountEstimate() const
 {
     return Surface.CalculateVertexCountEstimate();
@@ -68,286 +79,348 @@ int32 FEditableSurfaceBuilder::CalculateTriangleCountEstimate() const
     return Surface.CalculateTriangleCountEstimate();
 }
 
-FVector FEditableSurfaceBuilder::InterpolatePathPoint(float Alpha) const
+FEditableSurfaceBuilder::FPathSampleInfo FEditableSurfaceBuilder::GetPathSample(float Alpha) const
 {
-    // Alpha: 0.0 到 1.0，表示在样条线上的位置（沿距离参数化）
-    
-    if (!SplineComponent || SplineComponent->GetNumberOfSplinePoints() < 2)
-    {
-        return FVector::ZeroVector;
-    }
-    
-    // 使用样条线的距离参数化（0.0 到 1.0）
-    const float SplineLength = SplineComponent->GetSplineLength();
-    const float Distance = Alpha * SplineLength;
-    
-    // 获取样条线上该距离处的世界位置，然后转换为本地空间
-    FVector WorldPos = SplineComponent->GetLocationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
-    FVector LocalPos = SplineComponent->GetComponentTransform().InverseTransformPosition(WorldPos);
-    
-    return LocalPos;
-}
+    FPathSampleInfo Info;
+    Info.Location = FVector::ZeroVector;
+    Info.Tangent = FVector::ForwardVector;
+    Info.Normal = FVector::UpVector;
+    Info.Binormal = FVector::RightVector;
+    Info.DistanceAlongSpline = 0.0f;
 
-FVector FEditableSurfaceBuilder::GetPathTangent(float Alpha) const
-{
-    // 从样条线获取切线方向，用于确定横截面的方向
-    
-    if (!SplineComponent || SplineComponent->GetNumberOfSplinePoints() < 2)
-    {
-        return FVector::ForwardVector;
-    }
-    
-    // 使用样条线的距离参数化
-    const float SplineLength = SplineComponent->GetSplineLength();
-    const float Distance = Alpha * SplineLength;
-    
-    // 获取样条线上该距离处的切线方向（世界空间），然后转换为本地空间
-    FVector WorldTangent = SplineComponent->GetDirectionAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
-    FVector LocalTangent = SplineComponent->GetComponentTransform().InverseTransformVectorNoScale(WorldTangent);
-    
-    LocalTangent.Normalize();
-    
-    if (LocalTangent.IsNearlyZero())
-    {
-        LocalTangent = FVector::ForwardVector;
-    }
-    
-    return LocalTangent;
+    if (!SplineComponent) return Info;
+
+    float SplineLength = SplineComponent->GetSplineLength();
+    float Distance = Alpha * SplineLength;
+    Info.DistanceAlongSpline = Distance;
+
+    FTransform WorldTransform = SplineComponent->GetTransformAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
+    FTransform LocalTransform = WorldTransform.GetRelativeTransform(SplineComponent->GetComponentTransform());
+
+    Info.Location = LocalTransform.GetLocation();
+    Info.Tangent = LocalTransform.GetUnitAxis(EAxis::X);
+    Info.Binormal = LocalTransform.GetUnitAxis(EAxis::Y);
+    Info.Normal = LocalTransform.GetUnitAxis(EAxis::Z);
+
+    return Info;
 }
 
 float FEditableSurfaceBuilder::GetPathWidth(float Alpha) const
 {
-    // 当前使用统一的SurfaceWidth，后续可以根据样条线点或路点插值
-    // TODO: 可以基于样条线点的自定义数据或路点数组进行宽度插值
     return SurfaceWidth;
 }
 
-TArray<int32> FEditableSurfaceBuilder::GenerateCrossSection(const FVector& Center, const FVector& Forward, 
-                                                             const FVector& Up, float Width, int32 Segments)
+TArray<int32> FEditableSurfaceBuilder::GenerateCrossSection(const FPathSampleInfo& SampleInfo, float Width, int32 SlopeSegments, float Alpha)
 {
-    // 生成横截面顶点
-    // Center: 截面中心点
-    // Forward: 路径前进方向
-    // Up: 上方向
-    // Width: 截面宽度
-    // Segments: 分段数（考虑平滑度）
-    
-    TArray<int32> CrossSectionIndices;
-    CrossSectionIndices.Reserve(Segments + 1);
-    
-    // 计算右方向（Forward × Up）
-    FVector Right = FVector::CrossProduct(Forward, Up).GetSafeNormal();
-    
-    // 如果叉积结果为零，使用默认右方向
-    if (Right.IsNearlyZero())
+    TArray<int32> Indices;
+
+    float HalfWidth = Width * 0.5f;
+    FVector RightDir = SampleInfo.Binormal;
+    FVector UpDir = SampleInfo.Normal;
+    FVector Center = SampleInfo.Location;
+
+    FVector P_MainLeft = Center - RightDir * HalfWidth;
+    FVector P_MainRight = Center + RightDir * HalfWidth;
+
+    float V = 0.0f;
+    if (TextureMapping == ESurfaceTextureMapping::Stretch)
     {
-        // 如果Forward和Up平行，使用世界空间的右方向
-        if (FMath::Abs(Forward.Z) > 0.9f)
+        V = Alpha;
+    }
+    else
+    {
+        V = SampleInfo.DistanceAlongSpline * ModelGenConstants::GLOBAL_UV_SCALE;
+    }
+
+    // 【需求1】：如果 SideSmoothness == 0，不生成护坡
+    bool bGenerateSlope = (SideSmoothness > 0);
+
+    // --- 1. 左护坡 (Left Slope) ---
+    if (bGenerateSlope && LeftSlopeLength > KINDA_SMALL_NUMBER)
+    {
+        float SlopeH = LeftSlopeLength * LeftSlopeGradient;
+        float SlopeW = LeftSlopeLength;
+
+        // 如果 SlopeSegments > 1 使用圆弧，否则线性
+        // 既然 SideSmoothness > 0 才进来，这里至少是 1
+
+        if (SlopeSegments > 1)
         {
-            Right = FVector::RightVector;
+            // 椭圆弧逻辑 (t=1 -> t=0)
+            for (int32 i = 0; i < SlopeSegments; ++i)
+            {
+                float t = 1.0f - (float)i / SlopeSegments;
+                float Angle = t * HALF_PI;
+
+                float OffX = SlopeW * FMath::Sin(Angle);
+                float OffZ = SlopeH * (1.0f - FMath::Cos(Angle));
+
+                FVector Pos = P_MainLeft - RightDir * OffX + UpDir * OffZ;
+
+                // 左护坡法线：应该指向外侧（向右上方）
+                // 水平分量应该是 RightDir（向右），垂直分量是 UpDir（向上）
+                FVector Normal2D_Left = RightDir * (SlopeH * FMath::Sin(Angle));
+                FVector Normal2D_Up = UpDir * (SlopeW * FMath::Cos(Angle));
+                FVector SmoothNormal = (Normal2D_Left + Normal2D_Up).GetSafeNormal();
+
+                float LocalU = (-HalfWidth - OffX) * ModelGenConstants::GLOBAL_UV_SCALE;
+                FVector2D UV(LocalU, V);
+
+                Indices.Add(GetOrAddVertex(Pos, SmoothNormal, UV));
+            }
         }
         else
         {
-            Right = FVector::CrossProduct(Forward, FVector::UpVector).GetSafeNormal();
-            if (Right.IsNearlyZero())
-            {
-                Right = FVector::RightVector;
-            }
+            // 线性模式 (SlopeSegments == 1)
+            FVector P_SlopeLeftEnd = P_MainLeft - RightDir * SlopeW + UpDir * SlopeH;
+            FVector Pos = P_SlopeLeftEnd;
+
+            FVector SlopeVec = (P_MainLeft - P_SlopeLeftEnd).GetSafeNormal();
+            FVector SlopeNormal = FVector::CrossProduct(SampleInfo.Tangent, SlopeVec).GetSafeNormal();
+
+            // 确保法线向上 (UpDir 方向)
+            if ((SlopeNormal | UpDir) < 0) SlopeNormal = -SlopeNormal;
+
+            float LocalU = (-HalfWidth - LeftSlopeLength) * ModelGenConstants::GLOBAL_UV_SCALE;
+            Indices.Add(GetOrAddVertex(Pos, SlopeNormal, FVector2D(LocalU, V)));
         }
     }
-    
-    // 生成截面顶点
-    for (int32 i = 0; i <= Segments; ++i)
+
+    // 2. 主路面左边缘
+    float LocalU_Left = -HalfWidth * ModelGenConstants::GLOBAL_UV_SCALE;
+    Indices.Add(GetOrAddVertex(P_MainLeft, UpDir, FVector2D(LocalU_Left, V)));
+
+    // 3. 主路面右边缘
+    float LocalU_Right = HalfWidth * ModelGenConstants::GLOBAL_UV_SCALE;
+    Indices.Add(GetOrAddVertex(P_MainRight, UpDir, FVector2D(LocalU_Right, V)));
+
+    // --- 4. 右护坡 (Right Slope) ---
+    if (bGenerateSlope && RightSlopeLength > KINDA_SMALL_NUMBER)
     {
-        float Alpha = static_cast<float>(i) / Segments;
-        float Offset = (Alpha - 0.5f) * Width; // -Width/2 到 +Width/2
-        
-        FVector Pos = Center + Right * Offset;
-        FVector Normal = Up; // 默认法线向上
-        FVector2D UV(Alpha * ModelGenConstants::GLOBAL_UV_SCALE, 0.0f);
-        
-        CrossSectionIndices.Add(GetOrAddVertex(Pos, Normal, UV));
+        float SlopeH = RightSlopeLength * RightSlopeGradient;
+        float SlopeW = RightSlopeLength;
+        FVector P_SlopeRightEnd = P_MainRight + RightDir * SlopeW + UpDir * SlopeH;
+
+        if (SlopeSegments > 1)
+        {
+            for (int32 i = 1; i <= SlopeSegments; ++i)
+            {
+                float t = (float)i / SlopeSegments;
+                float Angle = t * HALF_PI;
+
+                float OffX = SlopeW * FMath::Sin(Angle);
+                float OffZ = SlopeH * (1.0f - FMath::Cos(Angle));
+
+                FVector Pos = P_MainRight + RightDir * OffX + UpDir * OffZ;
+
+                FVector Normal2D_Right = RightDir * (-SlopeH * FMath::Sin(Angle));
+                FVector Normal2D_Up = UpDir * (SlopeW * FMath::Cos(Angle));
+                FVector SmoothNormal = (Normal2D_Right + Normal2D_Up).GetSafeNormal();
+
+                float LocalU = (HalfWidth + OffX) * ModelGenConstants::GLOBAL_UV_SCALE;
+                FVector2D UV(LocalU, V);
+
+                Indices.Add(GetOrAddVertex(Pos, SmoothNormal, UV));
+            }
+        }
+        else
+        {
+            // 线性模式
+            FVector Pos = P_SlopeRightEnd;
+            FVector SlopeVec = (P_SlopeRightEnd - P_MainRight).GetSafeNormal();
+            FVector SlopeNormal = FVector::CrossProduct(SampleInfo.Tangent, SlopeVec).GetSafeNormal();
+            if ((SlopeNormal | UpDir) < 0) SlopeNormal = -SlopeNormal;
+
+            float LocalU = (HalfWidth + RightSlopeLength) * ModelGenConstants::GLOBAL_UV_SCALE;
+            Indices.Add(GetOrAddVertex(Pos, SlopeNormal, FVector2D(LocalU, V)));
+        }
     }
-    
-    return CrossSectionIndices;
+
+    return Indices;
 }
 
 void FEditableSurfaceBuilder::GenerateSurfaceMesh()
 {
-    // 实现曲面网格生成逻辑
-    // 1. 沿样条线采样点
-    // 2. 在每个点生成横截面
-    // 3. 连接相邻截面形成网格
-    // 4. 处理平滑度和护坡
-    
     if (!SplineComponent || SplineComponent->GetNumberOfSplinePoints() < 2)
     {
         return;
     }
-    
-    const int32 PathSegments = PathSampleCount - 1; // 使用PathSampleCount分段
-    const int32 WidthSegments = FMath::Max(2, SideSmoothness + 1);
-    
-    // 记录前面顶点起始索引
+
+    const int32 Segments = PathSampleCount - 1;
+
+    // 【需求1】：如果 SideSmoothness 为 0，SlopeSegments 设为 0 (不生成)，否则为平滑度
+    // 但为了 GenerateCrossSection 的逻辑 (它依赖 bGenerateSlope)，我们传 SideSmoothness 即可
+    // 在 GenerateCrossSection 内部判断 > 0
+
     FrontVertexStartIndex = MeshData.Vertices.Num();
-    
-    // 保存横截面数据用于厚度生成
     FrontCrossSections.Empty();
-    FrontCrossSections.Reserve(PathSegments + 1);
-    
-    // 生成所有横截面
-    for (int32 p = 0; p <= PathSegments; ++p)
+    FrontCrossSections.Reserve(Segments + 1);
+
+    for (int32 i = 0; i <= Segments; ++i)
     {
-        float Alpha = static_cast<float>(p) / PathSegments;
-        FVector Center = InterpolatePathPoint(Alpha);
-        FVector Forward = GetPathTangent(Alpha);
-        FVector Up = FVector::UpVector; // 默认向上
-        float Width = GetPathWidth(Alpha);
-        
-        TArray<int32> CrossSection = GenerateCrossSection(Center, Forward, Up, Width, WidthSegments);
-        FrontCrossSections.Add(CrossSection);
+        float Alpha = (float)i / Segments;
+        FPathSampleInfo Info = GetPathSample(Alpha);
+        float CurrentWidth = GetPathWidth(Alpha);
+
+        TArray<int32> SectionIndices = GenerateCrossSection(Info, CurrentWidth, SideSmoothness, Alpha);
+        FrontCrossSections.Add(SectionIndices);
     }
-    
-    // 连接相邻截面（确保从外部看是逆时针顺序）
-    for (int32 p = 0; p < PathSegments; ++p)
+
+    for (int32 i = 0; i < Segments; ++i)
     {
-        const TArray<int32>& SectionA = FrontCrossSections[p];
-        const TArray<int32>& SectionB = FrontCrossSections[p + 1];
-        
-        for (int32 w = 0; w < WidthSegments; ++w)
+        const TArray<int32>& RowA = FrontCrossSections[i];
+        const TArray<int32>& RowB = FrontCrossSections[i + 1];
+
+        int32 NumVerts = RowA.Num();
+        if (RowB.Num() != NumVerts) continue;
+
+        for (int32 j = 0; j < NumVerts - 1; ++j)
         {
-            int32 V0 = SectionA[w];
-            int32 V1 = SectionA[w + 1];
-            int32 V2 = SectionB[w];
-            int32 V3 = SectionB[w + 1];
-            
-            // 第一个三角形：V0 -> V2 -> V1 (逆时针，从上面看，法线向上)
-            AddTriangle(V0, V2, V1);
-            // 第二个三角形：V1 -> V2 -> V3 (逆时针，从上面看，法线向上)
-            AddTriangle(V1, V2, V3);
+            AddQuad(RowA[j], RowA[j + 1], RowB[j + 1], RowB[j]);
         }
     }
-    
-    // 记录前面顶点数量
+
     FrontVertexCount = MeshData.Vertices.Num() - FrontVertexStartIndex;
 }
 
 void FEditableSurfaceBuilder::GenerateThickness()
 {
-    // 实现厚度生成逻辑
-    // 1. 复制前面顶点并沿法线方向偏移生成背面
-    // 2. 生成侧面连接前面和背面
-    // 3. 生成两个端面（起始端和结束端）
-    
-    if (FrontCrossSections.Num() < 2)
-    {
-        return;
-    }
-    
-    const int32 NumSections = FrontCrossSections.Num();
-    const int32 WidthSegments = FrontCrossSections[0].Num() - 1;
-    
-    // 1. 生成背面顶点（沿法线方向向下偏移）
-    TArray<TArray<int32>> BackCrossSections;
-    BackCrossSections.Reserve(NumSections);
-    
-    for (int32 s = 0; s < NumSections; ++s)
-    {
-        TArray<int32> BackSection;
-        BackSection.Reserve(FrontCrossSections[s].Num());
-        
-        for (int32 v = 0; v < FrontCrossSections[s].Num(); ++v)
-        {
-            int32 FrontVertexIdx = FrontCrossSections[s][v];
-            FVector FrontPos = GetPosByIndex(FrontVertexIdx);
-            FVector FrontNormal = MeshData.Normals[FrontVertexIdx];
-            
-            // 沿法线方向向下偏移（法线向上，所以向下是 -Normal）
-            FVector BackPos = FrontPos - FrontNormal * ThicknessValue;
-            FVector BackNormal = -FrontNormal; // 背面法线相反
-            
-            // 使用相同的UV
-            FVector2D UV = MeshData.UVs[FrontVertexIdx];
-            
-            BackSection.Add(AddVertex(BackPos, BackNormal, UV));
-        }
-        
-        BackCrossSections.Add(BackSection);
-    }
-    
-    // 2. 生成侧面（连接前面和背面）
-    for (int32 s = 0; s < NumSections - 1; ++s)
-    {
-        const TArray<int32>& FrontSectionA = FrontCrossSections[s];
-        const TArray<int32>& FrontSectionB = FrontCrossSections[s + 1];
-        const TArray<int32>& BackSectionA = BackCrossSections[s];
-        const TArray<int32>& BackSectionB = BackCrossSections[s + 1];
-        
-        // 连接每个宽度分段
-        for (int32 w = 0; w < WidthSegments; ++w)
-        {
-            int32 F0 = FrontSectionA[w];
-            int32 F1 = FrontSectionA[w + 1];
-            int32 F2 = FrontSectionB[w];
-            int32 F3 = FrontSectionB[w + 1];
-            
-            int32 B0 = BackSectionA[w];
-            int32 B1 = BackSectionA[w + 1];
-            int32 B2 = BackSectionB[w];
-            int32 B3 = BackSectionB[w + 1];
-            
-            // 上边缘（前面）：F0 -> F2 -> F1, F1 -> F2 -> F3 (已在前面的GenerateSurfaceMesh中生成)
-            
-            // 下边缘（背面）：B0 -> B1 -> B2, B1 -> B3 -> B2 (逆时针，从背面看)
-            AddTriangle(B0, B1, B2);
-            AddTriangle(B1, B3, B2);
-            
-            // 左侧面：F0 -> B0 -> F2, F2 -> B0 -> B2
-            AddTriangle(F0, B0, F2);
-            AddTriangle(F2, B0, B2);
-            
-            // 右侧面：F1 -> F3 -> B1, F3 -> B3 -> B1
-            AddTriangle(F1, F3, B1);
-            AddTriangle(F3, B3, B1);
-        }
-    }
-    
-    // 3. 生成起始端面
-    if (NumSections > 0)
-    {
-        const TArray<int32>& FrontStart = FrontCrossSections[0];
-        const TArray<int32>& BackStart = BackCrossSections[0];
-        
-        for (int32 w = 0; w < WidthSegments; ++w)
-        {
-            int32 F0 = FrontStart[w];
-            int32 F1 = FrontStart[w + 1];
-            int32 B0 = BackStart[w];
-            int32 B1 = BackStart[w + 1];
-            
-            // 起始端面：F0 -> B1 -> B0, F0 -> F1 -> B1 (逆时针，从起始端看)
-            AddTriangle(F0, B1, B0);
-            AddTriangle(F0, F1, B1);
-        }
-    }
-    
-    // 4. 生成结束端面
-    if (NumSections > 0)
-    {
-        const TArray<int32>& FrontEnd = FrontCrossSections[NumSections - 1];
-        const TArray<int32>& BackEnd = BackCrossSections[NumSections - 1];
-        
-        for (int32 w = 0; w < WidthSegments; ++w)
-        {
-            int32 F0 = FrontEnd[w];
-            int32 F1 = FrontEnd[w + 1];
-            int32 B0 = BackEnd[w];
-            int32 B1 = BackEnd[w + 1];
-            
-            // 结束端面：F1 -> F0 -> B0, F1 -> B0 -> B1 (逆时针，从结束端看)
-            AddTriangle(F1, F0, B0);
-            AddTriangle(F1, B0, B1);
-        }
-    }
-}
+    if (FrontCrossSections.Num() < 2) return;
 
+    TArray<TArray<int32>> BackCrossSections;
+    int32 NumRows = FrontCrossSections.Num();
+
+    // 1. 生成背面顶点 (法线反向)
+    for (int32 i = 0; i < NumRows; ++i)
+    {
+        TArray<int32> BackRow;
+        const TArray<int32>& FrontRow = FrontCrossSections[i];
+
+        for (int32 Idx : FrontRow)
+        {
+            FVector Pos = GetPosByIndex(Idx);
+            FVector Normal = MeshData.Normals[Idx];
+            FVector2D UV = MeshData.UVs[Idx];
+
+            // 【需求2】：左护坡厚度方向反了？
+            // 我们使用 Pos - Normal * Thickness。
+            // 如果 Normal 指向上/外，那么 BackPos 指向下/内。这是正确的挤出。
+            // 如果左护坡看起来反了，可能是 Normal 计算错误。
+            // 在 GenerateCrossSection 中，我们确保了 SlopeNormal 和 UpDir 点积 > 0 (朝上)。
+            // 所以挤出应该是朝下的。
+
+            FVector BackPos = Pos - Normal * ThicknessValue;
+            FVector BackNormal = -Normal;
+
+            BackRow.Add(AddVertex(BackPos, BackNormal, UV));
+        }
+        BackCrossSections.Add(BackRow);
+    }
+
+    // 2. 缝合背面
+    for (int32 i = 0; i < NumRows - 1; ++i)
+    {
+        const TArray<int32>& RowA = BackCrossSections[i];
+        const TArray<int32>& RowB = BackCrossSections[i + 1];
+
+        int32 NumVerts = RowA.Num();
+        for (int32 j = 0; j < NumVerts - 1; ++j)
+        {
+            AddQuad(RowA[j], RowB[j], RowB[j + 1], RowA[j + 1]);
+        }
+    }
+
+    // 3. 缝合侧边
+    int32 LastIdx = FrontCrossSections[0].Num() - 1;
+    float ThicknessV = ThicknessValue * ModelGenConstants::GLOBAL_UV_SCALE;
+
+    for (int32 i = 0; i < NumRows - 1; ++i)
+    {
+        int32 FL_Idx = FrontCrossSections[i][0];
+        int32 FL_Next_Idx = FrontCrossSections[i + 1][0];
+        int32 FR_Idx = FrontCrossSections[i][LastIdx];
+        int32 FR_Next_Idx = FrontCrossSections[i + 1][LastIdx];
+
+        FVector P_FL = GetPosByIndex(FL_Idx);
+        FVector P_FL_Next = GetPosByIndex(FL_Next_Idx);
+        FVector P_FR = GetPosByIndex(FR_Idx);
+        FVector P_FR_Next = GetPosByIndex(FR_Next_Idx);
+
+        FVector P_BL = P_FL - MeshData.Normals[FL_Idx] * ThicknessValue;
+        FVector P_BL_Next = P_FL_Next - MeshData.Normals[FL_Next_Idx] * ThicknessValue;
+        FVector P_BR = P_FR - MeshData.Normals[FR_Idx] * ThicknessValue;
+        FVector P_BR_Next = P_FR_Next - MeshData.Normals[FR_Next_Idx] * ThicknessValue;
+
+        float U_Curr = MeshData.UVs[FL_Idx].Y;
+        float U_Next = MeshData.UVs[FL_Next_Idx].Y;
+
+        // Left Side
+        FVector LeftDir = (P_FL_Next - P_FL).GetSafeNormal();
+        FVector LeftNormal = FVector::CrossProduct(LeftDir, -MeshData.Normals[FL_Idx]).GetSafeNormal();
+
+        int32 V_TL = AddVertex(P_FL, LeftNormal, FVector2D(U_Curr, 0.0f));
+        int32 V_TR = AddVertex(P_FL_Next, LeftNormal, FVector2D(U_Next, 0.0f));
+        int32 V_BL = AddVertex(P_BL, LeftNormal, FVector2D(U_Curr, ThicknessV));
+        int32 V_BR = AddVertex(P_BL_Next, LeftNormal, FVector2D(U_Next, ThicknessV));
+
+        AddQuad(V_TL, V_TR, V_BR, V_BL);
+
+        // Right Side
+        FVector RightDir = (P_FR_Next - P_FR).GetSafeNormal();
+        FVector RightNormal = FVector::CrossProduct(RightDir, MeshData.Normals[FR_Idx]).GetSafeNormal();
+
+        int32 V_R_TL = AddVertex(P_FR, RightNormal, FVector2D(U_Curr, 0.0f));
+        int32 V_R_TR = AddVertex(P_FR_Next, RightNormal, FVector2D(U_Next, 0.0f));
+        int32 V_R_BL = AddVertex(P_BR, RightNormal, FVector2D(U_Curr, ThicknessV));
+        int32 V_R_BR = AddVertex(P_BR_Next, RightNormal, FVector2D(U_Next, ThicknessV));
+
+        AddQuad(V_R_TL, V_R_BL, V_R_BR, V_R_TR);
+    }
+
+    // 4. 缝合端盖
+    auto StitchCap = [&](const TArray<int32>& FRow, const TArray<int32>& BRow, bool bIsStart)
+    {
+        // 确保有足够的点计算切线
+        if (FRow.Num() < 2 || FrontCrossSections.Num() < 2) return;
+
+        // 计算法线：Forward (End) 或 Backward (Start)
+        FVector P0 = GetPosByIndex(FRow[0]);
+        // 使用相邻截面计算切线
+        int32 AdjSectionIdx = bIsStart ? 1 : FrontCrossSections.Num() - 2;
+        FVector P_Adj = GetPosByIndex(FrontCrossSections[AdjSectionIdx][0]);
+        FVector Normal = (bIsStart) ? (P0 - P_Adj).GetSafeNormal() : (P0 - P_Adj).GetSafeNormal();
+        // Wait, if bIsStart, P0 is at 0, P_Adj is at 1. P0 - P_Adj points Back. Correct.
+        // If End, P0 is at Last, P_Adj is Last-1. P0 - P_Adj points Forward. Correct.
+
+        for (int32 j = 0; j < FRow.Num() - 1; ++j)
+        {
+            int32 Idx0 = FRow[j];
+            int32 Idx1 = FRow[j + 1];
+
+            FVector P_F0 = GetPosByIndex(Idx0);
+            FVector P_F1 = GetPosByIndex(Idx1);
+            FVector P_B0 = P_F0 - MeshData.Normals[Idx0] * ThicknessValue;
+            FVector P_B1 = P_F1 - MeshData.Normals[Idx1] * ThicknessValue;
+
+            float U0 = MeshData.UVs[Idx0].X;
+            float U1 = MeshData.UVs[Idx1].X;
+
+            int32 V_TL = AddVertex(P_F0, Normal, FVector2D(U0, 0.0f));
+            int32 V_TR = AddVertex(P_F1, Normal, FVector2D(U1, 0.0f));
+            int32 V_BL = AddVertex(P_B0, Normal, FVector2D(U0, ThicknessV));
+            int32 V_BR = AddVertex(P_B1, Normal, FVector2D(U1, ThicknessV));
+
+            if (bIsStart)
+            {
+                AddQuad(V_TL, V_BL, V_BR, V_TR);
+            }
+            else
+            {
+                AddQuad(V_TL, V_TR, V_BR, V_BL);
+            }
+        }
+    };
+
+    StitchCap(FrontCrossSections[0], BackCrossSections[0], true);
+    StitchCap(FrontCrossSections.Last(), BackCrossSections.Last(), false);
+}

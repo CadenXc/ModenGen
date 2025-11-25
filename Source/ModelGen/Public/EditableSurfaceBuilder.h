@@ -36,29 +36,31 @@ private:
     float RightSlopeGradient;
     float LeftSlopeLength;
     float LeftSlopeGradient;
+    ESurfaceTextureMapping TextureMapping;
 
     // 用于厚度生成的横截面数据
     TArray<TArray<int32>> FrontCrossSections;
     int32 FrontVertexStartIndex = 0;
     int32 FrontVertexCount = 0;
 
+    // Helper struct for path sampling
+    struct FPathSampleInfo
+    {
+        FVector Location;
+        FVector Tangent; // Forward
+        FVector Normal;  // Up
+        FVector Binormal; // Right
+        float DistanceAlongSpline;
+    };
+
     // Internal helpers
     void GenerateSurfaceMesh();
-    
-    // 使用Catmull-Rom样条插值计算路径点
-    FVector InterpolatePathPoint(float Alpha) const;
-    
-    // 计算路径的切线方向
-    FVector GetPathTangent(float Alpha) const;
-    
-    // 计算路径点的宽度
+
+    FPathSampleInfo GetPathSample(float Alpha) const;
+
     float GetPathWidth(float Alpha) const;
-    
-    // 生成横截面顶点
-    TArray<int32> GenerateCrossSection(const FVector& Center, const FVector& Forward, 
-                                       const FVector& Up, float Width, int32 Segments);
-    
-    // 生成厚度（如果启用）
+
+    TArray<int32> GenerateCrossSection(const FPathSampleInfo& SampleInfo, float Width, int32 SlopeSegments, float Alpha = 0.0f);
+
     void GenerateThickness();
 };
-
