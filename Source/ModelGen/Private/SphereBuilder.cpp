@@ -262,7 +262,7 @@ void FSphereBuilder::GenerateVerticalCap(float Theta, bool bIsStart)
         {
             // Top: Axis_Curr and Prof_Curr are the same vertex (Pole)
             // Use triangle: Axis_Curr, Prof_Next, Axis_Next
-            if (bIsStart)
+        if (bIsStart)
                 AddTriangle(V_Axis_Curr, V_Prof_Next, V_Axis_Next);
             else
                 AddTriangle(V_Axis_Curr, V_Axis_Next, V_Prof_Next);
@@ -282,7 +282,7 @@ void FSphereBuilder::GenerateVerticalCap(float Theta, bool bIsStart)
             if (bIsStart)
                 AddQuad(V_Axis_Curr, V_Prof_Curr, V_Prof_Next, V_Axis_Next);
             else
-                AddQuad(V_Axis_Curr, V_Axis_Next, V_Prof_Next, V_Prof_Curr);
+            AddQuad(V_Axis_Curr, V_Axis_Next, V_Prof_Next, V_Prof_Curr);
         }
     }
 }

@@ -300,6 +300,11 @@ void AProceduralMeshActor::UpdateStaticMeshComponent()
         // 设置StaticMesh到组件
         StaticMeshComponent->SetStaticMesh(ConvertedMesh);
 
+        // 【纹理流送修复 - 方案一】设置流送距离乘数。默认是 1.0，设为 10.0 或更高会让引擎加载更高清的贴图。
+        // UE 4.26 API: 使用 StreamingDistanceMultiplier 属性
+        StaticMeshComponent->StreamingDistanceMultiplier = 10.0f;
+        UE_LOG(LogTemp, Log, TEXT("已设置流送距离乘数: 10.0 (强制加载高清贴图)"));
+
         // ===== 验证组件继承的碰撞 =====
         if (ConvertedMesh->BodySetup)
         {
@@ -460,10 +465,10 @@ UStaticMesh* AProceduralMeshActor::CreateStaticMeshObject() const
   }
 
   StaticMesh->SetFlags(RF_Public | RF_Transient);
-  StaticMesh->NeverStream = false;
+  StaticMesh->NeverStream = true;
   StaticMesh->LightMapResolution = 64;
-  StaticMesh->LightMapCoordinateIndex = 1;
-  StaticMesh->LightmapUVDensity = 0.0f;
+  StaticMesh->LightMapCoordinateIndex = 0;  // 与参考模型一致，使用 UV0（纹理UV）来做光照烘焙
+  StaticMesh->LightmapUVDensity = 512.0f;  // 给一个合理的非零值，0.0f 可能干扰流送系统的启发式计算
   StaticMesh->LODForCollision = 0;
   StaticMesh->bAllowCPUAccess = true;
   StaticMesh->bIsBuiltAtRuntime = true;
@@ -479,7 +484,10 @@ UStaticMesh* AProceduralMeshActor::CreateStaticMeshObject() const
     UMaterialInterface* SectionMaterial = ProceduralMeshComponent->GetMaterial(SectionIdx);
     FName MaterialSlotName = FName(*FString::Printf(TEXT("MaterialSlot_%d"), SectionIdx));
     FStaticMaterial NewStaticMaterial(SectionMaterial, MaterialSlotName);
-    NewStaticMaterial.UVChannelData = FMeshUVChannelInfo(1.f);
+    // 【修改点 1】将默认密度从 1.f 改为 1024.f (或更高)
+    // 告诉引擎：每1个世界单位对应大量的纹理像素，迫使它加载高Mips
+    // 这能确保在 UpdateUVChannelData 计算失败或未完全覆盖时，有一个足够大的保底值
+    NewStaticMaterial.UVChannelData = FMeshUVChannelInfo(1024.f);
     StaticMesh->StaticMaterials.Add(NewStaticMaterial);
   }
 
@@ -574,6 +582,107 @@ bool AProceduralMeshActor::BuildMeshDescriptionFromPMC(FMeshDescription& OutMesh
   return OutMeshDescription.Vertices().Num() > 0;
 }
 
+// 辅助函数：手动计算切线（用于解决移动端引擎计算失败的问题）
+void AProceduralMeshActor::GenerateTangentsManually(FMeshDescription& MeshDescription) const
+{
+    FStaticMeshAttributes Attributes(MeshDescription);
+    
+    // 获取各种数据访问器
+    TVertexAttributesRef<FVector> VertexPositions = Attributes.GetVertexPositions();
+    TVertexInstanceAttributesRef<FVector> VertexInstanceNormals = Attributes.GetVertexInstanceNormals();
+    TVertexInstanceAttributesRef<FVector> VertexInstanceTangents = Attributes.GetVertexInstanceTangents();
+    TVertexInstanceAttributesRef<float> VertexInstanceBinormalSigns = Attributes.GetVertexInstanceBinormalSigns();
+    TVertexInstanceAttributesRef<FVector2D> VertexInstanceUVs = Attributes.GetVertexInstanceUVs();
+    
+    // 遍历所有多边形（Polygon）
+    for (const FPolygonID PolygonID : MeshDescription.Polygons().GetElementIDs())
+    {
+        // 【修正点】UE4.26 API: 先获取多边形包含的三角形ID列表
+        const TArray<FTriangleID>& TriangleIDs = MeshDescription.GetPolygonTriangleIDs(PolygonID);
+        
+        for (const FTriangleID TriangleID : TriangleIDs)
+        {
+            // 【修正点】UE4.26 API: 通过三角形ID获取3个顶点实例ID
+            TArrayView<const FVertexInstanceID> VertexInstances = MeshDescription.GetTriangleVertexInstances(TriangleID);
+            
+            // 确保是一个有效的三角形（必须有3个顶点）
+            if (VertexInstances.Num() != 3)
+            {
+                continue;
+            }
+
+            const FVertexInstanceID Instance0 = VertexInstances[0];
+            const FVertexInstanceID Instance1 = VertexInstances[1];
+            const FVertexInstanceID Instance2 = VertexInstances[2];
+            
+            // 获取顶点位置
+            const FVector P0 = VertexPositions[MeshDescription.GetVertexInstanceVertex(Instance0)];
+            const FVector P1 = VertexPositions[MeshDescription.GetVertexInstanceVertex(Instance1)];
+            const FVector P2 = VertexPositions[MeshDescription.GetVertexInstanceVertex(Instance2)];
+            
+            // 获取 UV (使用第0层 UV)
+            const FVector2D UV0 = VertexInstanceUVs.Get(Instance0, 0);
+            const FVector2D UV1 = VertexInstanceUVs.Get(Instance1, 0);
+            const FVector2D UV2 = VertexInstanceUVs.Get(Instance2, 0);
+            
+            // 计算边向量 (Edge Vectors)
+            const FVector Edge1 = P1 - P0;
+            const FVector Edge2 = P2 - P0;
+            
+            // 计算 UV 差值 (Delta UV)
+            const FVector2D DeltaUV1 = UV1 - UV0;
+            const FVector2D DeltaUV2 = UV2 - UV0;
+            
+            // 标准切线计算公式
+            // 解决方程：Edge = Tangent * DeltaU + Bitangent * DeltaV
+            float Det = (DeltaUV1.X * DeltaUV2.Y - DeltaUV1.Y * DeltaUV2.X);
+            
+            // 防止除以0（UV重叠或退化三角形）
+            if (FMath::IsNearlyZero(Det))
+            {
+                Det = 1.0f; 
+            }
+            
+            const float InvDet = 1.0f / Det;
+            
+            FVector FaceTangent;
+            FaceTangent.X = InvDet * (DeltaUV2.Y * Edge1.X - DeltaUV1.Y * Edge2.X);
+            FaceTangent.Y = InvDet * (DeltaUV2.Y * Edge1.Y - DeltaUV1.Y * Edge2.Y);
+            FaceTangent.Z = InvDet * (DeltaUV2.Y * Edge1.Z - DeltaUV1.Y * Edge2.Z);
+            FaceTangent.Normalize();
+            
+            // 将面切线应用到三个顶点上 (Gram-Schmidt 正交化)
+            const FVertexInstanceID CurrentInstances[3] = { Instance0, Instance1, Instance2 };
+            
+            for (int i = 0; i < 3; i++)
+            {
+                FVertexInstanceID CurrentID = CurrentInstances[i];
+                const FVector Normal = VertexInstanceNormals[CurrentID];
+                
+                // Gram-Schmidt 正交化：Tangent = FaceTangent - Normal * (Normal · FaceTangent)
+                FVector OrthoTangent = (FaceTangent - Normal * FVector::DotProduct(Normal, FaceTangent));
+                OrthoTangent.Normalize();
+                
+                // 如果结果是0（比如法线和切线完全平行），给个默认值防止渲染错误
+                if (OrthoTangent.IsZero())
+                {
+                    FVector TangentX = FVector::CrossProduct(Normal, FVector::UpVector);
+                    if (TangentX.IsZero()) TangentX = FVector::CrossProduct(Normal, FVector::RightVector);
+                    OrthoTangent = TangentX.GetSafeNormal();
+                }
+                
+                // 写入数据
+                VertexInstanceTangents[CurrentID] = OrthoTangent;
+                
+                // 计算副法线符号
+                FVector Bitangent = FVector::CrossProduct(Normal, OrthoTangent);
+                float Sign = (FVector::DotProduct(FVector::CrossProduct(Normal, FaceTangent), Bitangent) < 0.0f) ? -1.0f : 1.0f;
+                VertexInstanceBinormalSigns[CurrentID] = Sign;
+            }
+        }
+    }
+}
+
 // 辅助函数：从 ProceduralMeshComponent 构建 StaticMesh 几何体
 bool AProceduralMeshActor::BuildStaticMeshGeometryFromProceduralMesh(UStaticMesh* StaticMesh) const
 {
@@ -581,41 +690,35 @@ bool AProceduralMeshActor::BuildStaticMeshGeometryFromProceduralMesh(UStaticMesh
     return false;
   }
 
-  // 3. 构建 MeshDescription
+  // 1. 准备 MeshDescription（先创建空的）
   FMeshDescription MeshDescription;
+  
+  // 2. 【关键】先注册属性！确保容器准备好了
+  FStaticMeshAttributes Attributes(MeshDescription);
+  Attributes.Register(); // 注册所有标准属性（包括法线、切线、UV、颜色）
+
+  // 3. 填充数据（顶点、三角面、法线、UV）
   if (!BuildMeshDescriptionFromPMC(MeshDescription, StaticMesh)) {
     return false;
   }
 
-  // 4. 注册多边形法线和切线属性（ComputeTangentsAndNormals 需要这些属性）
-  FStaticMeshAttributes Attributes(MeshDescription);
-  Attributes.RegisterPolygonNormalAndTangentAttributes();
+  // 4. 【关键修改】使用手动计算代替引擎内置计算
+  // 删除原来的 FStaticMeshOperations::ComputeTangentsAndNormals
+  // 使用我们刚写的函数：
+  GenerateTangentsManually(MeshDescription);
 
-  // 5. 手动清除切线数据（确保切线会被重新计算）
-  // 因为 ClearNormalsAndTangentsData 在只清除切线时不会执行操作，所以需要手动清除
-  TVertexInstanceAttributesRef<FVector> VertexInstanceTangents = Attributes.GetVertexInstanceTangents();
-  TVertexInstanceAttributesRef<float> VertexBinormalSigns = Attributes.GetVertexInstanceBinormalSigns();
-  for (const FVertexInstanceID VertexInstanceID : MeshDescription.VertexInstances().GetElementIDs())
-  {
-      VertexInstanceTangents[VertexInstanceID] = FVector::ZeroVector;
-      VertexBinormalSigns[VertexInstanceID] = 0.0f;
+
+  // 5. (可选) 调试日志，确保不是 0
+  if (MeshDescription.VertexInstances().Num() > 0) {
+      FVector T = Attributes.GetVertexInstanceTangents()[FVertexInstanceID(0)];
+      UE_LOG(LogTemp, Log, TEXT("手动切线计算结果 Sample: %s"), *T.ToString());
   }
 
-  // 6. 强制计算切线和副法线（基于已有的法线和 UV）
-  // 使用 MikkTSpace 算法，确保切线与 UV 展开方向匹配
-  // 这样既保持了硬边法线，又确保了切线的正确性
-  FStaticMeshOperations::ComputeTangentsAndNormals(
-      MeshDescription, 
-      EComputeNTBsFlags::Tangents | EComputeNTBsFlags::UseMikkTSpace  // 使用 MikkTSpace 算法计算切线
-  );
-
-
-
-  // 7. 构建 StaticMesh
+  // 6. 提交构建 (BuildFromMeshDescriptions)
   TArray<const FMeshDescription*> MeshDescPtrs;
   MeshDescPtrs.Emplace(&MeshDescription);
-  UStaticMesh::FBuildMeshDescriptionsParams BuildParams;
   
+  UStaticMesh::FBuildMeshDescriptionsParams BuildParams;
   BuildParams.bUseHashAsGuid = true;
   BuildParams.bMarkPackageDirty = true;
   BuildParams.bBuildSimpleCollision = false;  // 设置为 false，避免生成不必要的 Box 碰撞，直接手动生成更精确的碰撞
@@ -631,22 +734,52 @@ bool AProceduralMeshActor::InitializeStaticMeshRenderData(UStaticMesh* StaticMes
 {
   if (!StaticMesh || !StaticMesh->RenderData || StaticMesh->RenderData->LODResources.Num() < 1)
   {
-    UE_LOG(LogTemp, Warning, TEXT("BuildFromMeshDescriptions后RenderData无效或没有LOD资源"));
     return false;
   }
 
-  FStaticMeshLODResources& LODResources = StaticMesh->RenderData->LODResources[0];
-  StaticMesh->RenderData->LODResources[0].bHasColorVertexData = true;
-  StaticMesh->InitResources();
-  
-  // 计算扩展边界（参考 InitStaticMeshInfo）
+  // 1. 基础设置
+  StaticMesh->NeverStream = true; 
+  StaticMesh->bIgnoreStreamingMipBias = true;
+  StaticMesh->LightMapCoordinateIndex = 0;
+
+  // 2. 预先修正 ScreenSize (Runtime 下 InitResources 会读取它)
+  StaticMesh->RenderData->ScreenSize[0].Default = 0.0f;
+  StaticMesh->RenderData->ScreenSize[1].Default = 0.0f;
+
+  // 3. 预先修正包围盒 (Runtime 下 InitResources 会读取它)
   StaticMesh->CalculateExtendedBounds();
-  
-  // 设置 ScreenSize（参考 InitStaticMeshInfo）
-  StaticMesh->RenderData->ScreenSize[0] = 1.0f;
-  StaticMesh->RenderData->ScreenSize[1] = 0.2f;
-  StaticMesh->RenderData->ScreenSize[2] = 0.1f;
-  
+  if (StaticMesh->ExtendedBounds.SphereRadius < 10.0f)
+  {
+    StaticMesh->ExtendedBounds = FBoxSphereBounds(FVector::ZeroVector, FVector(500.0f), 1000.0f);
+    if (StaticMesh->RenderData) StaticMesh->RenderData->Bounds = StaticMesh->ExtendedBounds;
+  }
+
+  // 4. 【核心修复】在 InitResources 之前注入 UV 密度
+  // 这一步至关重要，必须在 LinkStreaming 发生前完成
+  const float ForcedUVDensity = 1024.0f;
+  if (StaticMesh->StaticMaterials.Num() > 0)
+  {
+    for (FStaticMaterial& Mat : StaticMesh->StaticMaterials)
+    {
+      // 覆盖所有通道，确保万无一失
+      Mat.UVChannelData.LocalUVDensities[0] = ForcedUVDensity;
+      Mat.UVChannelData.LocalUVDensities[1] = ForcedUVDensity;
+      Mat.UVChannelData.LocalUVDensities[2] = ForcedUVDensity;
+      Mat.UVChannelData.LocalUVDensities[3] = ForcedUVDensity;
+    }
+  }
+
+  // 标记颜色数据
+  FStaticMeshLODResources& LODResources = StaticMesh->RenderData->LODResources[0];
+  LODResources.bHasColorVertexData = true;
+
+  // 5. 启动资源初始化 (此时它会读取我们在上面准备好的正确数据)
+  StaticMesh->InitResources();
+
+  // 6. 双重保险
+  StaticMesh->bForceMiplevelsToBeResident = true;
+  StaticMesh->SetForceMipLevelsToBeResident(30.0f, 0);
+
   return true;
 }
 

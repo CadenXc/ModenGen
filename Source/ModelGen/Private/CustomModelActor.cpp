@@ -88,7 +88,11 @@ void ACustomModelActor::GenerateMesh()
             if (GeneratedStaticMesh && StaticMeshComponent)
             {
                 StaticMeshComponent->SetStaticMesh(GeneratedStaticMesh);
-                UE_LOG(LogTemp, Log, TEXT("StaticMesh 设置到组件成功"));
+                
+                // 【纹理流送修复 - 方案一】设置流送距离乘数。默认是 1.0，设为 10.0 或更高会让引擎加载更高清的贴图。
+                // UE 4.26 API: 使用 StreamingDistanceMultiplier 属性
+                StaticMeshComponent->StreamingDistanceMultiplier = 10.0f;
+                UE_LOG(LogTemp, Log, TEXT("StaticMesh 设置到组件成功，已设置流送距离乘数: 10.0 (强制加载高清贴图)"));
                 
                 // 设置材质
                 if (StaticMeshMaterial)

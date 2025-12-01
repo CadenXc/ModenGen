@@ -42,20 +42,14 @@ struct FSurfaceWaypoint
 
         /** 路点位置（相对于Actor） */
         UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Waypoint", meta = (MakeEditWidget = true))
-        FVector Position = FVector::ZeroVector;
-
-    /** 该点的曲面宽度 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Waypoint")
-        float Width = 5.0f;
+    FVector Position = FVector::ZeroVector;
 
     FSurfaceWaypoint()
         : Position(FVector::ZeroVector)
-        , Width(5.0f)
     {}
 
-    FSurfaceWaypoint(const FVector& InPosition, float InWidth)
+    FSurfaceWaypoint(const FVector& InPosition)
         : Position(InPosition)
-        , Width(InWidth)
     {}
 };
 
@@ -69,29 +63,35 @@ public:
 
     //~ Begin AActor Interface
     virtual void OnConstruction(const FTransform& Transform) override;
-#if WITH_EDITOR
-    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-#endif
     //~ End AActor Interface
 
     //~ Begin Geometry Parameters
     /** 路点数组（控制点） */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Waypoints",
         meta = (DisplayName = "路点", MakeEditWidget = true))
-        TArray<FSurfaceWaypoint> Waypoints;
+    TArray<FSurfaceWaypoint> Waypoints;
 
-    /** 添加路点数量 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
-        meta = (ClampMin = "2", ClampMax = "20", UIMin = "2", UIMax = "20", DisplayName = "路点计数(重置用)"))
-        int32 WaypointCount = 3;
 
-    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
-        void SetWaypointCount(int32 NewWaypointCount);
-
-    /** * 在编辑器中添加一个新的路点
-     * 位置为最后一个路点的沿切线方向延伸 100 单位
+    /** 获取指定索引的路点位置
+     * @param Index 路点索引（0 开始）
+     * @return 路点位置（相对于Actor），如果索引无效则返回零向量
      */
-    UFUNCTION(CallInEditor, Category = "EditableSurface|Tools", meta = (DisplayName = "添加新路点 (+100)"))
+    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "EditableSurface|Waypoints")
+    FVector GetWaypointPosition(int32 Index) const;
+
+    /** 设置指定索引的路点位置
+     * @param Index 路点索引（0 开始）
+     * @param NewPosition 新的路点位置（相对于Actor）
+     * @return 是否设置成功（索引有效时返回true）
+     */
+    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Waypoints")
+    bool SetWaypointPosition(int32 Index, const FVector& NewPosition);
+
+    /** * 添加一个新的路点
+     * 位置为最后一个路点的沿切线方向延伸 100 单位
+     * 运行时可通过蓝图或C++调用
+     */
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "EditableSurface|Tools", meta = (DisplayName = "添加新路点 (+100)"))
         void AddNewWaypoint();
 
     /** 要删除的路点索引（0 开始，用于删除路点功能） */
@@ -99,10 +99,11 @@ public:
         meta = (ClampMin = "0", ClampMax = "20", UIMin = "0", UIMax = "20", DisplayName = "删除路点索引"))
         int32 RemoveWaypointIndex = 0;
 
-    /** * 在编辑器中删除指定位置的路点
+    /** * 删除指定位置的路点
      * 使用 RemoveWaypointIndex 属性作为要删除的路点索引
+     * 运行时可通过蓝图或C++调用
      */
-    UFUNCTION(CallInEditor, Category = "EditableSurface|Tools", meta = (DisplayName = "删除路点"))
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "EditableSurface|Tools", meta = (DisplayName = "删除路点"))
         void RemoveWaypoint();
 
     /** * 在编辑器中删除指定位置的路点（带参数版本，用于蓝图调用）
@@ -111,64 +112,70 @@ public:
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Tools", meta = (DisplayName = "删除路点(索引)"))
         void RemoveWaypointByIndex(int32 Index);
 
+    /** * 打印所有路点信息到日志
+     * 运行时可通过蓝图或C++调用
+     */
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "EditableSurface|Tools", meta = (DisplayName = "打印路点信息"))
+        void PrintWaypointInfo();
+
     /** 曲面宽度 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "曲面宽度"))
-        float SurfaceWidth = 100.0f;
+    float SurfaceWidth = 100.0f;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
-        void SetSurfaceWidth(float NewSurfaceWidth);
+    void SetSurfaceWidth(float NewSurfaceWidth);
 
     /** 曲面厚度开关 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Thickness",
         meta = (DisplayName = "曲面厚度"))
-        bool bEnableThickness = true;
+    bool bEnableThickness = true;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
-        void SetEnableThickness(bool bNewEnableThickness);
+    void SetEnableThickness(bool bNewEnableThickness);
 
     /** 曲面厚度值 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Thickness",
-        meta = (ClampMin = "0.01", ClampMax = "100", UIMin = "0.01", UIMax = "100",
-            DisplayName = "曲面厚度值", EditCondition = "bEnableThickness"))
-        float ThicknessValue = 1.0f;
+        meta = (ClampMin = "0.01", ClampMax = "100", UIMin = "0.01", UIMax = "100", 
+        DisplayName = "曲面厚度值", EditCondition = "bEnableThickness"))
+    float ThicknessValue = 1.0f;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
-        void SetThicknessValue(float NewThicknessValue);
+    void SetThicknessValue(float NewThicknessValue);
 
     /** 曲面两侧平滑度 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Smoothing",
         meta = (ClampMin = "0", ClampMax = "5", UIMin = "0", UIMax = "5", DisplayName = "曲面两侧平滑度"))
-        int32 SideSmoothness = 0;
+    int32 SideSmoothness = 1;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
-        void SetSideSmoothness(int32 NewSideSmoothness);
+    void SetSideSmoothness(int32 NewSideSmoothness);
 
     /** 护坡参数 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Slope",
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "右侧护坡长度", EditCondition = "SideSmoothness >= 1"))
-        float RightSlopeLength = 100.0f;
+    float RightSlopeLength = 30.0f;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
         void SetRightSlopeLength(float NewValue);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Slope",
         meta = (ClampMin = "-9.0", ClampMax = "9.0", UIMin = "-9.0", UIMax = "9.0", DisplayName = "右侧护坡斜率", EditCondition = "SideSmoothness >= 1"))
-        float RightSlopeGradient = 1.0f;
+    float RightSlopeGradient = 1.0f;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
         void SetRightSlopeGradient(float NewValue);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Slope",
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "左侧护坡长度", EditCondition = "SideSmoothness >= 1"))
-        float LeftSlopeLength = 100.0f;
+    float LeftSlopeLength = 30.0f;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
         void SetLeftSlopeLength(float NewValue);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Slope",
         meta = (ClampMin = "-9.0", ClampMax = "9.0", UIMin = "-9.0", UIMax = "9.0", DisplayName = "左侧护坡斜率", EditCondition = "SideSmoothness >= 1"))
-        float LeftSlopeGradient = 1.0f;
+    float LeftSlopeGradient = 1.0f;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
         void SetLeftSlopeGradient(float NewValue);
@@ -176,15 +183,23 @@ public:
     /** 样条线组件 */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "EditableSurface|Spline",
         meta = (DisplayName = "样条线组件"))
-        USplineComponent* SplineComponent;
+    USplineComponent* SplineComponent;
 
     /** 路径采样分段数 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
         meta = (ClampMin = "4", ClampMax = "200", UIMin = "4", UIMax = "200", DisplayName = "路径采样分段数"))
-        int32 PathSampleCount = 20;
+    int32 PathSampleCount = 20;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
-        void SetPathSampleCount(int32 NewPathSampleCount);
+    void SetPathSampleCount(int32 NewPathSampleCount);
+
+    /** 采样间距（单位：厘米）
+     * 用于动态计算采样分段数，基于样条线长度自动调整分段密度
+     * 较小的值会产生更密集的采样点，改善急转弯处的几何质量
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
+        meta = (ClampMin = "10.0", ClampMax = "1000.0", UIMin = "10.0", UIMax = "1000.0", DisplayName = "采样间距"))
+    float SampleSpacing = 50.0f;
 
     /** 曲线类型 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
@@ -204,21 +219,17 @@ public:
 
     /** 更新函数 */
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
-        void UpdateSplineFromWaypoints();
-
-    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
-        void UpdateWaypointsFromSpline();
+    void UpdateSplineFromWaypoints();
 
     virtual void GenerateMesh() override;
 
 public:
     virtual bool IsValid() const override;
-
+    
     int32 CalculateVertexCountEstimate() const;
     int32 CalculateTriangleCountEstimate() const;
 
 private:
     bool TryGenerateMeshInternal();
     void InitializeDefaultWaypoints();
-    void InitializeSplineComponent();
 };
