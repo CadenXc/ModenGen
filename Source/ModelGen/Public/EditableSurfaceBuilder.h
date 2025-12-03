@@ -60,7 +60,20 @@ private:
 
     float GetPathWidth(float Alpha) const;
 
-    TArray<int32> GenerateCrossSection(const FPathSampleInfo& SampleInfo, float Width, int32 SlopeSegments, float Alpha = 0.0f);
+    TArray<int32> GenerateCrossSection(
+        const FPathSampleInfo& SampleInfo, 
+        float RoadHalfWidth,      // 路面半宽（原始宽度的一半，不要在外面乘Scale）
+        int32 SlopeSegments, 
+        float Alpha = 0.0f,
+        const FVector& MiterDir = FVector::ZeroVector,  // 预计算好的斜切方向
+        float MiterScale = 1.0f                        // 预计算好的缩放 (1 / dot)
+    );
 
     void GenerateThickness();
+
+    // 自适应采样：根据切线夹角误差生成采样点
+    void GetAdaptiveSamplePoints(TArray<float>& OutAlphas, float AngleThresholdDeg = 5.0f) const;
+
+    // 斜切角处理：计算角平分线并调整顶点位置
+    FVector CalculateMiterDirection(const FPathSampleInfo& PrevInfo, const FPathSampleInfo& CurrInfo, const FPathSampleInfo& NextInfo, bool bIsLeft) const;
 };

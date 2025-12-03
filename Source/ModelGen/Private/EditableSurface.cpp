@@ -3,307 +3,192 @@
 #include "EditableSurface.h"
 #include "EditableSurfaceBuilder.h"
 #include "ModelGenMeshData.h"
-#include "Components/SplineComponent.h"
 
 AEditableSurface::AEditableSurface()
 {
     PrimaryActorTick.bCanEverTick = false;
 
+    // 创建样条线组件
     SplineComponent = CreateDefaultSubobject<USplineComponent>(TEXT("SplineComponent"));
-    SplineComponent->SetupAttachment(RootComponent);
-    SplineComponent->SetMobility(EComponentMobility::Movable);
+    if (SplineComponent)
+    {
+        SplineComponent->SetupAttachment(RootComponent);
+        SplineComponent->SetMobility(EComponentMobility::Static);
+    }
 
+    // 初始化默认路点
     InitializeDefaultWaypoints();
 }
 
 void AEditableSurface::OnConstruction(const FTransform& Transform)
 {
-    // 单向数据流：Waypoints -> Spline
-    if (Waypoints.Num() >= 2)
-    {
-        UpdateSplineFromWaypoints();
-    }
-
+    // 调用父类的 OnConstruction (父类会初始化 PMC 等)
     Super::OnConstruction(Transform);
-}
 
-void AEditableSurface::AddNewWaypoint()
-{
-    FVector NewPosition = FVector::ZeroVector;
-    float NewWidth = SurfaceWidth;
-
-    if (Waypoints.Num() > 0)
-    {
-        // 获取最后一个点
-        const FSurfaceWaypoint& LastWP = Waypoints.Last();
-        NewWidth = LastWP.Width;
-
-        // 计算方向
-        FVector Direction = FVector::ForwardVector; // 默认 X 轴
-
-        if (Waypoints.Num() >= 2)
-        {
-            // 如果有两个以上点，沿最后一段的方向延伸
-            const FSurfaceWaypoint& PrevWP = Waypoints[Waypoints.Num() - 2];
-            Direction = (LastWP.Position - PrevWP.Position).GetSafeNormal();
-
-            // 确保 Z 轴水平 (如果需要 "同一水平面")
-            // 如果您希望完全沿切线（可能向上/向下），注释掉下面这行
-            // Direction.Z = 0.0f; 
-            // Direction.Normalize();
-        }
-        else if (SplineComponent && SplineComponent->GetNumberOfSplinePoints() > 0)
-        {
-            // 尝试从 Spline 获取末端切线
-            Direction = SplineComponent->GetTangentAtSplinePoint(SplineComponent->GetNumberOfSplinePoints() - 1, ESplineCoordinateSpace::Local).GetSafeNormal();
-        }
-
-        // 新位置 = 旧位置 + 方向 * 100
-        NewPosition = LastWP.Position + Direction * 100.0f;
-
-        // 强制 Z 值与最后一个点相同（"同一水平面"）
-        NewPosition.Z = LastWP.Position.Z;
-    }
-    else
-    {
-        // 如果没有点，在原点创建
-        NewPosition = FVector::ZeroVector;
-    }
-
-    // 修改数组
-    Waypoints.Add(FSurfaceWaypoint(NewPosition, NewWidth));
-
-    // 更新计数器以保持一致
-    WaypointCount = Waypoints.Num();
-
-    // 立即刷新
+    // 确保数据同步
     UpdateSplineFromWaypoints();
+
+    // 生成网格
     GenerateMesh();
-}
-
-void AEditableSurface::RemoveWaypoint()
-{
-    // 使用 RemoveWaypointIndex 属性作为索引
-    RemoveWaypointByIndex(RemoveWaypointIndex);
-}
-
-void AEditableSurface::RemoveWaypointByIndex(int32 Index)
-{
-    // 检查索引是否有效
-    if (Index < 0 || Index >= Waypoints.Num())
-    {
-        UE_LOG(LogTemp, Warning, TEXT("RemoveWaypointByIndex: 无效的索引 %d，当前路点数量: %d"), Index, Waypoints.Num());
-        return;
-    }
-
-    // 确保删除后至少还有2个路点（样条线至少需要2个点）
-    if (Waypoints.Num() <= 2)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("RemoveWaypointByIndex: 无法删除，样条线至少需要2个路点"));
-        return;
-    }
-
-    // 删除指定索引的路点
-    Waypoints.RemoveAt(Index);
-
-    // 更新计数器以保持一致
-    WaypointCount = Waypoints.Num();
-
-    // 立即刷新
-    UpdateSplineFromWaypoints();
-    GenerateMesh();
-}
-
-void AEditableSurface::PrintWaypointInfo()
-{
-    UE_LOG(LogTemp, Log, TEXT("========== 路点信息 =========="));
-    UE_LOG(LogTemp, Log, TEXT("路点总数: %d"), Waypoints.Num());
-    UE_LOG(LogTemp, Log, TEXT("曲线类型: %s"), CurveType == ESurfaceCurveType::Standard ? TEXT("Standard") : TEXT("Smooth"));
-    
-    for (int32 i = 0; i < Waypoints.Num(); ++i)
-    {
-        const FSurfaceWaypoint& WP = Waypoints[i];
-        UE_LOG(LogTemp, Log, TEXT("  路点[%d]: 位置=(%.2f, %.2f, %.2f), 宽度=%.2f"), 
-            i, WP.Position.X, WP.Position.Y, WP.Position.Z, WP.Width);
-    }
-    
-    if (SplineComponent && SplineComponent->GetNumberOfSplinePoints() > 0)
-    {
-        UE_LOG(LogTemp, Log, TEXT("样条线点数: %d"), SplineComponent->GetNumberOfSplinePoints());
-        float SplineLength = SplineComponent->GetSplineLength();
-        UE_LOG(LogTemp, Log, TEXT("样条线长度: %.2f"), SplineLength);
-    }
-    
-    UE_LOG(LogTemp, Log, TEXT("=============================="));
 }
 
 void AEditableSurface::InitializeDefaultWaypoints()
 {
-    if (Waypoints.Num() > 0) return;
-
-    Waypoints.Empty();
-    Waypoints.Reserve(WaypointCount);
-
-    // 生成拉长的Z字形上坡路径（5个点）
-    if (WaypointCount == 5)
+    if (Waypoints.Num() == 0)
     {
-        // 点0: 起点，低处
-        Waypoints.Add(FSurfaceWaypoint(FVector(0.0f, 0.0f, 0.0f), SurfaceWidth));
-        // 点1: 向前移动，高度上升
-        Waypoints.Add(FSurfaceWaypoint(FVector(200.0f, 0.0f, 50.0f), SurfaceWidth));
-        // 点2: 向右移动，继续上升
-        Waypoints.Add(FSurfaceWaypoint(FVector(400.0f, 200.0f, 100.0f), SurfaceWidth));
-        // 点3: 向前移动，继续上升
-        Waypoints.Add(FSurfaceWaypoint(FVector(600.0f, 200.0f, 150.0f), SurfaceWidth));
-        // 点4: 终点，最高处
-        Waypoints.Add(FSurfaceWaypoint(FVector(800.0f, 0.0f, 200.0f), SurfaceWidth));
+        Waypoints.Add(FSurfaceWaypoint(FVector(0, 0, 0), 100.0f));
+        Waypoints.Add(FSurfaceWaypoint(FVector(500, 0, 0), 100.0f));
+        Waypoints.Add(FSurfaceWaypoint(FVector(1000, 200, 50), 100.0f));
     }
-    else
-    {
-        // 如果路点数量不是5，使用原来的线性分布方式
-        for (int32 i = 0; i < WaypointCount; ++i)
-        {
-            float Alpha = static_cast<float>(i) / FMath::Max(1, WaypointCount - 1);
-            FVector Position(Alpha * 200.0f, 0.0f, 0.0f);
-            Waypoints.Add(FSurfaceWaypoint(Position, SurfaceWidth));
-        }
-    }
-}
-
-static void ChaikinSubdivide(const TArray<FVector>& InPoints, TArray<FVector>& OutPoints, int32 Iterations)
-{
-    TArray<FVector> CurrentPoints = InPoints;
-
-    for (int32 k = 0; k < Iterations; ++k)
-    {
-        if (CurrentPoints.Num() < 2) break;
-
-        TArray<FVector> NextPoints;
-        NextPoints.Add(CurrentPoints[0]);
-
-        for (int32 i = 0; i < CurrentPoints.Num() - 1; ++i)
-        {
-            FVector P0 = CurrentPoints[i];
-            FVector P1 = CurrentPoints[i + 1];
-
-            FVector Q = P0 * 0.75f + P1 * 0.25f;
-            FVector R = P0 * 0.25f + P1 * 0.75f;
-
-            NextPoints.Add(Q);
-            NextPoints.Add(R);
-        }
-
-        NextPoints.Add(CurrentPoints.Last());
-        CurrentPoints = NextPoints;
-    }
-
-    OutPoints = CurrentPoints;
 }
 
 void AEditableSurface::UpdateSplineFromWaypoints()
 {
-    if (!SplineComponent || Waypoints.Num() < 2) return;
+    if (!SplineComponent) return;
 
-    SplineComponent->ClearSplinePoints();
+    SplineComponent->ClearSplinePoints(false);
 
-    if (CurveType == ESurfaceCurveType::Smooth)
-    {
-        TArray<FVector> ControlPoints;
-        for (const auto& WP : Waypoints) ControlPoints.Add(WP.Position);
+    if (Waypoints.Num() < 2) return;
 
-        TArray<FVector> SmoothPoints;
-        ChaikinSubdivide(ControlPoints, SmoothPoints, 3);
-
-        for (int32 i = 0; i < SmoothPoints.Num(); ++i)
-        {
-            SplineComponent->AddSplinePoint(SmoothPoints[i], ESplineCoordinateSpace::Local, false);
-            SplineComponent->SetSplinePointType(i, ESplinePointType::Type::CurveClamped, false);
-        }
-    }
-    else // Standard
+    // 【标准曲线模式】：曲线必须严格穿过每一个路点 (Interpolating)
+    if (CurveType == ESurfaceCurveType::Standard)
     {
         for (int32 i = 0; i < Waypoints.Num(); ++i)
         {
-            const FSurfaceWaypoint& Waypoint = Waypoints[i];
-            SplineComponent->AddSplinePoint(Waypoint.Position, ESplineCoordinateSpace::Local, false);
-            SplineComponent->SetSplinePointType(i, ESplinePointType::Type::Curve, false);
+            SplineComponent->AddSplinePoint(Waypoints[i].Position, ESplineCoordinateSpace::Local, false);
+            
+            // 设置宽度 (Scale X)
+            FVector Scale(Waypoints[i].Width, 1.0f, 1.0f);
+            SplineComponent->SetScaleAtSplinePoint(i, Scale, false);
+            
+            // 设置类型为 Curve (Catmull-Rom)，确保平滑穿过
+            SplineComponent->SetSplinePointType(i, ESplinePointType::Curve, false);
         }
+    }
+    // --- 光滑模式：中点逼近算法 (Midpoint Approximation) ---
+    // 这种算法生成的曲线最平滑，且点数少，非常适合赛道
+    else 
+    {
+        // 1. 添加起点 (保持不变)
+        SplineComponent->AddSplinePoint(Waypoints[0].Position, ESplineCoordinateSpace::Local, false);
+        SplineComponent->SetScaleAtSplinePoint(0, FVector(Waypoints[0].Width, 1.0f, 1.0f), false);
+        // 起点设为 Curve 以保证起始方向准确
+        SplineComponent->SetSplinePointType(0, ESplinePointType::Curve, false); 
+
+        // 2. 添加中间点：取相邻路点的中点
+        // 这样样条线会"悬空"在路点连线之间，完美切过弯角
+        for (int32 i = 0; i < Waypoints.Num() - 1; ++i)
+        {
+            const FSurfaceWaypoint& P0 = Waypoints[i];
+            const FSurfaceWaypoint& P1 = Waypoints[i+1];
+
+            // 计算中点 (50% 处)
+            FVector MidPos = (P0.Position + P1.Position) * 0.5f;
+            float MidWidth = (P0.Width + P1.Width) * 0.5f;
+
+            SplineComponent->AddSplinePoint(MidPos, ESplineCoordinateSpace::Local, false);
+            int32 NewIdx = SplineComponent->GetNumberOfSplinePoints() - 1;
+            SplineComponent->SetScaleAtSplinePoint(NewIdx, FVector(MidWidth, 1.0f, 1.0f), false);
+            
+            // 使用 Curve 类型，UE 会自动让曲线圆滑地通过中点
+            SplineComponent->SetSplinePointType(NewIdx, ESplinePointType::Curve, false);
+        }
+
+        // 3. 添加终点 (保持不变)
+        SplineComponent->AddSplinePoint(Waypoints.Last().Position, ESplineCoordinateSpace::Local, false);
+        int32 LastIdx = SplineComponent->GetNumberOfSplinePoints() - 1;
+        SplineComponent->SetScaleAtSplinePoint(LastIdx, FVector(Waypoints.Last().Width, 1.0f, 1.0f), false);
+        SplineComponent->SetSplinePointType(LastIdx, ESplinePointType::Curve, false);
     }
 
     SplineComponent->UpdateSpline();
 }
 
+void AEditableSurface::UpdateWaypointsFromSpline()
+{
+    if (!SplineComponent) return;
+
+    // 【重要修复】光滑模式下，样条线是生成的，绝不能反向写入路点！
+    // 否则路点会被吸附到曲线上，导致控制杆丢失，所有平滑效果失效。
+    if (CurveType != ESurfaceCurveType::Standard)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("UpdateWaypointsFromSpline blocked in Smooth Mode to prevent data collapse."));
+        return;
+    }
+
+    int32 NumPoints = SplineComponent->GetNumberOfSplinePoints();
+    // 只有数量一致时才尝试同步，避免误操作
+    if (NumPoints != Waypoints.Num())
+    {
+        return; 
+    }
+
+    for (int32 i = 0; i < NumPoints; ++i)
+    {
+        FVector Pos = SplineComponent->GetLocationAtSplinePoint(i, ESplineCoordinateSpace::Local);
+        FVector Scale = SplineComponent->GetScaleAtSplinePoint(i);
+        
+        Waypoints[i].Position = Pos;
+        Waypoints[i].Width = Scale.X;
+    }
+}
+
 void AEditableSurface::GenerateMesh()
 {
-    TryGenerateMeshInternal();
+    if (!TryGenerateMeshInternal())
+    {
+        // [修复] 使用继承自父类的 ProceduralMeshComponent
+        if (ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->ClearAllMeshSections();
+        }
+    }
 }
 
 bool AEditableSurface::TryGenerateMeshInternal()
 {
-    if (!IsValid()) return false;
+    if (!SplineComponent || Waypoints.Num() < 2) return false;
 
     FEditableSurfaceBuilder Builder(*this);
+
     FModelGenMeshData MeshData;
 
-    if (!Builder.Generate(MeshData)) return false;
+    // 预分配内存以优化性能
+    int32 EstVerts = Builder.CalculateVertexCountEstimate();
+    int32 EstTris = Builder.CalculateTriangleCountEstimate();
+    MeshData.Reserve(EstVerts, EstTris);
 
-    if (!MeshData.IsValid())
+    if (Builder.Generate(MeshData))
     {
-        UE_LOG(LogTemp, Error, TEXT("AEditableSurface::TryGenerateMeshInternal - Generated mesh data invalid"));
-        return false;
+        // [修复] 使用继承自父类的 ProceduralMeshComponent
+        if (ProceduralMeshComponent)
+        {
+            // 应用生成的网格数据到组件
+            MeshData.ToProceduralMesh(ProceduralMeshComponent, 0);
+
+            // 设置材质（使用新添加的 Material 属性，或父类的 ProceduralDefaultMaterial）
+            if (Material)
+            {
+                ProceduralMeshComponent->SetMaterial(0, Material);
+            }
+            else if (ProceduralDefaultMaterial)
+            {
+                // 如果用户没有指定特殊材质，使用父类加载的默认材质
+                ProceduralMeshComponent->SetMaterial(0, ProceduralDefaultMaterial);
+            }
+        }
+
+        return true;
     }
 
-    MeshData.ToProceduralMesh(GetProceduralMesh(), 0);
-    return true;
+    return false;
 }
 
-bool AEditableSurface::IsValid() const
-{
-    return SplineComponent != nullptr &&
-        SplineComponent->GetNumberOfSplinePoints() >= 2 &&
-        SurfaceWidth > 0.0f &&
-        (!bEnableThickness || (ThicknessValue > 0.0f)) &&
-        PathSampleCount >= 2;
-}
-
-int32 AEditableSurface::CalculateVertexCountEstimate() const
-{
-    if (!IsValid()) return 0;
-    const int32 WidthSegments = FMath::Max(2, SideSmoothness + 1);
-    const int32 BaseVertices = PathSampleCount * WidthSegments;
-    const int32 ThicknessMultiplier = bEnableThickness ? 4 : 1;
-    return BaseVertices * ThicknessMultiplier;
-}
-
-int32 AEditableSurface::CalculateTriangleCountEstimate() const
-{
-    if (!IsValid()) return 0;
-    const int32 WidthSegments = FMath::Max(2, SideSmoothness + 1);
-    const int32 BaseTriangles = (PathSampleCount - 1) * (WidthSegments - 1) * 2;
-    int32 ThicknessTriangles = 0;
-    if (bEnableThickness)
-    {
-        ThicknessTriangles = PathSampleCount * (WidthSegments - 1) * 2;
-        ThicknessTriangles += (WidthSegments - 1) * 2;
-        ThicknessTriangles += PathSampleCount * 2 * 2;
-    }
-    return BaseTriangles + ThicknessTriangles;
-}
-
-void AEditableSurface::SetWaypointCount(int32 NewWaypointCount)
-{
-    if (NewWaypointCount != WaypointCount)
-    {
-        WaypointCount = NewWaypointCount;
-        InitializeDefaultWaypoints();
-        UpdateSplineFromWaypoints();
-        TryGenerateMeshInternal();
-    }
-}
+// ---------------- Getters and Setters ----------------
 
 FVector AEditableSurface::GetWaypointPosition(int32 Index) const
 {
-    if (Index >= 0 && Index < Waypoints.Num())
+    if (Waypoints.IsValidIndex(Index))
     {
         return Waypoints[Index].Position;
     }
@@ -312,14 +197,11 @@ FVector AEditableSurface::GetWaypointPosition(int32 Index) const
 
 bool AEditableSurface::SetWaypointPosition(int32 Index, const FVector& NewPosition)
 {
-    if (Index >= 0 && Index < Waypoints.Num())
+    if (Waypoints.IsValidIndex(Index))
     {
-        if (Waypoints[Index].Position != NewPosition)
-        {
-            Waypoints[Index].Position = NewPosition;
-            UpdateSplineFromWaypoints();
-            GenerateMesh();
-        }
+        Waypoints[Index].Position = NewPosition;
+        UpdateSplineFromWaypoints();
+        GenerateMesh();
         return true;
     }
     return false;
@@ -327,7 +209,7 @@ bool AEditableSurface::SetWaypointPosition(int32 Index, const FVector& NewPositi
 
 float AEditableSurface::GetWaypointWidth(int32 Index) const
 {
-    if (Index >= 0 && Index < Waypoints.Num())
+    if (Waypoints.IsValidIndex(Index))
     {
         return Waypoints[Index].Width;
     }
@@ -336,115 +218,178 @@ float AEditableSurface::GetWaypointWidth(int32 Index) const
 
 bool AEditableSurface::SetWaypointWidth(int32 Index, float NewWidth)
 {
-    if (Index >= 0 && Index < Waypoints.Num())
+    if (Waypoints.IsValidIndex(Index))
     {
-        if (Waypoints[Index].Width != NewWidth)
-        {
-            Waypoints[Index].Width = NewWidth;
-            GenerateMesh();
-        }
+        Waypoints[Index].Width = NewWidth;
+        UpdateSplineFromWaypoints();
+        GenerateMesh();
         return true;
     }
     return false;
 }
 
-void AEditableSurface::SetSurfaceWidth(float NewSurfaceWidth)
+void AEditableSurface::SetWaypointCount(int32 NewWaypointCount)
 {
-    if (NewSurfaceWidth != SurfaceWidth)
-    {
-        SurfaceWidth = NewSurfaceWidth;
-        for (auto& WP : Waypoints) WP.Width = SurfaceWidth;
-        TryGenerateMeshInternal();
-    }
-}
+    if (NewWaypointCount < 2) NewWaypointCount = 2;
 
-void AEditableSurface::SetEnableThickness(bool bNewEnableThickness)
-{
-    if (bEnableThickness != bNewEnableThickness)
+    if (NewWaypointCount != Waypoints.Num())
     {
-        bEnableThickness = bNewEnableThickness;
-        TryGenerateMeshInternal();
-    }
-}
+        if (NewWaypointCount > Waypoints.Num())
+        {
+            // 增加路点：在末尾延伸
+            FSurfaceWaypoint LastWP = Waypoints.Last();
+            int32 AddCount = NewWaypointCount - Waypoints.Num();
+            for (int32 i = 0; i < AddCount; ++i)
+            {
+                LastWP.Position.X += 100.0f;
+                Waypoints.Add(LastWP);
+            }
+        }
+        else
+        {
+            // 减少路点
+            Waypoints.SetNum(NewWaypointCount);
+        }
 
-void AEditableSurface::SetThicknessValue(float NewThicknessValue)
-{
-    if (ThicknessValue != NewThicknessValue)
-    {
-        ThicknessValue = NewThicknessValue;
-        TryGenerateMeshInternal();
-    }
-}
-
-void AEditableSurface::SetSideSmoothness(int32 NewSideSmoothness)
-{
-    if (SideSmoothness != NewSideSmoothness)
-    {
-        SideSmoothness = NewSideSmoothness;
-        TryGenerateMeshInternal();
-    }
-}
-
-void AEditableSurface::SetRightSlopeLength(float NewValue)
-{
-    if (RightSlopeLength != NewValue)
-    {
-        RightSlopeLength = NewValue;
-        TryGenerateMeshInternal();
-    }
-}
-
-void AEditableSurface::SetRightSlopeGradient(float NewValue)
-{
-    if (RightSlopeGradient != NewValue)
-    {
-        RightSlopeGradient = NewValue;
-        TryGenerateMeshInternal();
-    }
-}
-
-void AEditableSurface::SetLeftSlopeLength(float NewValue)
-{
-    if (LeftSlopeLength != NewValue)
-    {
-        LeftSlopeLength = NewValue;
-        TryGenerateMeshInternal();
-    }
-}
-
-void AEditableSurface::SetLeftSlopeGradient(float NewValue)
-{
-    if (LeftSlopeGradient != NewValue)
-    {
-        LeftSlopeGradient = NewValue;
-        TryGenerateMeshInternal();
+        UpdateSplineFromWaypoints();
+        GenerateMesh();
     }
 }
 
 void AEditableSurface::SetPathSampleCount(int32 NewValue)
 {
-    if (PathSampleCount != NewValue)
+    PathSampleCount = FMath::Clamp(NewValue, 2, 1000);
+    GenerateMesh();
+}
+
+void AEditableSurface::AddNewWaypoint()
+{
+    if (Waypoints.Num() > 0)
     {
-        PathSampleCount = NewValue;
-        TryGenerateMeshInternal();
+        FSurfaceWaypoint NewWP = Waypoints.Last();
+        // 尝试沿最后两个点的方向延伸
+        if (Waypoints.Num() >= 2)
+        {
+            FVector Dir = (Waypoints.Last().Position - Waypoints[Waypoints.Num() - 2].Position).GetSafeNormal();
+            if (Dir.IsZero()) Dir = FVector::ForwardVector;
+            NewWP.Position += Dir * 100.0f;
+        }
+        else
+        {
+            NewWP.Position += FVector(100, 0, 0);
+        }
+        Waypoints.Add(NewWP);
     }
+    else
+    {
+        Waypoints.Add(FSurfaceWaypoint(FVector::ZeroVector));
+    }
+
+    UpdateSplineFromWaypoints();
+    GenerateMesh();
+}
+
+void AEditableSurface::RemoveWaypoint()
+{
+    RemoveWaypointByIndex(RemoveWaypointIndex);
+}
+
+void AEditableSurface::RemoveWaypointByIndex(int32 Index)
+{
+    if (Waypoints.IsValidIndex(Index) && Waypoints.Num() > 2)
+    {
+        Waypoints.RemoveAt(Index);
+        UpdateSplineFromWaypoints();
+        GenerateMesh();
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Cannot remove waypoint: Index invalid or too few waypoints left."));
+    }
+}
+
+void AEditableSurface::PrintWaypointInfo()
+{
+    for (int32 i = 0; i < Waypoints.Num(); ++i)
+    {
+        UE_LOG(LogTemp, Log, TEXT("WP[%d]: Pos=%s, Width=%f"),
+            i, *Waypoints[i].Position.ToString(), Waypoints[i].Width);
+    }
+}
+
+void AEditableSurface::SetSurfaceWidth(float NewSurfaceWidth)
+{
+    SurfaceWidth = NewSurfaceWidth;
+    GenerateMesh();
+}
+
+void AEditableSurface::SetEnableThickness(bool bNewEnableThickness)
+{
+    bEnableThickness = bNewEnableThickness;
+    GenerateMesh();
+}
+
+void AEditableSurface::SetThicknessValue(float NewThicknessValue)
+{
+    ThicknessValue = NewThicknessValue;
+    GenerateMesh();
+}
+
+void AEditableSurface::SetSideSmoothness(int32 NewSideSmoothness)
+{
+    SideSmoothness = NewSideSmoothness;
+    GenerateMesh();
+}
+
+void AEditableSurface::SetRightSlopeLength(float NewValue)
+{
+    RightSlopeLength = NewValue;
+    GenerateMesh();
+}
+
+void AEditableSurface::SetRightSlopeGradient(float NewValue)
+{
+    RightSlopeGradient = NewValue;
+    GenerateMesh();
+}
+
+void AEditableSurface::SetLeftSlopeLength(float NewValue)
+{
+    LeftSlopeLength = NewValue;
+    GenerateMesh();
+}
+
+void AEditableSurface::SetLeftSlopeGradient(float NewValue)
+{
+    LeftSlopeGradient = NewValue;
+    GenerateMesh();
 }
 
 void AEditableSurface::SetCurveType(ESurfaceCurveType NewCurveType)
 {
-    if (CurveType != NewCurveType)
-    {
-        CurveType = NewCurveType;
-        UpdateSplineFromWaypoints();
-        TryGenerateMeshInternal();
-    }
+    CurveType = NewCurveType;
+    UpdateSplineFromWaypoints();
+    GenerateMesh();
 }
 
 void AEditableSurface::SetTextureMapping(ESurfaceTextureMapping NewTextureMapping)
 {
-    if (TextureMapping != NewTextureMapping)
-    {
-        TextureMapping = NewTextureMapping;
-        TryGenerateMeshInternal();
-    }
+    TextureMapping = NewTextureMapping;
+    GenerateMesh();
+}
+
+bool AEditableSurface::IsValid() const
+{
+    return SplineComponent != nullptr && Waypoints.Num() >= 2;
+}
+
+int32 AEditableSurface::CalculateVertexCountEstimate() const
+{
+    // 粗略估算
+    return PathSampleCount * (2 + SideSmoothness * 2) * (bEnableThickness ? 2 : 1);
+}
+
+int32 AEditableSurface::CalculateTriangleCountEstimate() const
+{
+    return CalculateVertexCountEstimate() * 2; // 粗略估算三角形数
 }
