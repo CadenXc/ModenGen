@@ -504,13 +504,42 @@ void FFrustumBuilder::GenerateCutPlanes()
         return;
     }
 
-    CreateCutPlaneSurface(StartAngle, StartSliceIndices, true);
+    // 1. 计算两个切面的面法线
+    const float StartNormalAngle = StartAngle - HALF_PI; // StartFace 法线向外
+    const FVector StartFaceNormal(FMath::Cos(StartNormalAngle), FMath::Sin(StartNormalAngle), 0.0f);
 
     const float EndAngleVal = StartAngle + ArcAngleRadians;
-    CreateCutPlaneSurface(EndAngleVal, EndSliceIndices, false);
+    const float EndNormalAngle = EndAngleVal + HALF_PI;  // EndFace 法线向外
+    const FVector EndFaceNormal(FMath::Cos(EndNormalAngle), FMath::Sin(EndNormalAngle), 0.0f);
+
+    // 2. 准备内侧轴线 (0,0,Z) 的法线
+    FVector StartInnerNormal = StartFaceNormal;
+    FVector EndInnerNormal = EndFaceNormal;
+
+    // 3. 如果开启倒角，计算平滑法线 (两个面法线的平均值/角平分线)
+    if (bEnableBevel)
+    {
+        // 两个向量相加即为角平分方向 (因为长度都是1)
+        FVector SmoothCenterNormal = (StartFaceNormal + EndFaceNormal).GetSafeNormal();
+
+        // 极特殊情况：如果 ArcAngle 接近 360 或 0，向量可能抵消，需做保护
+        if (SmoothCenterNormal.IsNearlyZero())
+        {
+            // 指向圆弧开口的反方向
+            float BisectAngle = StartAngle + ArcAngleRadians * 0.5f + PI; 
+            SmoothCenterNormal = FVector(FMath::Cos(BisectAngle), FMath::Sin(BisectAngle), 0.0f);
+        }
+
+        StartInnerNormal = SmoothCenterNormal;
+        EndInnerNormal = SmoothCenterNormal;
+    }
+
+    // 4. 生成切面，传入计算好的内侧法线
+    CreateCutPlaneSurface(StartAngle, StartSliceIndices, true, StartInnerNormal);
+    CreateCutPlaneSurface(EndAngleVal, EndSliceIndices, false, EndInnerNormal);
 }
 
-void FFrustumBuilder::CreateCutPlaneSurface(float Angle, const TArray<int32>& ProfileIndices, bool bIsStartFace)
+void FFrustumBuilder::CreateCutPlaneSurface(float Angle, const TArray<int32>& ProfileIndices, bool bIsStartFace, const FVector& InnerNormal)
 {
     if (ProfileIndices.Num() < 2) return;
 
@@ -530,9 +559,11 @@ void FFrustumBuilder::CreateCutPlaneSurface(float Angle, const TArray<int32>& Pr
         FVector P1_Outer = GetPosByIndex(Idx1);
         FVector P2_Outer = GetPosByIndex(Idx2);
 
+        // 内侧点位于中心轴
         FVector P1_Inner(0.0f, 0.0f, P1_Outer.Z);
         FVector P2_Inner(0.0f, 0.0f, P2_Outer.Z);
 
+        // 外侧法线 (如果有 Bevel 则沿用 MeshData 中的平滑法线，否则用平面法线)
         FVector N1_Outer = PlaneNormal;
         FVector N2_Outer = PlaneNormal;
 
@@ -547,12 +578,13 @@ void FFrustumBuilder::CreateCutPlaneSurface(float Angle, const TArray<int32>& Pr
             float U = bIsStartFace ? -R : R;
             float V = Frustum.Height - P.Z;
             return FVector2D(U * ModelGenConstants::GLOBAL_UV_SCALE, V * ModelGenConstants::GLOBAL_UV_SCALE);
-            };
+        };
 
-        int32 V_In1 = AddVertex(P1_Inner, PlaneNormal, GetCutUV(P1_Inner));
+        // 关键修改：内侧顶点 (V_In1, V_In2) 使用传入的 InnerNormal
+        int32 V_In1 = AddVertex(P1_Inner, InnerNormal, GetCutUV(P1_Inner));
         int32 V_Out1 = AddVertex(P1_Outer, N1_Outer, GetCutUV(P1_Outer));
         int32 V_Out2 = AddVertex(P2_Outer, N2_Outer, GetCutUV(P2_Outer));
-        int32 V_In2 = AddVertex(P2_Inner, PlaneNormal, GetCutUV(P2_Inner));
+        int32 V_In2 = AddVertex(P2_Inner, InnerNormal, GetCutUV(P2_Inner));
 
         if (bIsStartFace)
         {
