@@ -31,6 +31,12 @@ bool FSphereBuilder::Generate(FModelGenMeshData& OutMeshData)
     HorizontalCut = Sphere.HorizontalCut;
     VerticalCut = Sphere.VerticalCut;
 
+    // 【核心修复】：计算Z偏移量，使横截面（或最低点）位于Z=0
+    // 如果有横截断，中心点在横截面上；如果没有横截断，中心点在最低点
+    const float EndPhi = PI * (1.0f - HorizontalCut);
+    const float CutPlaneZ = Radius * FMath::Cos(EndPhi);
+    ZOffset = -CutPlaneZ;  // 偏移量使截断面Z=0
+
     GenerateSphereMesh();
     GenerateCaps();
 
@@ -63,7 +69,9 @@ FVector FSphereBuilder::GetSpherePoint(float Theta, float Phi) const
 
     float X = Radius * SinPhi * CosTheta;
     float Y = Radius * SinPhi * SinTheta;
-    float Z = Radius * CosPhi;
+    // 【核心修复】：调整Z坐标，使横截面（或最低点）位于Z=0
+    // 如果有横截断，中心点在横截面上；如果没有横截断，中心点在最低点
+    float Z = Radius * CosPhi + ZOffset;
 
     return FVector(X, Y, Z);
 }
@@ -168,7 +176,8 @@ void FSphereBuilder::GenerateHorizontalCap(float Phi, bool bIsBottom)
         ? FMath::DegreesToRadians(VerticalCut) : (2.0f * PI);
     const float ThetaRange = EndTheta - StartTheta;
 
-    float CenterZ = Radius * FMath::Cos(Phi);
+    // 【核心修复】：调整Z坐标，使横截面位于Z=0
+    float CenterZ = Radius * FMath::Cos(Phi) + ZOffset;
     FVector CenterPos(0.0f, 0.0f, CenterZ);
 
     FVector Normal(0.0f, 0.0f, bIsBottom ? -1.0f : 1.0f);
@@ -219,6 +228,10 @@ void FSphereBuilder::GenerateVerticalCap(float Theta, bool bIsStart)
     TArray<int32> AxisIndices;
     AxisIndices.Reserve(Sides + 1);
 
+    // 【核心修复】：计算最大Z值，用于UV坐标计算
+    // 最高点Z = Radius + ZOffset，最低点Z = -Radius + ZOffset
+    const float MaxZ = Radius + ZOffset;
+
     // Generate vertices
     for (int32 i = 0; i <= Sides; ++i)
     {
@@ -229,15 +242,16 @@ void FSphereBuilder::GenerateVerticalCap(float Theta, bool bIsStart)
         float R_Proj = Radius * FMath::Sin(Phi);
         float Z_Proj = Pos.Z;
         float U = bIsStart ? -R_Proj : R_Proj;
-        float V = Radius - Z_Proj;
+        float V = MaxZ - Z_Proj;
 
         FVector2D UV(U * ModelGenConstants::GLOBAL_UV_SCALE, V * ModelGenConstants::GLOBAL_UV_SCALE);
         ProfileIndices.Add(AddVertex(Pos, Normal, UV));
 
         // 2. Axis Vertex
-        float Z_Axis = Radius * FMath::Cos(Phi);
+        // 【核心修复】：调整Z坐标，使横截面位于Z=0
+        float Z_Axis = Radius * FMath::Cos(Phi) + ZOffset;
         FVector AxisPos(0, 0, Z_Axis);
-        float V_Axis = Radius - Z_Axis;
+        float V_Axis = MaxZ - Z_Axis;
         FVector2D UV_Axis(0.0f, V_Axis * ModelGenConstants::GLOBAL_UV_SCALE);
         AxisIndices.Add(AddVertex(AxisPos, Normal, UV_Axis));
     }

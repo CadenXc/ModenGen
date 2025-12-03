@@ -185,17 +185,10 @@ public:
         meta = (DisplayName = "样条线组件"))
     USplineComponent* SplineComponent;
 
-    /** 路径采样分段数 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
-        meta = (ClampMin = "4", ClampMax = "200", UIMin = "4", UIMax = "200", DisplayName = "路径采样分段数"))
-    int32 PathSampleCount = 20;
-
-    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
-    void SetPathSampleCount(int32 NewPathSampleCount);
-
     /** 采样间距（单位：厘米）
      * 用于动态计算采样分段数，基于样条线长度自动调整分段密度
      * 较小的值会产生更密集的采样点，改善急转弯处的几何质量
+     * 值越小 = 网格越密（越平滑），值越大 = 网格越稀疏（性能越好）
      */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
         meta = (ClampMin = "10.0", ClampMax = "1000.0", UIMin = "10.0", UIMax = "1000.0", DisplayName = "采样间距"))
