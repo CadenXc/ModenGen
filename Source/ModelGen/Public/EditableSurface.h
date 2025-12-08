@@ -44,17 +44,13 @@ struct FSurfaceWaypoint
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Waypoint", meta = (MakeEditWidget = true))
     FVector Position = FVector::ZeroVector;
 
-    /** 路点宽度 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Waypoint")
-    float Width = 100.0f;
-
     FSurfaceWaypoint()
-        : Position(FVector::ZeroVector), Width(100.0f)
+        : Position(FVector::ZeroVector)
     {
     }
 
-    FSurfaceWaypoint(const FVector& InPosition, float InWidth = 100.0f)
-        : Position(InPosition), Width(InWidth)
+    FSurfaceWaypoint(const FVector& InPosition)
+        : Position(InPosition)
     {
     }
 };
@@ -73,23 +69,14 @@ public:
 
     //~ Begin Geometry Parameters
 
-    /** 应用于曲面的材质 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Rendering", meta = (DisplayName = "曲面材质"))
-    UMaterialInterface* Material;
-
     /** 路点数组（控制点） */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Waypoints",
         meta = (DisplayName = "路点", MakeEditWidget = true))
     TArray<FSurfaceWaypoint> Waypoints;
 
-    /** 路点数量 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Waypoints",
-        meta = (ClampMin = "2", ClampMax = "100", DisplayName = "路点数量"))
-    int32 WaypointCount = 5;
-
     /** 路径采样数量 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
-        meta = (ClampMin = "2", ClampMax = "1000", DisplayName = "路径采样数量"))
+        meta = (ClampMin = "2", ClampMax = "200", DisplayName = "路径采样数量"))
     int32 PathSampleCount = 20;
 
 
@@ -100,18 +87,6 @@ public:
     /** 设置指定索引的路点位置 */
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Waypoints")
     bool SetWaypointPosition(int32 Index, const FVector& NewPosition);
-
-    /** 获取指定索引的路点宽度 */
-    UFUNCTION(BlueprintCallable, BlueprintPure, Category = "EditableSurface|Waypoints")
-    float GetWaypointWidth(int32 Index) const;
-
-    /** 设置指定索引的路点宽度 */
-    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Waypoints")
-    bool SetWaypointWidth(int32 Index, float NewWidth);
-
-    /** 设置路点数量 */
-    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Waypoints")
-    void SetWaypointCount(int32 NewWaypointCount);
 
     /** 设置路径采样数量 */
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
@@ -204,11 +179,6 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "EditableSurface|Spline",
         meta = (DisplayName = "样条线组件"))
     USplineComponent* SplineComponent;
-
-    /** 采样间距（单位：厘米）*/
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
-        meta = (ClampMin = "10.0", ClampMax = "1000.0", UIMin = "10.0", UIMax = "1000.0", DisplayName = "采样间距"))
-    float SampleSpacing = 50.0f;
 
     /** 曲线类型 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",

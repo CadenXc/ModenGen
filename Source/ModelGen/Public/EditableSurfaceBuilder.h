@@ -58,8 +58,6 @@ private:
 
     FPathSampleInfo GetPathSample(float Alpha) const;
 
-    float GetPathWidth(float Alpha) const;
-
     TArray<int32> GenerateCrossSection(
         const FPathSampleInfo& SampleInfo, 
         float RoadHalfWidth,      // 路面半宽（原始宽度的一半，不要在外面乘Scale）

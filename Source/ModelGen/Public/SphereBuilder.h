@@ -28,6 +28,7 @@ private:
     int32 Sides;
     float HorizontalCut;
     float VerticalCut;
+    float ZOffset;
 
     // Internal helpers
     void GenerateSphereMesh();

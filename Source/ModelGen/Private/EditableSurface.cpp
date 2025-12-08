@@ -13,7 +13,8 @@ AEditableSurface::AEditableSurface()
     if (SplineComponent)
     {
         SplineComponent->SetupAttachment(RootComponent);
-        SplineComponent->SetMobility(EComponentMobility::Static);
+        // 【关键修改】设置为 Movable，确保运行时更新样条线能正确触发相关组件更新
+        SplineComponent->SetMobility(EComponentMobility::Movable);
     }
 
     // 初始化默认路点
@@ -36,9 +37,9 @@ void AEditableSurface::InitializeDefaultWaypoints()
 {
     if (Waypoints.Num() == 0)
     {
-        Waypoints.Add(FSurfaceWaypoint(FVector(0, 0, 0), 100.0f));
-        Waypoints.Add(FSurfaceWaypoint(FVector(500, 0, 0), 100.0f));
-        Waypoints.Add(FSurfaceWaypoint(FVector(1000, 200, 50), 100.0f));
+        Waypoints.Add(FSurfaceWaypoint(FVector(0, 0, 0)));
+        Waypoints.Add(FSurfaceWaypoint(FVector(500, 0, 0)));
+        Waypoints.Add(FSurfaceWaypoint(FVector(1000, 200, 50)));
     }
 }
 
@@ -57,10 +58,6 @@ void AEditableSurface::UpdateSplineFromWaypoints()
         {
             SplineComponent->AddSplinePoint(Waypoints[i].Position, ESplineCoordinateSpace::Local, false);
             
-            // 设置宽度 (Scale X)
-            FVector Scale(Waypoints[i].Width, 1.0f, 1.0f);
-            SplineComponent->SetScaleAtSplinePoint(i, Scale, false);
-            
             // 设置类型为 Curve (Catmull-Rom)，确保平滑穿过
             SplineComponent->SetSplinePointType(i, ESplinePointType::Curve, false);
         }
@@ -71,7 +68,6 @@ void AEditableSurface::UpdateSplineFromWaypoints()
     {
         // 1. 添加起点 (保持不变)
         SplineComponent->AddSplinePoint(Waypoints[0].Position, ESplineCoordinateSpace::Local, false);
-        SplineComponent->SetScaleAtSplinePoint(0, FVector(Waypoints[0].Width, 1.0f, 1.0f), false);
         // 起点设为 Curve 以保证起始方向准确
         SplineComponent->SetSplinePointType(0, ESplinePointType::Curve, false); 
 
@@ -84,11 +80,9 @@ void AEditableSurface::UpdateSplineFromWaypoints()
 
             // 计算中点 (50% 处)
             FVector MidPos = (P0.Position + P1.Position) * 0.5f;
-            float MidWidth = (P0.Width + P1.Width) * 0.5f;
 
             SplineComponent->AddSplinePoint(MidPos, ESplineCoordinateSpace::Local, false);
             int32 NewIdx = SplineComponent->GetNumberOfSplinePoints() - 1;
-            SplineComponent->SetScaleAtSplinePoint(NewIdx, FVector(MidWidth, 1.0f, 1.0f), false);
             
             // 使用 Curve 类型，UE 会自动让曲线圆滑地通过中点
             SplineComponent->SetSplinePointType(NewIdx, ESplinePointType::Curve, false);
@@ -97,11 +91,15 @@ void AEditableSurface::UpdateSplineFromWaypoints()
         // 3. 添加终点 (保持不变)
         SplineComponent->AddSplinePoint(Waypoints.Last().Position, ESplineCoordinateSpace::Local, false);
         int32 LastIdx = SplineComponent->GetNumberOfSplinePoints() - 1;
-        SplineComponent->SetScaleAtSplinePoint(LastIdx, FVector(Waypoints.Last().Width, 1.0f, 1.0f), false);
         SplineComponent->SetSplinePointType(LastIdx, ESplinePointType::Curve, false);
     }
 
     SplineComponent->UpdateSpline();
+    
+    // 【关键修复】更新完样条线后，必须立即触发网格重建！
+    // 否则从外部（如TS/蓝图）调用 UpdateSplineFromWaypoints 后，画面不会有任何变化。
+    // 注意：在 OnConstruction 中会再次调用 GenerateMesh，但这是幂等的，不会造成问题。
+    GenerateMesh();
 }
 
 void AEditableSurface::UpdateWaypointsFromSpline()
@@ -126,10 +124,8 @@ void AEditableSurface::UpdateWaypointsFromSpline()
     for (int32 i = 0; i < NumPoints; ++i)
     {
         FVector Pos = SplineComponent->GetLocationAtSplinePoint(i, ESplineCoordinateSpace::Local);
-        FVector Scale = SplineComponent->GetScaleAtSplinePoint(i);
         
         Waypoints[i].Position = Pos;
-        Waypoints[i].Width = Scale.X;
     }
 }
 
@@ -147,7 +143,49 @@ void AEditableSurface::GenerateMesh()
 
 bool AEditableSurface::TryGenerateMeshInternal()
 {
-    if (!SplineComponent || Waypoints.Num() < 2) return false;
+    // 【关键修复】防御性检查：如果有路点但样条线没数据（可能因为时序问题或错误的Clear），强制恢复
+    if (SplineComponent && SplineComponent->GetNumberOfSplinePoints() < 2 && Waypoints.Num() >= 2)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AEditableSurface: 检测到样条线数据丢失，正在尝试从 Waypoints 恢复..."));
+        
+        // 直接重建 Spline 数据，避免调用 UpdateSplineFromWaypoints（防止递归）
+        SplineComponent->ClearSplinePoints(false);
+        
+        if (CurveType == ESurfaceCurveType::Standard)
+        {
+            for (int32 i = 0; i < Waypoints.Num(); ++i)
+            {
+                SplineComponent->AddSplinePoint(Waypoints[i].Position, ESplineCoordinateSpace::Local, false);
+                SplineComponent->SetSplinePointType(i, ESplinePointType::Curve, false);
+            }
+        }
+        else
+        {
+            // Smooth 模式：中点逼近算法
+            SplineComponent->AddSplinePoint(Waypoints[0].Position, ESplineCoordinateSpace::Local, false);
+            SplineComponent->SetSplinePointType(0, ESplinePointType::Curve, false);
+            
+            for (int32 i = 0; i < Waypoints.Num() - 1; ++i)
+            {
+                FVector MidPos = (Waypoints[i].Position + Waypoints[i + 1].Position) * 0.5f;
+                SplineComponent->AddSplinePoint(MidPos, ESplineCoordinateSpace::Local, false);
+                int32 NewIdx = SplineComponent->GetNumberOfSplinePoints() - 1;
+                SplineComponent->SetSplinePointType(NewIdx, ESplinePointType::Curve, false);
+            }
+            
+            SplineComponent->AddSplinePoint(Waypoints.Last().Position, ESplineCoordinateSpace::Local, false);
+            int32 LastIdx = SplineComponent->GetNumberOfSplinePoints() - 1;
+            SplineComponent->SetSplinePointType(LastIdx, ESplinePointType::Curve, false);
+        }
+        
+        SplineComponent->UpdateSpline();
+    }
+    
+    // 检查样条线是否有足够的数据点
+    if (!SplineComponent || SplineComponent->GetNumberOfSplinePoints() < 2 || Waypoints.Num() < 2)
+    {
+        return false;
+    }
 
     FEditableSurfaceBuilder Builder(*this);
 
@@ -165,17 +203,6 @@ bool AEditableSurface::TryGenerateMeshInternal()
         {
             // 应用生成的网格数据到组件
             MeshData.ToProceduralMesh(ProceduralMeshComponent, 0);
-
-            // 设置材质（使用新添加的 Material 属性，或父类的 ProceduralDefaultMaterial）
-            if (Material)
-            {
-                ProceduralMeshComponent->SetMaterial(0, Material);
-            }
-            else if (ProceduralDefaultMaterial)
-            {
-                // 如果用户没有指定特殊材质，使用父类加载的默认材质
-                ProceduralMeshComponent->SetMaterial(0, ProceduralDefaultMaterial);
-            }
         }
 
         return true;
@@ -205,55 +232,6 @@ bool AEditableSurface::SetWaypointPosition(int32 Index, const FVector& NewPositi
         return true;
     }
     return false;
-}
-
-float AEditableSurface::GetWaypointWidth(int32 Index) const
-{
-    if (Waypoints.IsValidIndex(Index))
-    {
-        return Waypoints[Index].Width;
-    }
-    return 0.0f;
-}
-
-bool AEditableSurface::SetWaypointWidth(int32 Index, float NewWidth)
-{
-    if (Waypoints.IsValidIndex(Index))
-    {
-        Waypoints[Index].Width = NewWidth;
-        UpdateSplineFromWaypoints();
-        GenerateMesh();
-        return true;
-    }
-    return false;
-}
-
-void AEditableSurface::SetWaypointCount(int32 NewWaypointCount)
-{
-    if (NewWaypointCount < 2) NewWaypointCount = 2;
-
-    if (NewWaypointCount != Waypoints.Num())
-    {
-        if (NewWaypointCount > Waypoints.Num())
-        {
-            // 增加路点：在末尾延伸
-            FSurfaceWaypoint LastWP = Waypoints.Last();
-            int32 AddCount = NewWaypointCount - Waypoints.Num();
-            for (int32 i = 0; i < AddCount; ++i)
-            {
-                LastWP.Position.X += 100.0f;
-                Waypoints.Add(LastWP);
-            }
-        }
-        else
-        {
-            // 减少路点
-            Waypoints.SetNum(NewWaypointCount);
-        }
-
-        UpdateSplineFromWaypoints();
-        GenerateMesh();
-    }
 }
 
 void AEditableSurface::SetPathSampleCount(int32 NewValue)
@@ -312,8 +290,8 @@ void AEditableSurface::PrintWaypointInfo()
 {
     for (int32 i = 0; i < Waypoints.Num(); ++i)
     {
-        UE_LOG(LogTemp, Log, TEXT("WP[%d]: Pos=%s, Width=%f"),
-            i, *Waypoints[i].Position.ToString(), Waypoints[i].Width);
+        UE_LOG(LogTemp, Log, TEXT("WP[%d]: Pos=%s"),
+            i, *Waypoints[i].Position.ToString());
     }
 }
 

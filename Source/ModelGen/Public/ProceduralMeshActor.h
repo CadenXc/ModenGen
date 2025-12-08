@@ -119,4 +119,7 @@ private:
     
     // 辅助函数：创建 BodySetup 并生成碰撞（简单碰撞和复杂碰撞）
     void SetupBodySetupAndCollision(UStaticMesh* StaticMesh) const;
+    
+    // 辅助函数：手动计算切线（用于解决移动端引擎计算失败的问题）
+    void GenerateTangentsManually(FMeshDescription& MeshDescription) const;
 };

@@ -64,7 +64,7 @@ private:
     TArray<int32> CreateBevelRing(const FRingContext& Context, float VCoord, float NormalAlpha, bool bIsTopBevel, float OverrideRadius = 0.0f);
 
     void CreateCapDisk(float Z, const TArray<int32>& BoundaryRing, bool bIsTop);
-    void CreateCutPlaneSurface(float Angle, const TArray<int32>& ProfileIndices, bool bIsStartFace);
+    void CreateCutPlaneSurface(float Angle, const TArray<int32>& ProfileIndices, bool bIsStartFace, const FVector& InnerNormal);
 
     FVector ApplyBend(const FVector& BasePos, float BaseRadius, float HeightRatio) const;
     float CalculateBevelHeight(float Radius) const;
