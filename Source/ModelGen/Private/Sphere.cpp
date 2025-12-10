@@ -108,6 +108,13 @@ void ASphere::SetHorizontalCut(float NewHorizontalCut)
     // 保留到0.01精度
     NewHorizontalCut = FMath::RoundToFloat(NewHorizontalCut * 100.0f) / 100.0f;
     
+    // 【修复1】：防止横截断 = 1.0 时崩溃，限制最大值为接近但不等于 1.0
+    if (NewHorizontalCut >= 1.0f - KINDA_SMALL_NUMBER)
+    {
+        NewHorizontalCut = 1.0f - KINDA_SMALL_NUMBER;
+        UE_LOG(LogTemp, Warning, TEXT("SetHorizontalCut: 横截断值被限制为 %f（接近但不等于1.0，防止崩溃）"), NewHorizontalCut);
+    }
+    
     if (NewHorizontalCut >= 0.0f && NewHorizontalCut <= 1.0f && 
         !FMath::IsNearlyEqual(NewHorizontalCut, HorizontalCut))
     {

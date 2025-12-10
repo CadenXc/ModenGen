@@ -204,6 +204,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
     void UpdateWaypointsFromSpline();
 
+    /** 通过字符串设置路点（格式：x1,y1,z1;x2,y2,z2;...） */
+    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Waypoints")
+    void SetWaypoints(const FString& WaypointsString);
+
     virtual void GenerateMesh() override;
 
 public:

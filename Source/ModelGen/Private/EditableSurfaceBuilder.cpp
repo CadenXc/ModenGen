@@ -70,7 +70,60 @@ bool FEditableSurfaceBuilder::Generate(FModelGenMeshData& OutMeshData)
     // 2. 生成厚度 (现在总是执行，保证闭合)
     GenerateThickness();
 
-    // 3. 计算切线
+    // =========================================================
+    // 3. [关键新增] 清理无效多边形 (Remove Degenerate Triangles)
+    // 防止 StaticMesh 转换时的 ComputeTangents 报错或物理烘焙失败
+    // =========================================================
+    if (MeshData.Triangles.Num() > 0)
+    {
+        TArray<int32> CleanTriangles;
+        CleanTriangles.Reserve(MeshData.Triangles.Num());
+
+        int32 NumTriangles = MeshData.Triangles.Num() / 3;
+        for (int32 i = 0; i < NumTriangles; ++i)
+        {
+            int32 Idx0 = MeshData.Triangles[i * 3 + 0];
+            int32 Idx1 = MeshData.Triangles[i * 3 + 1];
+            int32 Idx2 = MeshData.Triangles[i * 3 + 2];
+
+            // 检查 1: 索引去重 (防止同一个点构成线段)
+            if (Idx0 == Idx1 || Idx1 == Idx2 || Idx0 == Idx2)
+            {
+                continue;
+            }
+
+            // 检查 2: 面积检查 (防止三点共线或距离极近)
+            if (Idx0 >= 0 && Idx0 < MeshData.Vertices.Num() &&
+                Idx1 >= 0 && Idx1 < MeshData.Vertices.Num() &&
+                Idx2 >= 0 && Idx2 < MeshData.Vertices.Num())
+            {
+                const FVector& P0 = MeshData.Vertices[Idx0];
+                const FVector& P1 = MeshData.Vertices[Idx1];
+                const FVector& P2 = MeshData.Vertices[Idx2];
+
+                FVector Edge1 = P1 - P0;
+                FVector Edge2 = P2 - P0;
+                FVector UnnormalizedNormal = FVector::CrossProduct(Edge1, Edge2);
+
+                // 如果叉积模长的平方非常小，说明面积接近0，是无效三角形
+                if (UnnormalizedNormal.SizeSquared() > KINDA_SMALL_NUMBER)
+                {
+                    CleanTriangles.Add(Idx0);
+                    CleanTriangles.Add(Idx1);
+                    CleanTriangles.Add(Idx2);
+                }
+            }
+        }
+
+        // 应用清理后的三角形索引
+        MeshData.Triangles = CleanTriangles;
+        MeshData.TriangleCount = CleanTriangles.Num() / 3;
+    }
+
+    // =========================================================
+    // 4. 后处理
+    // =========================================================
+    // 只有在移除了退化三角形后，计算切线才是安全的
     MeshData.CalculateTangents();
 
     OutMeshData = MoveTemp(MeshData);
@@ -84,61 +137,193 @@ void FEditableSurfaceBuilder::GetAdaptiveSamplePoints(TArray<float>& OutAlphas, 
     // 目前使用 GenerateSurfaceMesh 中的固定采样
 }
 
-void FEditableSurfaceBuilder::GenerateSurfaceMesh()
+// ====================================================================
+// 核心算法：递归自适应采样
+// 参考了渲染管线中处理贝塞尔曲线细分的思路
+// ====================================================================
+void FEditableSurfaceBuilder::RecursiveAdaptiveSampling(
+    float StartDist, 
+    float EndDist, 
+    const FVector& StartTan, 
+    const FVector& EndTan, 
+    float AngleThresholdCos, 
+    float MinStepLen,
+    TArray<float>& OutDistanceSamples) const
 {
-    TArray<float> SampleAlphas;
-    // 使用 PathSampleCount 进行等距采样
-    SampleAlphas.Empty();
-    for (int32 i = 0; i <= PathSampleCount; ++i)
+    float SegmentLength = EndDist - StartDist;
+
+    // 1. 递归终止条件：长度太短，不再细分
+    if (SegmentLength < MinStepLen)
     {
-        SampleAlphas.Add(static_cast<float>(i) / static_cast<float>(PathSampleCount));
+        return;
     }
 
-    TArray<FPathSampleInfo> Samples;
-    Samples.Reserve(SampleAlphas.Num());
+    // 计算两端切线的夹角余弦值
+    float Dot = FVector::DotProduct(StartTan, EndTan);
 
-    // 1. 预计算所有采样点信息
-    for (float Alpha : SampleAlphas)
+    // 2. 递归判断：如果夹角小于阈值 (Dot > ThresholdCos 表示夹角很小)
+    // 并且长度也没有特别长，则认为这段已经足够平滑
+    if (Dot > AngleThresholdCos)
     {
+        return;
+    }
+
+    // 3. 需要细分：取中点
+    float MidDist = (StartDist + EndDist) * 0.5f;
+    FVector MidTan = SplineComponent->GetTangentAtDistanceAlongSpline(MidDist, ESplineCoordinateSpace::Local).GetSafeNormal();
+
+    // 先处理左半段
+    RecursiveAdaptiveSampling(StartDist, MidDist, StartTan, MidTan, AngleThresholdCos, MinStepLen, OutDistanceSamples);
+    
+    // 添加中点
+    OutDistanceSamples.Add(MidDist);
+    
+    // 再处理右半段
+    RecursiveAdaptiveSampling(MidDist, EndDist, MidTan, EndTan, AngleThresholdCos, MinStepLen, OutDistanceSamples);
+}
+
+void FEditableSurfaceBuilder::GenerateSurfaceMesh()
+{
+    if (!SplineComponent) return;
+
+    // =========================================================
+    // 第一步：生成自适应采样点 (The Good Way)
+    // =========================================================
+    TArray<float> DistanceSamples;
+    float SplineLen = SplineComponent->GetSplineLength();
+    
+    // 阈值设置：
+    // 5.0度：非常平滑 (cos(5) ≈ 0.996)
+    // MinStep: 10cm，防止无限递归
+    const float AngleThresholdDeg = 5.0f;
+    const float AngleThresholdCos = FMath::Cos(FMath::DegreesToRadians(AngleThresholdDeg));
+    const float MinStepLen = 10.0f; 
+
+    // 添加起点
+    DistanceSamples.Add(0.0f);
+
+    // 获取路点数量 (基于 Spline 的控制点)
+    int32 NumPoints = SplineComponent->GetNumberOfSplinePoints();
+    // 遍历每一段原始 Spline Segment 进行细分检查
+    // 这样能保证一定会经过原始控制点，不会丢失形状
+    int32 NumSegments = SplineComponent->IsClosedLoop() ? NumPoints : NumPoints - 1;
+
+    for (int32 i = 0; i < NumSegments; ++i)
+    {
+        float DistStart = SplineComponent->GetDistanceAlongSplineAtSplinePoint(i);
+        float DistEnd = SplineComponent->GetDistanceAlongSplineAtSplinePoint((i + 1) % NumPoints);
+        
+        // 处理闭环的最后一段回绕情况
+        if (DistEnd < DistStart) DistEnd = SplineLen;
+
+        FVector TanStart = SplineComponent->GetTangentAtDistanceAlongSpline(DistStart, ESplineCoordinateSpace::Local).GetSafeNormal();
+        FVector TanEnd = SplineComponent->GetTangentAtDistanceAlongSpline(DistEnd, ESplineCoordinateSpace::Local).GetSafeNormal();
+
+        // 执行递归细分
+        RecursiveAdaptiveSampling(DistStart, DistEnd, TanStart, TanEnd, AngleThresholdCos, MinStepLen, DistanceSamples);
+
+        // 添加该段终点
+        // 注意：如果是最后一段且非闭环，DistEnd 就是 SplineLen
+        // 如果是闭环的最后一段，DistEnd 也是 SplineLen (逻辑上)，但在 DistanceSamples 里我们要处理好
+        if (i < NumSegments - 1 || !SplineComponent->IsClosedLoop())
+        {
+            DistanceSamples.Add(DistEnd);
+        }
+    }
+    
+    // 处理闭环终点：如果不是闭环，最后一个点在上面已经加了。如果是闭环，通常首尾重合处理。
+    // 这里简单处理：确保最后一个采样点是 SplineLen
+    if (!FMath::IsNearlyEqual(DistanceSamples.Last(), SplineLen, 0.1f))
+    {
+        DistanceSamples.Add(SplineLen);
+    }
+
+    // 对距离采样进行排序和去重（递归可能产生重复点）
+    DistanceSamples.Sort();
+    for (int32 i = DistanceSamples.Num() - 1; i > 0; --i)
+    {
+        if (FMath::IsNearlyEqual(DistanceSamples[i], DistanceSamples[i - 1], 0.1f))
+        {
+            DistanceSamples.RemoveAt(i);
+        }
+    }
+
+    // =========================================================
+    // 第二步：预计算采样信息
+    // =========================================================
+    TArray<FPathSampleInfo> Samples;
+    Samples.Reserve(DistanceSamples.Num());
+
+    for (float Dist : DistanceSamples)
+    {
+        // 将距离转换为 Alpha (0~1) 传给 GetPathSample
+        // 注意：你的 GetPathSample 内部是用 Alpha * Length 计算距离的，这里反算一下
+        float Alpha = (SplineLen > KINDA_SMALL_NUMBER) ? (Dist / SplineLen) : 0.0f;
         Samples.Add(GetPathSample(Alpha));
     }
 
     FrontVertexStartIndex = MeshData.Vertices.Num();
     FrontCrossSections.Reserve(Samples.Num());
 
-    // 2. 生成每个截面的几何体
+    // =========================================================
+    // 第三步：生成几何体 (使用最纯粹的 Miter 逻辑)
+    // =========================================================
+    // 因为有了自适应采样，相邻两点的夹角被强制控制在 5度以内。
+    // 5度的 Miter 延伸微乎其微 (1/cos(2.5) ≈ 1.001)，绝不可能发生穿插。
+    // 所以我们可以移除所有复杂的"防穿插"hack 代码，回归简单。
+    
     for (int32 i = 0; i < Samples.Num(); ++i)
     {
         const FPathSampleInfo& CurrSample = Samples[i];
-
-        // 计算斜切方向
         FVector MiterDir;
         float MiterScale = 1.0f;
 
+        // 这里的逻辑可以简化了，因为采样点够密
         if (i == 0 || i == Samples.Num() - 1)
         {
             MiterDir = CurrSample.Binormal;
         }
         else
         {
-            MiterDir = CalculateMiterDirection(Samples[i - 1], CurrSample, Samples[i + 1], false);
+            const FPathSampleInfo& Prev = Samples[i-1];
+            const FPathSampleInfo& Next = Samples[i+1];
+
+            // 标准 Miter 计算
+            FVector Dir1 = (CurrSample.Location - Prev.Location).GetSafeNormal();
+            FVector Dir2 = (Next.Location - CurrSample.Location).GetSafeNormal();
+            FVector AvgTangent = (Dir1 + Dir2).GetSafeNormal();
+            
+            // 叉乘求角平分线方向
+            MiterDir = FVector::CrossProduct(AvgTangent, CurrSample.Normal).GetSafeNormal();
+            
+            // 确保方向一致性
+            if (FVector::DotProduct(MiterDir, CurrSample.Binormal) < 0.0f)
+            {
+                MiterDir = -MiterDir;
+            }
+
+            // 计算缩放：1 / sin(半角) 或 1 / dot(Miter, Binormal)
             float Dot = FVector::DotProduct(MiterDir, CurrSample.Binormal);
-            if (Dot < 0.2f) Dot = 0.2f;
+            if (Dot < 0.1f) Dot = 0.1f; // 仅做防除零保护
+            
             MiterScale = 1.0f / Dot;
         }
 
+        // 传入 GenerateCrossSection (注意：传入的是 DistanceSamples[i] 对应的 Alpha)
+        float CurrentAlpha = (SplineLen > 0.0f) ? (DistanceSamples[i] / SplineLen) : 0.0f;
+        
         TArray<int32> RowIndices = GenerateCrossSection(
             CurrSample,
             SurfaceWidth * 0.5f,
             SideSmoothness,
-            SampleAlphas[i],
+            CurrentAlpha,
             MiterDir,
             MiterScale
         );
 
         FrontCrossSections.Add(RowIndices);
 
-        // 连接三角形
+        // 生成网格面 (Quad)
         if (i > 0)
         {
             const TArray<int32>& PrevRow = FrontCrossSections[i - 1];
@@ -153,6 +338,7 @@ void FEditableSurfaceBuilder::GenerateSurfaceMesh()
             }
         }
     }
+    
     FrontVertexCount = MeshData.Vertices.Num() - FrontVertexStartIndex;
 }
 

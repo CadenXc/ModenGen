@@ -74,4 +74,15 @@ private:
 
     // 斜切角处理：计算角平分线并调整顶点位置
     FVector CalculateMiterDirection(const FPathSampleInfo& PrevInfo, const FPathSampleInfo& CurrInfo, const FPathSampleInfo& NextInfo, bool bIsLeft) const;
+
+    // 递归函数：计算自适应采样点（基于曲率的递归细分）
+    void RecursiveAdaptiveSampling(
+        float StartDist, 
+        float EndDist, 
+        const FVector& StartTan, 
+        const FVector& EndTan, 
+        float AngleThresholdCos, 
+        float MinStepLen,
+        TArray<float>& OutDistanceSamples
+    ) const;
 };

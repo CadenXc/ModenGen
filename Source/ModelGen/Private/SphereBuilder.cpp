@@ -31,6 +31,14 @@ bool FSphereBuilder::Generate(FModelGenMeshData& OutMeshData)
     HorizontalCut = Sphere.HorizontalCut;
     VerticalCut = Sphere.VerticalCut;
 
+    // 【修复1】：防止横截断 = 1.0 时崩溃
+    // 当 HorizontalCut = 1.0 时，EndPhi = 0，会导致所有顶点都在极点，生成无效网格
+    // 限制最大值为接近但不等于 1.0
+    if (HorizontalCut >= 1.0f - KINDA_SMALL_NUMBER)
+    {
+        HorizontalCut = 1.0f - KINDA_SMALL_NUMBER;
+    }
+
     // 【核心修复】：计算Z偏移量，使横截面（或最低点）位于Z=0
     // 如果有横截断，中心点在横截面上；如果没有横截断，中心点在最低点
     const float EndPhi = PI * (1.0f - HorizontalCut);
@@ -94,10 +102,35 @@ void FSphereBuilder::GenerateSphereMesh()
     const float EndPhi = PI * (1.0f - HorizontalCut);
     const float PhiRange = EndPhi - StartPhi;
 
+    // 【修复1】：防止横截断 = 1.0 时生成无效网格
+    if (PhiRange <= KINDA_SMALL_NUMBER)
+    {
+        // 如果 PhiRange 太小，只生成一个端盖平面
+        return;
+    }
+
     const float StartTheta = 0.0f;
-    const float EndTheta = (VerticalCut > 0.0f && VerticalCut < 360.0f)
-        ? FMath::DegreesToRadians(VerticalCut) : (2.0f * PI);
+    // 【修复2】：区分竖截断 0 和 360 的效果
+    float EndTheta;
+    if (FMath::IsNearlyZero(VerticalCut))
+    {
+        EndTheta = 0.0f;  // 0度，没有球体
+    }
+    else if (FMath::IsNearlyEqual(VerticalCut, 360.0f))
+    {
+        EndTheta = 2.0f * PI;  // 360度，完整球体
+    }
+    else
+    {
+        EndTheta = FMath::DegreesToRadians(VerticalCut);
+    }
     const float ThetaRange = EndTheta - StartTheta;
+
+    // 【修复2】：如果 ThetaRange 为 0，不需要生成球体
+    if (ThetaRange <= KINDA_SMALL_NUMBER)
+    {
+        return;
+    }
 
     const int32 VerticalSegments = Sides;
     const int32 HorizontalSegments = Sides;
@@ -154,15 +187,29 @@ void FSphereBuilder::GenerateCaps()
 {
     const float EndPhi = PI * (1.0f - HorizontalCut);
     const float StartTheta = 0.0f;
-    const float EndTheta = (VerticalCut > 0.0f && VerticalCut < 360.0f)
-        ? FMath::DegreesToRadians(VerticalCut) : (2.0f * PI);
+    // 【修复2】：使用与 GenerateSphereMesh 相同的逻辑
+    float EndTheta;
+    if (FMath::IsNearlyZero(VerticalCut))
+    {
+        EndTheta = 0.0f;
+    }
+    else if (FMath::IsNearlyEqual(VerticalCut, 360.0f))
+    {
+        EndTheta = 2.0f * PI;
+    }
+    else
+    {
+        EndTheta = FMath::DegreesToRadians(VerticalCut);
+    }
 
     if (HorizontalCut > KINDA_SMALL_NUMBER && EndPhi < PI - KINDA_SMALL_NUMBER)
     {
         GenerateHorizontalCap(EndPhi, true);
     }
 
-    if (VerticalCut > 0.0f && VerticalCut < 360.0f - KINDA_SMALL_NUMBER)
+    // 【修复2】：只有当竖截断不是完整球体（360度）时才生成竖截断端盖
+    // VerticalCut = 0 时不需要生成端盖（因为没有球体）
+    if (!FMath::IsNearlyZero(VerticalCut) && !FMath::IsNearlyEqual(VerticalCut, 360.0f))
     {
         GenerateVerticalCap(StartTheta, true);
         GenerateVerticalCap(EndTheta, false);
@@ -172,8 +219,20 @@ void FSphereBuilder::GenerateCaps()
 void FSphereBuilder::GenerateHorizontalCap(float Phi, bool bIsBottom)
 {
     const float StartTheta = 0.0f;
-    const float EndTheta = (VerticalCut > 0.0f && VerticalCut < 360.0f)
-        ? FMath::DegreesToRadians(VerticalCut) : (2.0f * PI);
+    // 【修复2】：使用与 GenerateSphereMesh 相同的逻辑
+    float EndTheta;
+    if (FMath::IsNearlyZero(VerticalCut))
+    {
+        EndTheta = 0.0f;
+    }
+    else if (FMath::IsNearlyEqual(VerticalCut, 360.0f))
+    {
+        EndTheta = 2.0f * PI;
+    }
+    else
+    {
+        EndTheta = FMath::DegreesToRadians(VerticalCut);
+    }
     const float ThetaRange = EndTheta - StartTheta;
 
     // 【核心修复】：调整Z坐标，使横截面位于Z=0

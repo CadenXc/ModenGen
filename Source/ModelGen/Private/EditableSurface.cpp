@@ -371,3 +371,64 @@ int32 AEditableSurface::CalculateTriangleCountEstimate() const
 {
     return CalculateVertexCountEstimate() * 2; // 粗略估算三角形数
 }
+
+void AEditableSurface::SetWaypoints(const FString& WaypointsString)
+{
+    if (WaypointsString.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AEditableSurface::SetWaypoints - 输入字符串为空"));
+        return;
+    }
+
+    // 清空现有路点
+    Waypoints.Empty();
+
+    // 解析字符串格式：x1,y1,z1;x2,y2,z2;...
+    // 使用分号分隔不同的路点，逗号分隔坐标
+    TArray<FString> WaypointStrings;
+    WaypointsString.ParseIntoArray(WaypointStrings, TEXT(";"), true);
+
+    for (const FString& WaypointStr : WaypointStrings)
+    {
+        if (WaypointStr.IsEmpty())
+        {
+            continue;
+        }
+
+        // 解析坐标：x,y,z
+        TArray<FString> Coords;
+        WaypointStr.ParseIntoArray(Coords, TEXT(","), true);
+
+        if (Coords.Num() >= 3)
+        {
+            float X = FCString::Atof(*Coords[0]);
+            float Y = FCString::Atof(*Coords[1]);
+            float Z = FCString::Atof(*Coords[2]);
+            
+            Waypoints.Add(FSurfaceWaypoint(FVector(X, Y, Z)));
+        }
+        else if (Coords.Num() == 2)
+        {
+            // 如果只有两个坐标，Z 默认为 0
+            float X = FCString::Atof(*Coords[0]);
+            float Y = FCString::Atof(*Coords[1]);
+            
+            Waypoints.Add(FSurfaceWaypoint(FVector(X, Y, 0.0f)));
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("AEditableSurface::SetWaypoints - 无效的路点格式: %s"), *WaypointStr);
+        }
+    }
+
+    // 如果解析成功且路点数量足够，更新样条线和网格
+    if (Waypoints.Num() >= 2)
+    {
+        // 这里会触发 UpdateSplineFromWaypoints -> GenerateMesh
+        UpdateSplineFromWaypoints();
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AEditableSurface::SetWaypoints - 路点数量不足（需要至少2个），当前: %d"), Waypoints.Num());
+    }
+}
