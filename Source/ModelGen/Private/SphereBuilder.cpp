@@ -235,6 +235,12 @@ void FSphereBuilder::GenerateHorizontalCap(float Phi, bool bIsBottom)
     }
     const float ThetaRange = EndTheta - StartTheta;
 
+    // 【修复2】：如果 ThetaRange 为 0，不需要生成端盖
+    if (ThetaRange <= KINDA_SMALL_NUMBER)
+    {
+        return;
+    }
+
     // 【核心修复】：调整Z坐标，使横截面位于Z=0
     float CenterZ = Radius * FMath::Cos(Phi) + ZOffset;
     FVector CenterPos(0.0f, 0.0f, CenterZ);
