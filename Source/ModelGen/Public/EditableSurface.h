@@ -74,12 +74,6 @@ public:
         meta = (DisplayName = "路点", MakeEditWidget = true))
     TArray<FSurfaceWaypoint> Waypoints;
 
-    /** 路径采样数量 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
-        meta = (ClampMin = "2", ClampMax = "200", DisplayName = "路径采样数量"))
-    int32 PathSampleCount = 20;
-
-
     /** 获取指定索引的路点位置 */
     UFUNCTION(BlueprintCallable, BlueprintPure, Category = "EditableSurface|Waypoints")
     FVector GetWaypointPosition(int32 Index) const;
@@ -87,10 +81,6 @@ public:
     /** 设置指定索引的路点位置 */
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Waypoints")
     bool SetWaypointPosition(int32 Index, const FVector& NewPosition);
-
-    /** 设置路径采样数量 */
-    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
-    void SetPathSampleCount(int32 NewValue);
 
     /** 添加一个新的路点 */
     UFUNCTION(BlueprintCallable, CallInEditor, Category = "EditableSurface|Tools", meta = (DisplayName = "添加新路点 (+100)"))
@@ -183,7 +173,7 @@ public:
     /** 曲线类型 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
         meta = (DisplayName = "曲线类型"))
-    ESurfaceCurveType CurveType = ESurfaceCurveType::Standard;
+    ESurfaceCurveType CurveType = ESurfaceCurveType::Smooth;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
     void SetCurveType(ESurfaceCurveType NewCurveType);

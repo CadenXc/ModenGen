@@ -27,7 +27,6 @@ private:
 
     // Configuration
     USplineComponent* SplineComponent;
-    int32 PathSampleCount;
     float SurfaceWidth;
     bool bEnableThickness;
     float ThicknessValue;

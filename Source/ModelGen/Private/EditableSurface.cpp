@@ -234,12 +234,6 @@ bool AEditableSurface::SetWaypointPosition(int32 Index, const FVector& NewPositi
     return false;
 }
 
-void AEditableSurface::SetPathSampleCount(int32 NewValue)
-{
-    PathSampleCount = FMath::Clamp(NewValue, 2, 1000);
-    GenerateMesh();
-}
-
 void AEditableSurface::AddNewWaypoint()
 {
     if (Waypoints.Num() > 0)
@@ -363,8 +357,20 @@ bool AEditableSurface::IsValid() const
 
 int32 AEditableSurface::CalculateVertexCountEstimate() const
 {
-    // 粗略估算
-    return PathSampleCount * (2 + SideSmoothness * 2) * (bEnableThickness ? 2 : 1);
+    // 基于自适应采样估算：使用样条长度和路点数量
+    int32 CrossSectionPoints = 2 + (SideSmoothness * 2);
+    
+    // 估算采样点数量：基于路点数量和样条长度
+    int32 NumWaypoints = Waypoints.Num();
+    float SplineLength = SplineComponent ? SplineComponent->GetSplineLength() : 1000.0f;
+    
+    // 保守估算：每100单位长度至少1个采样点，每个路点之间至少2个采样点
+    int32 EstimatedSamples = FMath::Max(
+        FMath::CeilToInt(SplineLength / 100.0f),
+        NumWaypoints * 2
+    );
+    
+    return EstimatedSamples * CrossSectionPoints * (bEnableThickness ? 2 : 1);
 }
 
 int32 AEditableSurface::CalculateTriangleCountEstimate() const

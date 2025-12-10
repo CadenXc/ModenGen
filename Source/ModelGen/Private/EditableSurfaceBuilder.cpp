@@ -11,7 +11,6 @@ FEditableSurfaceBuilder::FEditableSurfaceBuilder(const AEditableSurface& InSurfa
 {
     // 缓存配置数据
     SplineComponent = InSurface.SplineComponent;
-    PathSampleCount = InSurface.PathSampleCount;
     SurfaceWidth = InSurface.SurfaceWidth;
     bEnableThickness = InSurface.bEnableThickness;
     ThicknessValue = InSurface.ThicknessValue;
@@ -35,10 +34,23 @@ void FEditableSurfaceBuilder::Clear()
 
 int32 FEditableSurfaceBuilder::CalculateVertexCountEstimate() const
 {
+    // 基于自适应采样估算：使用样条长度和路点数量
+    // 自适应采样会根据曲率自动调整采样密度，这里给出保守估算
     int32 CrossSectionPoints = 2 + (SideSmoothness * 2);
-    int32 NumSamples = FMath::Max(PathSampleCount, 20) * 2;
-    int32 BaseCount = NumSamples * CrossSectionPoints;
-    return bEnableThickness ? BaseCount * 2 + (NumSamples * 2) : BaseCount;
+    
+    // 估算采样点数量：基于路点数量和样条长度
+    // 每个路点之间至少会有一些采样点，急弯处会更多
+    int32 NumWaypoints = SplineComponent ? SplineComponent->GetNumberOfSplinePoints() : 2;
+    float SplineLength = SplineComponent ? SplineComponent->GetSplineLength() : 1000.0f;
+    
+    // 保守估算：每100单位长度至少1个采样点，每个路点之间至少2个采样点
+    int32 EstimatedSamples = FMath::Max(
+        FMath::CeilToInt(SplineLength / 100.0f),
+        NumWaypoints * 2
+    );
+    
+    int32 BaseCount = EstimatedSamples * CrossSectionPoints;
+    return bEnableThickness ? BaseCount * 2 + (EstimatedSamples * 2) : BaseCount;
 }
 
 int32 FEditableSurfaceBuilder::CalculateTriangleCountEstimate() const
@@ -412,11 +424,35 @@ TArray<int32> FEditableSurfaceBuilder::GenerateCrossSection(
 
     TArray<FPointDef> Points;
 
-    // 计算路面宽度的 UV 比例因子
-    // 路面 UV 从 0 到 1，覆盖宽度 2 * RoadHalfWidth
-    // 因此：物理距离 1 单位 = UV 1.0 / (2 * Width)
+    // =================================================================================
+    // 【修改开始】UV 映射逻辑重构
+    // =================================================================================
+    
     float RoadTotalWidth = RoadHalfWidth * 2.0f;
-    float UVFactor = (RoadTotalWidth > KINDA_SMALL_NUMBER) ? (1.0f / RoadTotalWidth) : 0.0f;
+    float UVFactor = 0.0f;
+    
+    // 定义路面主体左右边缘的 U 坐标
+    float U_RoadLeft = 0.0f;
+    float U_RoadRight = 0.0f;
+
+    if (TextureMapping == ESurfaceTextureMapping::Stretch)
+    {
+        // 拉伸模式：强制映射到 [0, 1]
+        UVFactor = (RoadTotalWidth > KINDA_SMALL_NUMBER) ? (1.0f / RoadTotalWidth) : 0.0f;
+        U_RoadLeft = 0.0f;
+        U_RoadRight = 1.0f;
+    }
+    else // Default (物理模式)
+    {
+        // 物理模式：使用全局缩放，基于真实物理宽度计算 U
+        UVFactor = ModelGenConstants::GLOBAL_UV_SCALE;
+
+        // 【关键策略】为了让路面变宽时纹理向两侧自然生长而不是整体偏移，
+        // 我们以中心线为基准 (U=0)，向左为负，向右为正。
+        // 如果您希望左边缘永远是0，可以改为 U_RoadLeft = 0.0f; U_RoadRight = RoadTotalWidth * UVFactor;
+        U_RoadLeft = -RoadHalfWidth * UVFactor;
+        U_RoadRight = RoadHalfWidth * UVFactor;
+    }
 
     // lambda: 计算倒角上的相对偏移 (X, Z)
     auto CalculateBevelOffset = [&](float Ratio, float Len, float Grad, float& OutX, float& OutZ)
@@ -439,7 +475,9 @@ TArray<int32> FEditableSurfaceBuilder::GenerateCrossSection(
         // 从路边缘 (Ratio=0) 开始向外延伸到 (Ratio=1)
         float PrevX = 0.0f;
         float PrevZ = 0.0f;
-        float CurrentU = 0.0f; // 左边缘起始 U = 0
+        
+        // 【修改】起始 U 必须从路面左边缘开始算，而不是写死 0.0
+        float CurrentU = U_RoadLeft;
 
         for (int32 i = 1; i <= SlopeSegments; ++i)
         {
@@ -471,11 +509,13 @@ TArray<int32> FEditableSurfaceBuilder::GenerateCrossSection(
         }
     }
 
-    // --- 路面左边缘 (U=0) ---
-    Points.Add({ -RoadHalfWidth, 0.0f, 0.0f });
+    // --- 路面左边缘 ---
+    // 【修改】使用计算好的 U_RoadLeft
+    Points.Add({ -RoadHalfWidth, 0.0f, U_RoadLeft });
 
-    // --- 路面右边缘 (U=1) ---
-    Points.Add({ RoadHalfWidth, 0.0f, 1.0f });
+    // --- 路面右边缘 ---
+    // 【修改】使用计算好的 U_RoadRight
+    Points.Add({ RoadHalfWidth, 0.0f, U_RoadRight });
 
     // =================================================================================
     // 2. 右侧护坡 (Right Slope) - 从路边向外计算
@@ -484,7 +524,9 @@ TArray<int32> FEditableSurfaceBuilder::GenerateCrossSection(
     {
         float PrevX = 0.0f;
         float PrevZ = 0.0f;
-        float CurrentU = 1.0f; // 右边缘起始 U = 1
+        
+        // 【修改】起始 U 从路面右边缘开始算
+        float CurrentU = U_RoadRight;
 
         for (int32 i = 1; i <= SlopeSegments; ++i)
         {
