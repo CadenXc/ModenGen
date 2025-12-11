@@ -44,7 +44,7 @@ bool ASphere::IsValid() const
     return Radius > 0.0f && 
            Sides >= 4 && Sides <= 64 &&
            HorizontalCut >= 0.0f && HorizontalCut <= 1.0f &&
-           VerticalCut >= 0.0f && VerticalCut <= 360.0f;
+           VerticalCut >= 0.0f && VerticalCut <= 1.0f;
 }
 
 int32 ASphere::CalculateVertexCountEstimate() const
@@ -57,8 +57,8 @@ int32 ASphere::CalculateVertexCountEstimate() const
     
     // 考虑横截断和竖截断的影响
     const float EffectiveVerticalRatio = 1.0f - HorizontalCut;
-    const float EffectiveHorizontalRatio = (VerticalCut > 0.0f && VerticalCut < 360.0f) 
-        ? (VerticalCut / 360.0f) : 1.0f;
+    // 【修改】：竖截断现在是比例（0-1），直接使用
+    const float EffectiveHorizontalRatio = VerticalCut;
     
     const int32 EstimatedVertices = FMath::CeilToInt(
         (VerticalSegments + 1) * (HorizontalSegments + 1) * EffectiveVerticalRatio * EffectiveHorizontalRatio
@@ -75,8 +75,8 @@ int32 ASphere::CalculateTriangleCountEstimate() const
     const int32 HorizontalSegments = Sides;
     
     const float EffectiveVerticalRatio = 1.0f - HorizontalCut;
-    const float EffectiveHorizontalRatio = (VerticalCut > 0.0f && VerticalCut < 360.0f) 
-        ? (VerticalCut / 360.0f) : 1.0f;
+    // 【修改】：竖截断现在是比例（0-1），直接使用
+    const float EffectiveHorizontalRatio = VerticalCut;
     
     const int32 EstimatedTriangles = FMath::CeilToInt(
         VerticalSegments * HorizontalSegments * 2 * EffectiveVerticalRatio * EffectiveHorizontalRatio
@@ -137,7 +137,8 @@ void ASphere::SetVerticalCut(float NewVerticalCut)
     // 保留到0.01精度
     NewVerticalCut = FMath::RoundToFloat(NewVerticalCut * 100.0f) / 100.0f;
     
-    if (NewVerticalCut >= 0.0f && NewVerticalCut <= 360.0f && 
+    // 【修改】：竖截断现在是比例（0-1）
+    if (NewVerticalCut >= 0.0f && NewVerticalCut <= 1.0f && 
         !FMath::IsNearlyEqual(NewVerticalCut, VerticalCut))
     {
         float OldVerticalCut = VerticalCut;

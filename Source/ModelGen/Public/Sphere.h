@@ -39,10 +39,10 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Sphere|Parameters")
     void SetHorizontalCut(float NewHorizontalCut);
 
-    /** 竖截断（0-360，表示球体的角度范围，0=无球体，360=完整球体） */
+    /** 竖截断（0-1，表示球体的角度范围比例，0=无球体，1=完整球体） */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sphere|Geometry", 
-        meta = (ClampMin = "0.0", ClampMax = "360.0", UIMin = "0.0", UIMax = "360.0", DisplayName = "竖截断"))
-    float VerticalCut = 360.0f;
+        meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0", DisplayName = "竖截断"))
+    float VerticalCut = 1.0f;
 
     UFUNCTION(BlueprintCallable, Category = "Sphere|Parameters")
     void SetVerticalCut(float NewVerticalCut);

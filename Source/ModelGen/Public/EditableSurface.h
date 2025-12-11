@@ -105,7 +105,7 @@ public:
 
     /** 曲面宽度 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
-        meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "曲面宽度"))
+        meta = (ClampMin = "0.01", ClampMax = "2000", UIMin = "0.01", UIMax = "1000", DisplayName = "曲面宽度"))
     float SurfaceWidth = 100.0f;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
@@ -114,16 +114,16 @@ public:
     /** 曲面厚度开关 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Thickness",
         meta = (DisplayName = "曲面厚度"))
-    bool bEnableThickness = true;
+    bool bEnableThickness = false;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
     void SetEnableThickness(bool bNewEnableThickness);
 
     /** 曲面厚度值 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Thickness",
-        meta = (ClampMin = "0.01", ClampMax = "100", UIMin = "0.01", UIMax = "100",
+        meta = (ClampMin = "0.01", ClampMax = "200", UIMin = "0.01", UIMax = "200",
             DisplayName = "曲面厚度值", EditCondition = "bEnableThickness"))
-    float ThicknessValue = 1.0f;
+    float ThicknessValue = 20.0f;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
     void SetThicknessValue(float NewThicknessValue);
@@ -173,7 +173,7 @@ public:
     /** 曲线类型 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
         meta = (DisplayName = "曲线类型"))
-    ESurfaceCurveType CurveType = ESurfaceCurveType::Smooth;
+    ESurfaceCurveType CurveType = ESurfaceCurveType::Standard;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
     void SetCurveType(ESurfaceCurveType NewCurveType);
