@@ -48,7 +48,7 @@ int32 FEditableSurfaceBuilder::CalculateVertexCountEstimate() const
         FMath::CeilToInt(SplineLength / 100.0f),
         NumWaypoints * 2
     );
-    
+
     int32 BaseCount = EstimatedSamples * CrossSectionPoints;
     return bEnableThickness ? BaseCount * 2 + (EstimatedSamples * 2) : BaseCount;
 }
@@ -224,7 +224,7 @@ void FEditableSurfaceBuilder::GenerateSurfaceMesh()
     {
         float DistStart = SplineComponent->GetDistanceAlongSplineAtSplinePoint(i);
         float DistEnd = SplineComponent->GetDistanceAlongSplineAtSplinePoint((i + 1) % NumPoints);
-        
+
         // 处理闭环的最后一段回绕情况
         if (DistEnd < DistStart) DistEnd = SplineLen;
 
@@ -238,11 +238,11 @@ void FEditableSurfaceBuilder::GenerateSurfaceMesh()
         // 注意：如果是最后一段且非闭环，DistEnd 就是 SplineLen
         // 如果是闭环的最后一段，DistEnd 也是 SplineLen (逻辑上)，但在 DistanceSamples 里我们要处理好
         if (i < NumSegments - 1 || !SplineComponent->IsClosedLoop())
-        {
+    {
             DistanceSamples.Add(DistEnd);
-        }
     }
-    
+}
+
     // 处理闭环终点：如果不是闭环，最后一个点在上面已经加了。如果是闭环，通常首尾重合处理。
     // 这里简单处理：确保最后一个采样点是 SplineLen
     if (!FMath::IsNearlyEqual(DistanceSamples.Last(), SplineLen, 0.1f))
@@ -257,7 +257,7 @@ void FEditableSurfaceBuilder::GenerateSurfaceMesh()
         if (FMath::IsNearlyEqual(DistanceSamples[i], DistanceSamples[i - 1], 0.1f))
         {
             DistanceSamples.RemoveAt(i);
-        }
+    }
     }
 
     // =========================================================
@@ -278,19 +278,25 @@ void FEditableSurfaceBuilder::GenerateSurfaceMesh()
     FrontCrossSections.Reserve(Samples.Num());
 
     // =========================================================
-    // 第三步：生成几何体 (使用最纯粹的 Miter 逻辑)
+    // 第三步：生成几何体 (带内侧防穿插修正)
     // =========================================================
-    // 因为有了自适应采样，相邻两点的夹角被强制控制在 5度以内。
-    // 5度的 Miter 延伸微乎其微 (1/cos(2.5) ≈ 1.001)，绝不可能发生穿插。
-    // 所以我们可以移除所有复杂的"防穿插"hack 代码，回归简单。
     
+    // 用于记录上一帧的边缘顶点位置（世界空间/相对空间）
+    // 我们需要这些来检测"逆行"
+    FVector PrevLeftEdgePos = FVector::ZeroVector;
+    FVector PrevRightEdgePos = FVector::ZeroVector;
+    bool bHasPrev = false;
+
+    // 预先计算路面半宽 (不含护坡)
+    float RoadHalfWidth = SurfaceWidth * 0.5f;
+
     for (int32 i = 0; i < Samples.Num(); ++i)
     {
         const FPathSampleInfo& CurrSample = Samples[i];
         FVector MiterDir;
         float MiterScale = 1.0f;
 
-        // 这里的逻辑可以简化了，因为采样点够密
+        // --- 1. 计算 Miter 方向 (保持刚才优化的逻辑) ---
         if (i == 0 || i == Samples.Num() - 1)
         {
             MiterDir = CurrSample.Binormal;
@@ -300,42 +306,111 @@ void FEditableSurfaceBuilder::GenerateSurfaceMesh()
             const FPathSampleInfo& Prev = Samples[i-1];
             const FPathSampleInfo& Next = Samples[i+1];
 
-            // 标准 Miter 计算
             FVector Dir1 = (CurrSample.Location - Prev.Location).GetSafeNormal();
             FVector Dir2 = (Next.Location - CurrSample.Location).GetSafeNormal();
-            FVector AvgTangent = (Dir1 + Dir2).GetSafeNormal();
             
-            // 叉乘求角平分线方向
-            MiterDir = FVector::CrossProduct(AvgTangent, CurrSample.Normal).GetSafeNormal();
-            
-            // 确保方向一致性
-            if (FVector::DotProduct(MiterDir, CurrSample.Binormal) < 0.0f)
+            // 快速共线检查
+            if (FVector::DotProduct(Dir1, Dir2) > 0.9999f)
             {
-                MiterDir = -MiterDir;
+                MiterDir = CurrSample.Binormal;
             }
+            else
+            {
+                FVector AvgTangent = (Dir1 + Dir2).GetSafeNormal();
+                MiterDir = FVector::CrossProduct(AvgTangent, CurrSample.Normal).GetSafeNormal();
+                
+                if (FVector::DotProduct(MiterDir, CurrSample.Binormal) < 0.0f)
+                {
+                    MiterDir = -MiterDir;
+                }
 
-            // 计算缩放：1 / sin(半角) 或 1 / dot(Miter, Binormal)
-            float Dot = FVector::DotProduct(MiterDir, CurrSample.Binormal);
-            if (Dot < 0.1f) Dot = 0.1f; // 仅做防除零保护
-            
-            MiterScale = 1.0f / Dot;
+                float Dot = FVector::DotProduct(MiterDir, CurrSample.Binormal);
+                // 限制最小夹角，防止除以接近0的数
+                if (Dot < 0.25f) Dot = 0.25f; 
+                float RawScale = 1.0f / Dot;
+                
+                // 硬限制最大延伸倍数 (刚才加的 Step 1)
+                const float MAX_MITER_SCALE = 2.0f;
+                MiterScale = FMath::Min(RawScale, MAX_MITER_SCALE);
+            }
         }
 
-        // 传入 GenerateCrossSection (注意：传入的是 DistanceSamples[i] 对应的 Alpha)
+        // --- 2. 预测并修正边缘点 (Step 2: Inner Edge Correction) ---
+        // 我们先算出如果不做修正，左右边缘点会在哪里
+        FVector RightOffsetVec = MiterDir * MiterScale * RoadHalfWidth;
+        FVector RawLeftPos  = CurrSample.Location - RightOffsetVec;
+        FVector RawRightPos = CurrSample.Location + RightOffsetVec;
+
+        // 如果不是第一排，就进行防穿插检查
+        if (bHasPrev)
+        {
+            FVector ForwardDir = CurrSample.Tangent; // 或者用 (Curr - Prev).GetSafeNormal()
+
+            // 检查左侧 (Left Edge)
+            FVector LeftDelta = RawLeftPos - PrevLeftEdgePos;
+            if (FVector::DotProduct(LeftDelta, ForwardDir) <= 0.0f)
+            {
+                // 发现逆行！内侧打结了。
+                // 策略：保持在上一帧的位置，或者稍微往前挪一点点
+                // 这里简单粗暴地"钉"在上一帧位置，虽然会导致纹理拉伸，但保证了几何体不破面
+                RawLeftPos = PrevLeftEdgePos + ForwardDir * 0.1f; 
+            }
+
+            // 检查右侧 (Right Edge)
+            FVector RightDelta = RawRightPos - PrevRightEdgePos;
+            if (FVector::DotProduct(RightDelta, ForwardDir) <= 0.0f)
+            {
+                // 发现逆行！
+                RawRightPos = PrevRightEdgePos + ForwardDir * 0.1f;
+            }
+        }
+
+        // 更新上一帧记录
+        PrevLeftEdgePos = RawLeftPos;
+        PrevRightEdgePos = RawRightPos;
+        bHasPrev = true;
+
+        // --- 3. 重新反算 MiterDir 和 Scale 传给 GenerateCrossSection ---
+        // 因为我们要利用 GenerateCrossSection 统一生成护坡和UV，
+        // 所以我们得"骗"它一下。
+        // 我们根据修正后的左右点，重新计算一个"等效"的 RightVec
+        
+        FVector CorrectedRightVec = (RawRightPos - RawLeftPos) * 0.5f; // 新的半宽向量
+        float NewHalfWidth = CorrectedRightVec.Size(); // 新的实际物理半宽 (可能变窄了)
+        
+        // 如果宽度压缩太厉害，可能导致除零，做个保护
+        FVector NewMiterDir = FVector::RightVector; 
+        float NewMiterScale = 1.0f;
+
+        if (NewHalfWidth > KINDA_SMALL_NUMBER)
+        {
+            NewMiterDir = CorrectedRightVec / NewHalfWidth; // 归一化方向
+            // Scale = 修正后的半宽 / 原始设计的半宽
+            // 这样 GenerateCrossSection 乘回去的时候就是正确的位置
+            NewMiterScale = NewHalfWidth / RoadHalfWidth; 
+        }
+        else
+        {
+            // 极度挤压，退化成中心点
+            NewMiterDir = CurrSample.Binormal;
+            NewMiterScale = 0.0f; 
+        }
+
+        // --- 4. 生成横截面 ---
         float CurrentAlpha = (SplineLen > 0.0f) ? (DistanceSamples[i] / SplineLen) : 0.0f;
         
         TArray<int32> RowIndices = GenerateCrossSection(
             CurrSample,
-            SurfaceWidth * 0.5f,
+            RoadHalfWidth, // 传入原始设计宽度
             SideSmoothness,
             CurrentAlpha,
-            MiterDir,
-            MiterScale
+            NewMiterDir,   // 传入修正后的方向
+            NewMiterScale  // 传入修正后的缩放 (包含了挤压信息)
         );
 
         FrontCrossSections.Add(RowIndices);
 
-        // 生成网格面 (Quad)
+        // --- 5. 缝合网格 ---
         if (i > 0)
         {
             const TArray<int32>& PrevRow = FrontCrossSections[i - 1];
@@ -350,7 +425,7 @@ void FEditableSurfaceBuilder::GenerateSurfaceMesh()
             }
         }
     }
-    
+
     FrontVertexCount = MeshData.Vertices.Num() - FrontVertexStartIndex;
 }
 
@@ -369,23 +444,46 @@ FEditableSurfaceBuilder::FPathSampleInfo FEditableSurfaceBuilder::GetPathSample(
     float Distance = Alpha * SplineLength;
     Info.DistanceAlongSpline = Distance;
 
+    // 1. 获取基础变换
     Info.Location = SplineComponent->GetLocationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::Local);
     Info.Tangent = SplineComponent->GetTangentAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::Local).GetSafeNormal();
 
-    // 稳定坐标系计算
-    FVector ReferenceUp = FVector::UpVector;
-    bool bIsVertical = FMath::Abs(FVector::DotProduct(Info.Tangent, ReferenceUp)) > 0.99f;
+    // 2. 稳定的参考系计算 (Standard Up)
+    FVector RefUp = FVector::UpVector;
+    // 如果 Tangent 垂直向上，更换参考向量防止万向节死锁
+    if (FMath::Abs(FVector::DotProduct(Info.Tangent, RefUp)) > 0.99f) RefUp = FVector::RightVector;
+    
+    FVector BaseRight = FVector::CrossProduct(Info.Tangent, RefUp).GetSafeNormal();
+    FVector BaseUp = FVector::CrossProduct(BaseRight, Info.Tangent).GetSafeNormal();
 
-    if (bIsVertical)
-    {
-        Info.Normal = SplineComponent->GetUpVectorAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::Local).GetSafeNormal();
-        Info.Binormal = FVector::CrossProduct(Info.Tangent, Info.Normal).GetSafeNormal();
-    }
-    else
-    {
-        Info.Binormal = FVector::CrossProduct(Info.Tangent, ReferenceUp).GetSafeNormal();
-        Info.Normal = FVector::CrossProduct(Info.Binormal, Info.Tangent).GetSafeNormal();
-    }
+    // 3. [核心算法优化] 自动计算弯道倾斜 (Auto-Banking)
+    // 原理：根据曲线的"急促程度"（曲率）来决定倾斜角度
+    // 我们向前探测一点距离，看 Tangent 变化了多少
+    float LookAheadDist = FMath::Min(Distance + 50.0f, SplineLength);
+    FVector NextTangent = SplineComponent->GetTangentAtDistanceAlongSpline(LookAheadDist, ESplineCoordinateSpace::Local).GetSafeNormal();
+    
+    // 计算当前切线和未来切线的叉积 -> 得到转向轴和转向力度
+    FVector TurnAxis = FVector::CrossProduct(Info.Tangent, NextTangent);
+    float TurnFactor = TurnAxis.Size(); // 转向越急，这个值越大
+    
+    // 判断向左转还是向右转: Project TurnAxis onto Up vector
+    // 如果 TurnAxis 向上，说明是向左转（基于右手定则）-> 需要向左倾斜
+    float TurnDirection = FVector::DotProduct(TurnAxis, BaseUp); 
+    
+    // 定义最大倾斜角度 (例如 25度) 和 敏感度
+    const float MaxBankAngle = 25.0f;
+    const float BankSensitivity = 3.0f; 
+    
+    // 计算最终 Roll 角度 (Degrees)
+    float TargetRoll = TurnDirection * BankSensitivity * MaxBankAngle;
+    TargetRoll = FMath::Clamp(TargetRoll, -MaxBankAngle, MaxBankAngle);
+
+    // 4. 应用倾斜旋转
+    // 将基础的 Up/Right 向量绕着 Tangent 轴旋转 TargetRoll 角度
+    FQuat BankRot = FQuat(Info.Tangent, FMath::DegreesToRadians(TargetRoll));
+    
+    Info.Normal = BankRot.RotateVector(BaseUp);
+    Info.Binormal = BankRot.RotateVector(BaseRight);
 
     return Info;
 }
@@ -454,14 +552,33 @@ TArray<int32> FEditableSurfaceBuilder::GenerateCrossSection(
         U_RoadRight = RoadHalfWidth * UVFactor;
     }
 
-    // lambda: 计算倒角上的相对偏移 (X, Z)
+    // lambda: 计算护坡上的相对偏移 (X, Z)
+    // [核心优化]：根据平滑度决定是 直线 还是 圆弧
     auto CalculateBevelOffset = [&](float Ratio, float Len, float Grad, float& OutX, float& OutZ)
     {
-        float Angle = Ratio * HALF_PI;
-        float ArcX = FMath::Sin(Angle);
-        float ArcZ = 1.0f - FMath::Cos(Angle);
-        OutX = Len * ArcX;
-        OutZ = (Len * Grad) * ArcZ;
+        // Ratio 从 0.0 (靠近路面) 到 1.0 (最远端)
+        float WeightX, WeightZ;
+
+        if (SideSmoothness <= 1)
+        {
+            // 直线护坡 (原逻辑)
+            WeightX = Ratio;
+            WeightZ = Ratio;
+        }
+        else
+        {
+            // 圆形护坡 (优化逻辑)
+            // 模拟 1/4 圆弧形状 (凸起)
+            // X 轴使用 sin (前期增长快，后期平缓)
+            // Z 轴使用 1-cos (前期下沉慢，后期陡峭)
+            float Angle = Ratio * HALF_PI;
+            WeightX = FMath::Sin(Angle);
+            WeightZ = 1.0f - FMath::Cos(Angle);
+        }
+
+        OutX = Len * WeightX;
+        // Z 偏移 = 长度 * 梯度比率 * 权重
+        OutZ = (Len * Grad) * WeightZ; 
     };
 
     // =================================================================================
@@ -482,7 +599,7 @@ TArray<int32> FEditableSurfaceBuilder::GenerateCrossSection(
         for (int32 i = 1; i <= SlopeSegments; ++i)
         {
             float Ratio = static_cast<float>(i) / static_cast<float>(SlopeSegments);
-
+            
             float RelX, RelZ;
             CalculateBevelOffset(Ratio, LeftSlopeLength, LeftSlopeGradient, RelX, RelZ);
 
@@ -553,14 +670,14 @@ TArray<int32> FEditableSurfaceBuilder::GenerateCrossSection(
     // 3. 生成顶点
     // =================================================================================
     float CoordV = 0.0f;
-    if (TextureMapping == ESurfaceTextureMapping::Stretch)
-    {
+        if (TextureMapping == ESurfaceTextureMapping::Stretch)
+        {
         CoordV = Alpha;
-    }
-    else
-    {
+        }
+        else
+        {
         CoordV = SampleInfo.DistanceAlongSpline * ModelGenConstants::GLOBAL_UV_SCALE;
-    }
+        }
 
     for (const FPointDef& Pt : Points)
     {

@@ -43,9 +43,94 @@ void AEditableSurface::InitializeDefaultWaypoints()
     }
 }
 
+void AEditableSurface::RelaxWaypoints()
+{
+    if (Waypoints.Num() < 3) return; // 至少需要3个点才能进行松弛
+
+    // 计算最小距离：路面宽度的1.2倍
+    float MinDist = SurfaceWidth * 1.2f;
+    float MinDistSquared = MinDist * MinDist;
+
+    const int32 MaxIterations = 10;
+    
+    for (int32 Iter = 0; Iter < MaxIterations; ++Iter)
+    {
+        bool bAnyMoved = false;
+
+        // 遍历所有相邻的三元组 (P0, P1, P2)
+        for (int32 i = 0; i < Waypoints.Num() - 2; ++i)
+        {
+            FVector& P0 = Waypoints[i].Position;
+            FVector& P1 = Waypoints[i + 1].Position;
+            FVector& P2 = Waypoints[i + 2].Position;
+
+            // 检查 P1 和 P2 是否太近
+            FVector Delta = P2 - P1;
+            float DistSquared = Delta.SizeSquared();
+
+            if (DistSquared < MinDistSquared)
+            {
+                bAnyMoved = true;
+                
+                // 计算需要移动的距离
+                float CurrentDist = FMath::Sqrt(DistSquared);
+                float PushDistance = (MinDist - CurrentDist) * 0.5f; // 各移动一半
+                
+                if (CurrentDist > KINDA_SMALL_NUMBER)
+                {
+                    FVector PushDir = Delta / CurrentDist;
+                    
+                    // 第一轮迭代：优先移动 P2
+                    // 后续迭代：同时移动 P1 和 P2
+                    if (Iter == 0)
+                    {
+                        P2 += PushDir * PushDistance * 2.0f; // P2 移动全部距离
+                    }
+                    else
+                    {
+                        P1 -= PushDir * PushDistance;
+                        P2 += PushDir * PushDistance;
+                    }
+                }
+                else
+                {
+                    // 如果两点重合，沿 P0->P1 方向推开
+                    FVector Dir = (P1 - P0).GetSafeNormal();
+                    if (Dir.IsZero())
+                    {
+                        Dir = FVector::ForwardVector;
+                    }
+                    
+                    if (Iter == 0)
+                    {
+                        P2 = P1 + Dir * MinDist;
+                    }
+                    else
+                    {
+                        P1 -= Dir * PushDistance;
+                        P2 = P1 + Dir * MinDist;
+                    }
+                }
+            }
+        }
+
+        // 如果没有移动任何点，提前退出
+        if (!bAnyMoved)
+        {
+            break;
+        }
+    }
+}
+
 void AEditableSurface::UpdateSplineFromWaypoints()
 {
     if (!SplineComponent) return;
+
+    // 自动松弛路点（如果启用）
+    if (bAutoRelaxWaypoints)
+    {
+        RelaxWaypoints();
+    }
 
     SplineComponent->ClearSplinePoints(false);
 

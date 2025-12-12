@@ -224,7 +224,7 @@ void FSphereBuilder::GenerateHorizontalCap(float Phi, bool bIsBottom)
     // 中心点 (ZOffset 已在 GetSpherePoint 中包含，这里手动计算中心 Z)
     float CenterZ = Radius * FMath::Cos(Phi) + ZOffset;
     FVector CenterPos(0.0f, 0.0f, CenterZ);
-    
+
     // Normal: Bottom Cap 指向 -Z
     FVector Normal(0.0f, 0.0f, -1.0f); 
 
@@ -251,7 +251,7 @@ void FSphereBuilder::GenerateHorizontalCap(float Phi, bool bIsBottom)
 
     // 生成三角扇
     for (int32 i = 0; i < Segments; ++i)
-    {
+        {
         // Bottom Cap: Center -> Rim[i] -> Rim[i+1] (CW looking from top = CCW looking from bottom)
         // 实际上：Center -> Next -> Curr 还是 Center -> Curr -> Next?
         // Bottom Cap Normal is Down. We look from Down.
@@ -316,7 +316,7 @@ void FSphereBuilder::GenerateVerticalCap(float Theta, bool bIsStart)
         {
             // Top: AxisCurr == ProfCurr (Pole)
             // Triangle: AxisCurr -> ProfNext -> AxisNext
-            if (bIsStart)
+        if (bIsStart)
                 AddTriangle(AxisCurr, ProfNext, AxisNext);
             else
                 AddTriangle(AxisCurr, AxisNext, ProfNext);
