@@ -44,13 +44,20 @@ struct FSurfaceWaypoint
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Waypoint", meta = (MakeEditWidget = true))
     FVector Position = FVector::ZeroVector;
 
+    /** 该路点的路面宽度。
+     * - 如果值 <= 0 (如 -1.0)，则自动继承全局 SurfaceWidth。
+     * - 如果值 > 0，则强制使用该宽度覆盖全局设置。
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Waypoint", meta = (UIMin = "-1.0"))
+    float Width = -1.0f; // 默认为 -1.0f，表示继承全局宽度
+
     FSurfaceWaypoint()
-        : Position(FVector::ZeroVector)
+        : Position(FVector::ZeroVector), Width(-1.0f)
     {
     }
 
-    FSurfaceWaypoint(const FVector& InPosition)
-        : Position(InPosition)
+    FSurfaceWaypoint(const FVector& InPosition, float InWidth = -1.0f)
+        : Position(InPosition), Width(InWidth)
     {
     }
 };
@@ -111,6 +118,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
     void SetSurfaceWidth(float NewSurfaceWidth);
 
+    /** 样条线采样步长（越小越平滑，但性能开销越大） */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
+        meta = (ClampMin = "10.0", ClampMax = "1000.0", UIMin = "10.0", UIMax = "500.0", DisplayName = "采样精度(步长)"))
+    float SplineSampleStep = 50.0f;
+
+    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
+    void SetSplineSampleStep(float NewStep);
+
     /** 曲面厚度开关 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Thickness",
         meta = (DisplayName = "曲面厚度"))
@@ -131,7 +146,7 @@ public:
     /** 曲面两侧平滑度 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Smoothing",
         meta = (ClampMin = "0", ClampMax = "5", UIMin = "0", UIMax = "5", DisplayName = "曲面两侧平滑度"))
-    int32 SideSmoothness = 1;
+    int32 SideSmoothness = 0;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
     void SetSideSmoothness(int32 NewSideSmoothness);

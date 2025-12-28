@@ -17,6 +17,7 @@ struct FSurfaceSamplePoint
     FVector Tangent;
     float Distance;
     float Alpha;
+    float InterpolatedWidth; // 当前采样点的宽度
 };
 
 struct FProfilePoint
@@ -70,6 +71,7 @@ private:
     // Configuration
     USplineComponent* SplineComponent;
     float SurfaceWidth;
+    float SplineSampleStep;
     bool bEnableThickness;
     float ThicknessValue;
     int32 SideSmoothness;
