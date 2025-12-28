@@ -424,9 +424,67 @@ void AEditableSurface::PrintWaypointInfo()
 {
     for (int32 i = 0; i < Waypoints.Num(); ++i)
     {
-        UE_LOG(LogTemp, Log, TEXT("WP[%d]: Pos=%s"),
-            i, *Waypoints[i].Position.ToString());
+        UE_LOG(LogTemp, Log, TEXT("WP[%d]: Pos=%s, Width=%.2f"),
+            i, *Waypoints[i].Position.ToString(), Waypoints[i].Width);
     }
+}
+
+void AEditableSurface::PrintParametersInfo()
+{
+    UE_LOG(LogTemp, Warning, TEXT("========== EditableSurface 参数信息 =========="));
+    UE_LOG(LogTemp, Warning, TEXT(""));
+    
+    UE_LOG(LogTemp, Warning, TEXT("【几何参数】"));
+    UE_LOG(LogTemp, Warning, TEXT("  曲面宽度: %.2f"), SurfaceWidth);
+    UE_LOG(LogTemp, Warning, TEXT("  采样精度(步长): %.2f"), SplineSampleStep);
+    UE_LOG(LogTemp, Warning, TEXT("  曲线类型: %d"), (int32)CurveType);
+    UE_LOG(LogTemp, Warning, TEXT("  纹理映射: %d"), (int32)TextureMapping);
+    UE_LOG(LogTemp, Warning, TEXT(""));
+    
+    UE_LOG(LogTemp, Warning, TEXT("【厚度参数】"));
+    UE_LOG(LogTemp, Warning, TEXT("  启用厚度: %s"), bEnableThickness ? TEXT("是") : TEXT("否"));
+    if (bEnableThickness)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("  厚度值: %.2f"), ThicknessValue);
+    }
+    UE_LOG(LogTemp, Warning, TEXT(""));
+    
+    UE_LOG(LogTemp, Warning, TEXT("【平滑参数】"));
+    UE_LOG(LogTemp, Warning, TEXT("  两侧平滑度: %d"), SideSmoothness);
+    UE_LOG(LogTemp, Warning, TEXT(""));
+    
+    UE_LOG(LogTemp, Warning, TEXT("【护坡参数】"));
+    if (SideSmoothness >= 1)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("  右侧护坡长度: %.2f"), RightSlopeLength);
+        UE_LOG(LogTemp, Warning, TEXT("  右侧护坡斜率: %.2f"), RightSlopeGradient);
+        UE_LOG(LogTemp, Warning, TEXT("  左侧护坡长度: %.2f"), LeftSlopeLength);
+        UE_LOG(LogTemp, Warning, TEXT("  左侧护坡斜率: %.2f"), LeftSlopeGradient);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("  (平滑度 < 1，护坡未启用)"));
+    }
+    UE_LOG(LogTemp, Warning, TEXT(""));
+    
+    UE_LOG(LogTemp, Warning, TEXT("【路点信息】"));
+    UE_LOG(LogTemp, Warning, TEXT("  路点数量: %d"), Waypoints.Num());
+    if (SplineComponent)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("  样条线点数: %d"), SplineComponent->GetNumberOfSplinePoints());
+        UE_LOG(LogTemp, Warning, TEXT("  样条线长度: %.2f"), SplineComponent->GetSplineLength());
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("  样条线组件: 无效"));
+    }
+    UE_LOG(LogTemp, Warning, TEXT(""));
+    
+    UE_LOG(LogTemp, Warning, TEXT("【安全设置】"));
+    UE_LOG(LogTemp, Warning, TEXT("  自动松弛路点: %s"), bAutoRelaxWaypoints ? TEXT("是") : TEXT("否"));
+    UE_LOG(LogTemp, Warning, TEXT(""));
+    
+    UE_LOG(LogTemp, Warning, TEXT("=========================================="));
 }
 
 void AEditableSurface::SetSurfaceWidth(float NewSurfaceWidth)

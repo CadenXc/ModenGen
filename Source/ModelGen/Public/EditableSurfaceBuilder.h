@@ -37,7 +37,6 @@ struct FCornerData
     float RightSlopeMiterScale;
     float TurnRadius;
     FVector RotationCenter;
-    bool bIsSharpTurn;
     
     FCornerData()
         : MiterVector(FVector::ZeroVector)
@@ -47,7 +46,6 @@ struct FCornerData
         , RightSlopeMiterScale(1.0f)
         , TurnRadius(FLT_MAX)
         , RotationCenter(FVector::ZeroVector)
-        , bIsSharpTurn(false)
     {
     }
 };
@@ -64,6 +62,12 @@ public:
     //~ End FModelGenMeshBuilder Interface
 
     void Clear();
+
+    /** 初始化采样数据（用于调试） */
+    void InitializeForDebug();
+
+    /** 打印防穿模调试信息 */
+    void PrintAntiPenetrationDebugInfo();
 
 private:
     const AEditableSurface& Surface;

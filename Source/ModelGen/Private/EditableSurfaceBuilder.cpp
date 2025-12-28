@@ -203,19 +203,18 @@ void FEditableSurfaceBuilder::CalculateCornerGeometry()
         FVector CornerTangent = (DirIn + DirOut).GetSafeNormal();
         if (CornerTangent.IsZero()) CornerTangent = SampledPath[i].Tangent;
 
-        FVector GeometricRight = FVector::CrossProduct(CornerTangent, UpVec).GetSafeNormal();
-        
+        FVector GeometricRight = FVector::CrossProduct(UpVec, CornerTangent).GetSafeNormal();
         FVector StandardRight = SampledPath[i].RightVector;
         float MiterDot = FMath::Abs(FVector::DotProduct(StandardRight, GeometricRight));
-        if (FVector::DotProduct(StandardRight, GeometricRight) < 0.0f)
+        
+        if (MiterDot < 0.1f) 
         {
-            GeometricRight = -GeometricRight;
-            MiterDot = FMath::Abs(FVector::DotProduct(StandardRight, GeometricRight));
+            GeometricRight = StandardRight;
+            MiterDot = 1.0f;
         }
 
         float Scale = 1.0f;
         if (MiterDot > 1.e-4f) Scale = 1.0f / MiterDot;
-        Scale = FMath::Min(Scale, 5.0f);
 
         float TurnDir = FVector::DotProduct(FVector::CrossProduct(DirIn, DirOut), UpVec);
         bool bIsLeftTurn = bLastValidTurnLeft; 
@@ -229,7 +228,7 @@ void FEditableSurfaceBuilder::CalculateCornerGeometry()
         FVector RotationCenter = CurrPos;
         float CosTheta = FMath::Clamp(FVector::DotProduct(DirIn, DirOut), -1.0f, 1.0f);
         
-        if (CosTheta < 0.9999f) 
+        if (CosTheta < 0.99999f) 
         {
             float Theta = FMath::Acos(CosTheta);
             float StepLen = FVector::Dist(PrevPos, CurrPos);
@@ -241,21 +240,18 @@ void FEditableSurfaceBuilder::CalculateCornerGeometry()
             RotationCenter = CurrPos + (DirToCenter * TurnRadius);
         }
 
-        // 护坡缩放：使用当前采样点的实际宽度
         float CurrentHalfWidth = SampledPath[i].InterpolatedWidth * 0.5f;
         float LeftSlopeScale = 1.0f;
         float RightSlopeScale = 1.0f;
-        if (TurnRadius < 10000.0f) 
-        {
-             float LeftEffectiveRadius = CurrentHalfWidth + LeftSlopeLength;
-             float RightEffectiveRadius = CurrentHalfWidth + RightSlopeLength;
-             LeftSlopeScale = bIsLeftTurn ? (CurrentHalfWidth / LeftEffectiveRadius) : (RightEffectiveRadius / CurrentHalfWidth);
-             RightSlopeScale = bIsLeftTurn ? (RightEffectiveRadius / CurrentHalfWidth) : (CurrentHalfWidth / RightEffectiveRadius);
-             
-             float MiterIntensity = FMath::Clamp((Scale - 1.0f) / 1.0f, 0.0f, 1.0f);
-             LeftSlopeScale = FMath::Lerp(1.0f, LeftSlopeScale, MiterIntensity);
-             RightSlopeScale = FMath::Lerp(1.0f, RightSlopeScale, MiterIntensity);
-        }
+        
+        float LeftEffectiveRadius = CurrentHalfWidth + LeftSlopeLength;
+        float RightEffectiveRadius = CurrentHalfWidth + RightSlopeLength;
+        LeftSlopeScale = bIsLeftTurn ? (CurrentHalfWidth / LeftEffectiveRadius) : (RightEffectiveRadius / CurrentHalfWidth);
+        RightSlopeScale = bIsLeftTurn ? (RightEffectiveRadius / CurrentHalfWidth) : (CurrentHalfWidth / RightEffectiveRadius);
+        
+        float MiterIntensity = (Scale - 1.0f) / 1.0f;
+        LeftSlopeScale = FMath::Lerp(1.0f, LeftSlopeScale, MiterIntensity);
+        RightSlopeScale = FMath::Lerp(1.0f, RightSlopeScale, MiterIntensity);
 
         PathCornerData[i].MiterVector = GeometricRight;
         PathCornerData[i].MiterScale = Scale;
@@ -264,7 +260,6 @@ void FEditableSurfaceBuilder::CalculateCornerGeometry()
         PathCornerData[i].RightSlopeMiterScale = RightSlopeScale;
         PathCornerData[i].TurnRadius = TurnRadius;
         PathCornerData[i].RotationCenter = RotationCenter;
-        PathCornerData[i].bIsSharpTurn = (TurnRadius <= 50000.0f);
     }
 }
 
@@ -279,8 +274,10 @@ void FEditableSurfaceBuilder::GenerateGridMesh()
     GridNumRows = NumRows;
     GridNumCols = NumCols;
 
-    // 计算全局基础宽度的一半，用于归一化
     float BaseHalfWidth = SurfaceWidth * 0.5f;
+
+    TArray<FVector> PreviousRowPositions;
+    PreviousRowPositions.SetNumZeroed(NumCols);
 
     for (int32 i = 0; i < NumRows; ++i)
     {
@@ -303,117 +300,63 @@ void FEditableSurfaceBuilder::GenerateGridMesh()
             FVector FinalPos;
             FVector VertexNormal = Sample.Normal;
 
-            // 【关键修改】将原始定义的偏移量（基于 SurfaceWidth）缩放到当前采样点的宽度
             float ScaledOffsetH = Profile.OffsetH * WidthScaleRatio;
             float BaseOffsetH = ScaledOffsetH;
             bool bIsPointRightSide = (BaseOffsetH > 0.0f);
-            bool bIsInnerSide = (Corner.bIsConvexLeft && !bIsPointRightSide) || 
-                                (!Corner.bIsConvexLeft && bIsPointRightSide);
 
-            // 【关键修复】去掉 Profile.bIsSlope 限制，保护所有内侧点（包括路面）
-            if (bIsInnerSide && Corner.bIsSharpTurn)
+            float AppliedScale = Corner.MiterScale;
+            if (Profile.bIsSlope)
             {
-                // === 改进的防穿模逻辑（扇形塌缩策略） ===
-                
-                // 1. 计算如果不受限制，Miter 算法想把点放在哪里
-                float AppliedScale = Corner.MiterScale;
-                if (Profile.bIsSlope)
-                {
-                    float SlopeScale = bIsPointRightSide ? Corner.RightSlopeMiterScale : Corner.LeftSlopeMiterScale;
-                    AppliedScale *= SlopeScale;
-                }
-                
-                // 理论上的无限制位置 (Miter 挤出)
-                FVector TheoreticalPos = Sample.Location + (Corner.MiterVector * BaseOffsetH * AppliedScale);
-
-                // 2. 几何检测
-                float DistToCenter = FVector::Dist(Sample.Location, PivotPoint); // 采样点到旋转中心的物理距离
-                float TheoreticalDistToSample = FVector::Dist(TheoreticalPos, Sample.Location); // 顶点理论上要移动的距离
-                
-                // 3. 设定安全阈值
-                // 我们允许顶点向圆心移动，但必须保留一点"安全区(Buffer)"，防止越过圆心导致翻面
-                // 如果转弯极急(半径<100)，保留半径的10%；否则保留固定 2cm 防止 Z-Fighting
-                float SafetyBuffer = (DistToCenter < 100.0f) ? (DistToCenter * 0.1f) : 2.0f;
-                float MaxSafeDistance = FMath::Max(DistToCenter - SafetyBuffer, 0.0f);
-
-                if (TheoreticalDistToSample >= MaxSafeDistance)
-                {
-                    // --- 触发防穿模保护 (Clamping) ---
-                    
-                    // 关键策略：不再沿 Miter 方向移动（因为那是交错的），
-                    // 而是强制沿 [Sample -> Pivot] 的连线方向移动。
-                    // 这会让所有内侧过度挤压的点，像扇子合拢一样整齐地排列在圆心附近的圆弧上。
-                    
-                    FVector DirToCenter = (PivotPoint - Sample.Location).GetSafeNormal();
-                    
-                    // 将点放置在距离采样点 MaxSafeDistance 的位置（即圆心附近 SafetyBuffer 处）
-                    FinalPos = Sample.Location + (DirToCenter * MaxSafeDistance);
-                    
-                    // 修正高度：保持预设的高度偏移（如路拱或护坡高度）
-                    FinalPos.Z = Sample.Location.Z + Profile.OffsetV; 
-                    
-                    // 强行修正法线向上：
-                    // 在这种极度挤压的汇聚点，原始法线通常已经乱了，强制向上能保证光照平滑，没有黑斑
-                    VertexNormal = FVector::UpVector;
-                }
-                else
-                {
-                    // --- 正常情况 (未穿模) ---
-                    // 使用原始的 Miter 算法计算位置
-                    
-                    FinalPos = TheoreticalPos + (Sample.Normal * Profile.OffsetV);
-                    
-                    if (Profile.bIsSlope)
-                    {
-                        float Sign = bIsPointRightSide ? 1.0f : -1.0f;
-                        // 重新计算护坡法线，保证平滑
-                        VertexNormal = (Sample.Normal + (Corner.MiterVector * Sign * 0.5f)).GetSafeNormal();
-                    }
-                }
+                float SlopeScale = bIsPointRightSide ? Corner.RightSlopeMiterScale : Corner.LeftSlopeMiterScale;
+                AppliedScale *= SlopeScale;
             }
-            else
+
+            float IntendedMiterDist = BaseOffsetH * AppliedScale;
+            FinalPos = Sample.Location + (Corner.MiterVector * IntendedMiterDist) + (Sample.Normal * Profile.OffsetV);
+
+            if (i > 0)
             {
-                float AppliedScale = Corner.MiterScale;
+                FVector PrevPos = PreviousRowPositions[j];
+                FVector MovementVector = FinalPos - PrevPos;
+                float ForwardProgress = FVector::DotProduct(MovementVector, Sample.Tangent);
 
-                if (Profile.bIsSlope && !bIsInnerSide)
+                if (ForwardProgress <= 0.1f)
                 {
-                    float SlopeScale = bIsPointRightSide ? Corner.RightSlopeMiterScale : Corner.LeftSlopeMiterScale;
-                    AppliedScale *= SlopeScale;
-                    AppliedScale = FMath::Min(AppliedScale, 4.0f);
-                }
-
-                FinalPos = Sample.Location + (Corner.MiterVector * BaseOffsetH * AppliedScale) + (Sample.Normal * Profile.OffsetV);
-
-                if (Profile.bIsSlope)
-                {
-                    float Sign = bIsPointRightSide ? 1.0f : -1.0f;
-                    VertexNormal = (Sample.Normal + (Corner.MiterVector * Sign * 0.5f)).GetSafeNormal();
+                    FinalPos = PrevPos;
                 }
             }
 
-            // === 调试代码开始 (调试完后可删除) ===
-            if (Surface.GetWorld()) // 确保有 World 上下文
+            PreviousRowPositions[j] = FinalPos;
+
+            bool bIsInnerSide = false;
+            if (Corner.TurnRadius < FLT_MAX - 1.0f)
             {
-                // 只在急弯处显示 Debug 信息，避免满屏线条
-                if (bIsInnerSide && Corner.bIsSharpTurn && Corner.TurnRadius < 2000.0f) 
+                float DistFromCenterToVertex = FVector::Dist(PivotPoint, FinalPos);
+                float DistFromCenterToSample = Corner.TurnRadius;
+                bIsInnerSide = (DistFromCenterToVertex < DistFromCenterToSample);
+            }
+
+            if (Profile.bIsSlope)
+            {
+                float Sign = bIsPointRightSide ? 1.0f : -1.0f;
+                VertexNormal = (Sample.Normal + (Corner.MiterVector * Sign * 0.5f)).GetSafeNormal();
+            }
+
+            if (Surface.GetWorld() && BaseOffsetH < 0.0f)
+            {
+                FColor LineColor = FColor::Yellow;
+                FColor PointColor = FColor::Cyan;
+                FColor CenterLineColor = FColor::Green;
+                
+                if (j == 0)
                 {
-                    // 1. 画出旋转中心 (红色球体)
-                    // 如果球体位置很奇怪（比如在路对面，或者在无穷远），说明 CornerData 计算错了
                     DrawDebugSphere(Surface.GetWorld(), PivotPoint, 20.0f, 8, FColor::Red, true, -1.0f, 0, 2.0f);
-
-                    // 2. 画出"挤出方向" (黄色线)
-                    // 从采样点指向最终顶点。如果这条线穿过了红色球体，说明防穿模逻辑失效
-                    DrawDebugLine(Surface.GetWorld(), Sample.Location, FinalPos, FColor::Yellow, true, -1.0f, 0, 3.0f);
-
-                    // 3. 画出最终顶点位置 (蓝色点)
-                    DrawDebugPoint(Surface.GetWorld(), FinalPos, 10.0f, FColor::Blue, true, -1.0f, 0);
-
-                    // 4. (可选) 连接圆心和顶点 (绿色线)
-                    // 这条线不应该和上一行(i-1)的绿色线交叉。如果交叉了，就是穿模。
-                    DrawDebugLine(Surface.GetWorld(), PivotPoint, FinalPos, FColor::Green, true, -1.0f, 0, 1.0f);
                 }
+                
+                DrawDebugLine(Surface.GetWorld(), Sample.Location, FinalPos, LineColor, true, -1.0f, 0, 3.0f);
+                DrawDebugPoint(Surface.GetWorld(), FinalPos, 10.0f, PointColor, true, -1.0f, 0);
+                DrawDebugLine(Surface.GetWorld(), PivotPoint, FinalPos, CenterLineColor, true, -1.0f, 0, 1.0f);
             }
-            // === 调试代码结束 ===
 
             FVector2D UV(Profile.U, V_Coord);
             AddVertex(FinalPos, VertexNormal, UV);
@@ -443,7 +386,6 @@ bool FEditableSurfaceBuilder::Generate(FModelGenMeshData& OutMeshData)
         return false;
     }
 
-    // 【新增】清除上一轮生成的 Debug 线条，防止重叠
     if (Surface.GetWorld())
     {
         FlushPersistentDebugLines(Surface.GetWorld());
@@ -533,9 +475,7 @@ void FEditableSurfaceBuilder::SampleSplinePath()
         Point.RightVector = TF.GetUnitAxis(EAxis::Y);
         Point.Normal = TF.GetUnitAxis(EAxis::Z);
 
-        // 【新增】获取当前距离的 Scale
         FVector Scale = SplineComponent->GetScaleAtDistanceAlongSpline(Dist);
-        // 我们约定 Scale.Y 存储的是绝对宽度
         Point.InterpolatedWidth = Scale.Y;
 
         SampledPath.Add(Point);
@@ -681,4 +621,129 @@ void FEditableSurfaceBuilder::GenerateThickness()
 
     StitchCapStrip(0, true);
     StitchCapStrip(GridNumRows - 1, false);
+}
+
+void FEditableSurfaceBuilder::InitializeForDebug()
+{
+    Clear();
+    SampleSplinePath();
+    CalculateCornerGeometry();
+    BuildProfileDefinition();
+}
+
+void FEditableSurfaceBuilder::PrintAntiPenetrationDebugInfo()
+{
+    // 如果数据未初始化，先执行采样和计算
+    if (SampledPath.Num() == 0 || PathCornerData.Num() == 0 || ProfileDefinition.Num() == 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("数据未初始化，正在执行采样和计算..."));
+        InitializeForDebug();
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("========== 防穿模调试信息 =========="));
+    UE_LOG(LogTemp, Warning, TEXT("采样点数量: %d"), SampledPath.Num());
+    UE_LOG(LogTemp, Warning, TEXT("横截面点数: %d"), ProfileDefinition.Num());
+    UE_LOG(LogTemp, Warning, TEXT("全局宽度: %.2f"), SurfaceWidth);
+    UE_LOG(LogTemp, Warning, TEXT("采样步长: %.2f"), SplineSampleStep);
+    UE_LOG(LogTemp, Warning, TEXT(""));
+    int32 InnerPointCount = 0;
+    int32 ClampedCount = 0;
+
+    // 计算全局基础宽度的一半，用于归一化
+    float BaseHalfWidth = SurfaceWidth * 0.5f;
+
+    for (int32 i = 0; i < SampledPath.Num(); ++i)
+    {
+        const FSurfaceSamplePoint& Sample = SampledPath[i];
+        const FCornerData& Corner = PathCornerData[i];
+        FVector PivotPoint = Corner.RotationCenter;
+
+        // 获取当前行的实际半宽
+        float CurrentHalfWidth = Sample.InterpolatedWidth * 0.5f;
+        float WidthScaleRatio = (BaseHalfWidth > KINDA_SMALL_NUMBER) ? (CurrentHalfWidth / BaseHalfWidth) : 1.0f;
+
+        for (int32 j = 0; j < ProfileDefinition.Num(); ++j)
+        {
+            const FProfilePoint& Profile = ProfileDefinition[j];
+            
+            float ScaledOffsetH = Profile.OffsetH * WidthScaleRatio;
+            float BaseOffsetH = ScaledOffsetH;
+            bool bIsPointRightSide = (BaseOffsetH > 0.0f);
+
+            float AppliedScale = Corner.MiterScale;
+            if (Profile.bIsSlope)
+            {
+                float SlopeScale = bIsPointRightSide ? Corner.RightSlopeMiterScale : Corner.LeftSlopeMiterScale;
+                AppliedScale *= SlopeScale;
+            }
+
+            float IntendedMiterDist = BaseOffsetH * AppliedScale;
+            FVector FinalPos = Sample.Location + (Corner.MiterVector * IntendedMiterDist) + (Sample.Normal * Profile.OffsetV);
+
+            // 直接根据几何关系判断内外侧：比较从旋转中心到顶点的距离和转弯半径
+            bool bIsInnerSide = false;
+            if (Corner.TurnRadius < FLT_MAX - 1.0f)  // 如果是弯道（有有效的旋转中心）
+            {
+                float DistFromCenterToVertex = FVector::Dist(PivotPoint, FinalPos);
+                float DistFromCenterToSample = Corner.TurnRadius;
+                bIsInnerSide = (DistFromCenterToVertex < DistFromCenterToSample);
+            }
+
+            if (bIsInnerSide)
+            {
+                InnerPointCount++;
+                float DistToCenter = Corner.TurnRadius;
+                float SafetyBuffer = (DistToCenter < 100.0f) ? (DistToCenter * 0.1f) : 2.0f;
+                float MaxAllowedDist = FMath::Max(DistToCenter - SafetyBuffer, 0.0f);
+                float AbsDist = FMath::Abs(IntendedMiterDist);
+
+                if (AbsDist > MaxAllowedDist)
+                {
+                    ClampedCount++;
+                    
+                    if (InnerPointCount <= 15 || ClampedCount <= 8)
+                    {
+                        float ClampedDist = (IntendedMiterDist > 0.0f) ? MaxAllowedDist : -MaxAllowedDist;
+                        FVector ClampedFinalPos = Sample.Location + (Corner.MiterVector * ClampedDist);
+                        ClampedFinalPos.Z = Sample.Location.Z + Profile.OffsetV;
+                        FVector TheoreticalPos = Sample.Location + (Corner.MiterVector * IntendedMiterDist);
+
+                        UE_LOG(LogTemp, Warning, TEXT("--- 内侧点 [采样%d, 横截面%d] (被钳制) ---"), i, j);
+                        UE_LOG(LogTemp, Warning, TEXT("  采样点位置: %s"), *Sample.Location.ToString());
+                        UE_LOG(LogTemp, Warning, TEXT("  旋转中心: %s"), *PivotPoint.ToString());
+                        UE_LOG(LogTemp, Warning, TEXT("  转弯半径: %.2f"), Corner.TurnRadius);
+                        UE_LOG(LogTemp, Warning, TEXT("  Miter缩放: %.3f"), Corner.MiterScale);
+                        UE_LOG(LogTemp, Warning, TEXT("  基础偏移H: %.2f"), BaseOffsetH);
+                        UE_LOG(LogTemp, Warning, TEXT("  应用缩放后偏移: %.2f"), AppliedScale);
+                        UE_LOG(LogTemp, Warning, TEXT("  理论偏移距离: %.2f"), IntendedMiterDist);
+                        UE_LOG(LogTemp, Warning, TEXT("  最大允许距离: %.2f"), MaxAllowedDist);
+                        UE_LOG(LogTemp, Warning, TEXT("  安全缓冲区: %.2f"), SafetyBuffer);
+                        UE_LOG(LogTemp, Warning, TEXT("  钳制后距离: %.2f"), ClampedDist);
+                        UE_LOG(LogTemp, Warning, TEXT("  理论位置: %s"), *TheoreticalPos.ToString());
+                        UE_LOG(LogTemp, Warning, TEXT("  最终位置: %s"), *ClampedFinalPos.ToString());
+                        UE_LOG(LogTemp, Warning, TEXT("  当前宽度: %.2f"), Sample.InterpolatedWidth);
+                        UE_LOG(LogTemp, Warning, TEXT("  宽度缩放比: %.3f"), WidthScaleRatio);
+                        UE_LOG(LogTemp, Warning, TEXT("  是否护坡: %s"), Profile.bIsSlope ? TEXT("是") : TEXT("否"));
+                        UE_LOG(LogTemp, Warning, TEXT(""));
+                    }
+                }
+                else if (InnerPointCount <= 10)
+                {
+                    UE_LOG(LogTemp, Log, TEXT("--- 内侧点 [采样%d, 横截面%d] (未钳制) ---"), i, j);
+                    UE_LOG(LogTemp, Log, TEXT("  采样点位置: %s"), *Sample.Location.ToString());
+                    UE_LOG(LogTemp, Log, TEXT("  转弯半径: %.2f"), Corner.TurnRadius);
+                    UE_LOG(LogTemp, Log, TEXT("  理论偏移距离: %.2f"), IntendedMiterDist);
+                    UE_LOG(LogTemp, Log, TEXT("  最大允许距离: %.2f"), MaxAllowedDist);
+                    UE_LOG(LogTemp, Log, TEXT("  最终位置: %s"), *FinalPos.ToString());
+                    UE_LOG(LogTemp, Log, TEXT(""));
+                }
+            }
+        }
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("统计信息:"));
+    UE_LOG(LogTemp, Warning, TEXT("  内侧点总数: %d"), InnerPointCount);
+    UE_LOG(LogTemp, Warning, TEXT("  被钳制的点数: %d"), ClampedCount);
+    UE_LOG(LogTemp, Warning, TEXT("  钳制比例: %.1f%%"), InnerPointCount > 0 ? (ClampedCount * 100.0f / InnerPointCount) : 0.0f);
+    UE_LOG(LogTemp, Warning, TEXT("====================================="));
 }

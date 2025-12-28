@@ -110,6 +110,10 @@ public:
     UFUNCTION(BlueprintCallable, CallInEditor, Category = "EditableSurface|Tools", meta = (DisplayName = "打印路点信息"))
     void PrintWaypointInfo();
 
+    /** 打印 EditableSurface 参数信息 */
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "EditableSurface|Tools", meta = (DisplayName = "打印参数信息"))
+    void PrintParametersInfo();
+
     /** 曲面宽度 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
         meta = (ClampMin = "0.01", ClampMax = "2000", UIMin = "0.01", UIMax = "1000", DisplayName = "曲面宽度"))
