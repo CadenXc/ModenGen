@@ -50,6 +50,20 @@ struct FCornerData
     }
 };
 
+// 用于拉链法的边线点结构
+struct FRailPoint
+{
+    FVector Position;
+    FVector Normal;
+    FVector Tangent;
+    FVector2D UV;
+    float DistanceAlongRail; // 沿着这条边线的累计物理距离
+
+    FRailPoint() 
+        : Position(FVector::ZeroVector), Normal(FVector::UpVector), Tangent(FVector::ForwardVector), UV(FVector2D::ZeroVector), DistanceAlongRail(0.f) 
+    {}
+};
+
 class MODELGEN_API FEditableSurfaceBuilder : public FModelGenMeshBuilder
 {
 public:
@@ -101,4 +115,25 @@ private:
     void CalculateCornerGeometry();
     void GenerateGridMesh();
     void GenerateThickness();
+
+    // 拉链法核心数据
+    TArray<FRailPoint> LeftRailRaw;   // 原始左侧边线（基于样条采样）
+    TArray<FRailPoint> RightRailRaw;  // 原始右侧边线（基于样条采样）
+    TArray<FRailPoint> LeftRailResampled;  // 重采样后的左侧边线（基于物理长度）
+    TArray<FRailPoint> RightRailResampled; // 重采样后的右侧边线（基于物理长度）
+
+    // 拉链法核心函数
+    void GenerateZipperRoadMesh(); // 替代 GenerateGridMesh 的入口
+    void BuildRawRails();          // 1. 构建原始边线
+    void ResampleRails();          // 2. 根据物理长度重采样
+    void StitchRails();            // 3. 缝合左右边线 (Zipper)
+
+    // 辅助：对一条点序列进行重采样
+    void ResampleSingleRail(const TArray<FRailPoint>& InPoints, TArray<FRailPoint>& OutPoints, float SegmentLength);
+    
+    // 辅助：简化边线（合并靠得太近的点）
+    void SimplifyRail(const TArray<FRailPoint>& InPoints, TArray<FRailPoint>& OutPoints, float MergeThreshold);
+    
+    // 辅助：去除几何环/尾巴（Path Shortcutting / Loop Removal）
+    void RemoveGeometricLoops(TArray<FRailPoint>& InPoints, float Threshold);
 };
