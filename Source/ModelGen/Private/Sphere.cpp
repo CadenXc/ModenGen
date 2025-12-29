@@ -26,12 +26,16 @@ bool ASphere::TryGenerateMeshInternal()
 
     if (!Builder.Generate(MeshData))
     {
+        if (GetProceduralMesh())
+        {
+            GetProceduralMesh()->ClearAllMeshSections();
+        }
         return false;
     }
 
     if (!MeshData.IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("ASphere::TryGenerateMeshInternal - 生成的网格数据无效"));
+        UE_LOG(LogTemp, Warning, TEXT("ASphere::TryGenerateMeshInternal - 网格生成结果为空（可能是参数导致几何体消失）"));
         return false;
     }
 
@@ -41,57 +45,39 @@ bool ASphere::TryGenerateMeshInternal()
 
 bool ASphere::IsValid() const
 {
-    return Radius > 0.0f && 
-           Sides >= 4 && Sides <= 64 &&
-           HorizontalCut >= 0.0f && HorizontalCut <= 1.0f &&
-           VerticalCut >= 0.0f && VerticalCut <= 1.0f;
+    return Radius > KINDA_SMALL_NUMBER &&
+        Sides >= 4 && Sides <= 64 &&
+        HorizontalCut >= 0.0f && HorizontalCut < 1.0f && // 不能等于1
+        VerticalCut > KINDA_SMALL_NUMBER && VerticalCut <= 1.0f; // 不能等于0
 }
 
 int32 ASphere::CalculateVertexCountEstimate() const
 {
-    if (!IsValid()) return 0;
-
-    // 估算顶点数：根据边数和截断参数
-    const int32 VerticalSegments = Sides;
-    const int32 HorizontalSegments = Sides;
-    
-    // 考虑横截断和竖截断的影响
-    const float EffectiveVerticalRatio = 1.0f - HorizontalCut;
-    // 【修改】：竖截断现在是比例（0-1），直接使用
-    const float EffectiveHorizontalRatio = VerticalCut;
-    
-    const int32 EstimatedVertices = FMath::CeilToInt(
-        (VerticalSegments + 1) * (HorizontalSegments + 1) * EffectiveVerticalRatio * EffectiveHorizontalRatio
-    );
-    
-    return EstimatedVertices;
+    const int32 NumRings = FMath::Max(2, Sides / 2);
+    const int32 GridVerts = (NumRings + 1) * (Sides + 1);
+    const int32 CapVerts = Sides * 4; // 粗略估算顶部和侧面切口的顶点
+    return GridVerts + CapVerts;
 }
 
 int32 ASphere::CalculateTriangleCountEstimate() const
 {
-    if (!IsValid()) return 0;
-
-    const int32 VerticalSegments = Sides;
-    const int32 HorizontalSegments = Sides;
-    
-    const float EffectiveVerticalRatio = 1.0f - HorizontalCut;
-    // 【修改】：竖截断现在是比例（0-1），直接使用
-    const float EffectiveHorizontalRatio = VerticalCut;
-    
-    const int32 EstimatedTriangles = FMath::CeilToInt(
-        VerticalSegments * HorizontalSegments * 2 * EffectiveVerticalRatio * EffectiveHorizontalRatio
-    );
-    
-    return EstimatedTriangles;
+    const int32 NumRings = FMath::Max(2, Sides / 2);
+    const int32 GridTris = NumRings * Sides * 2;
+    const int32 CapTris = Sides * 4;
+    return GridTris + CapTris;
 }
 
 void ASphere::SetSides(int32 NewSides)
 {
-    if (NewSides >= 4 && NewSides <= 64 && NewSides != Sides)
+    // 钳制范围
+    if (NewSides < 4) NewSides = 4;
+    if (NewSides > 64) NewSides = 64;
+
+    if (NewSides != Sides)
     {
         int32 OldSides = Sides;
         Sides = NewSides;
-        
+
         if (ProceduralMeshComponent)
         {
             if (!TryGenerateMeshInternal())
@@ -105,28 +91,23 @@ void ASphere::SetSides(int32 NewSides)
 
 void ASphere::SetHorizontalCut(float NewHorizontalCut)
 {
-    // 保留到0.01精度
     NewHorizontalCut = FMath::RoundToFloat(NewHorizontalCut * 100.0f) / 100.0f;
-    
-    // 【修复1】：防止横截断 = 1.0 时崩溃，限制最大值为接近但不等于 1.0
+
     if (NewHorizontalCut >= 1.0f - KINDA_SMALL_NUMBER)
     {
         NewHorizontalCut = 1.0f - KINDA_SMALL_NUMBER;
-        UE_LOG(LogTemp, Warning, TEXT("SetHorizontalCut: 横截断值被限制为 %f（接近但不等于1.0，防止崩溃）"), NewHorizontalCut);
     }
-    
-    if (NewHorizontalCut >= 0.0f && NewHorizontalCut <= 1.0f && 
-        !FMath::IsNearlyEqual(NewHorizontalCut, HorizontalCut))
+
+    if (NewHorizontalCut >= 0.0f && !FMath::IsNearlyEqual(NewHorizontalCut, HorizontalCut))
     {
         float OldHorizontalCut = HorizontalCut;
         HorizontalCut = NewHorizontalCut;
-        
+
         if (ProceduralMeshComponent)
         {
             if (!TryGenerateMeshInternal())
             {
-                HorizontalCut = OldHorizontalCut;
-                UE_LOG(LogTemp, Warning, TEXT("SetHorizontalCut: 网格生成失败，参数已恢复为 %f"), OldHorizontalCut);
+                UE_LOG(LogTemp, Warning, TEXT("SetHorizontalCut: 该参数下无法生成有效网格"));
             }
         }
     }
@@ -134,22 +115,24 @@ void ASphere::SetHorizontalCut(float NewHorizontalCut)
 
 void ASphere::SetVerticalCut(float NewVerticalCut)
 {
-    // 保留到0.01精度
     NewVerticalCut = FMath::RoundToFloat(NewVerticalCut * 100.0f) / 100.0f;
-    
-    // 【修改】：竖截断现在是比例（0-1）
-    if (NewVerticalCut >= 0.0f && NewVerticalCut <= 1.0f && 
+
+    if (NewVerticalCut <= KINDA_SMALL_NUMBER)
+    {
+        NewVerticalCut = 0.0f;
+    }
+
+    if (NewVerticalCut >= 0.0f && NewVerticalCut <= 1.0f &&
         !FMath::IsNearlyEqual(NewVerticalCut, VerticalCut))
     {
         float OldVerticalCut = VerticalCut;
         VerticalCut = NewVerticalCut;
-        
+
         if (ProceduralMeshComponent)
         {
             if (!TryGenerateMeshInternal())
             {
-                VerticalCut = OldVerticalCut;
-                UE_LOG(LogTemp, Warning, TEXT("SetVerticalCut: 网格生成失败，参数已恢复为 %f"), OldVerticalCut);
+                UE_LOG(LogTemp, Warning, TEXT("SetVerticalCut: 该参数下无法生成有效网格"));
             }
         }
     }
@@ -161,7 +144,7 @@ void ASphere::SetRadius(float NewRadius)
     {
         float OldRadius = Radius;
         Radius = NewRadius;
-        
+
         if (ProceduralMeshComponent)
         {
             if (!TryGenerateMeshInternal())
@@ -172,4 +155,3 @@ void ASphere::SetRadius(float NewRadius)
         }
     }
 }
-

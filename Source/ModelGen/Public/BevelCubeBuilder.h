@@ -29,22 +29,33 @@ private:
 
     bool bEnableBevel;
 
-    float HalfSize;
-    float InnerOffset;
+    // 【修改】：改为 FVector 以存储各轴数据
+    FVector HalfSize;
+    FVector InnerOffset;
+
     float BevelRadius;
     int32 BevelSegments;
 
     // --- Cache ---
-    // 预计算的网格坐标（适用于 U 和 V 方向）
-    // 包含了倒角细分和中间平面的跨度
-    TArray<float> GridCoordinates;
+    // 【修改】：拆分为三个轴向的网格缓存
+    TArray<float> GridX;
+    TArray<float> GridY;
+    TArray<float> GridZ;
 
     // --- Helpers ---
     void Clear();
-    void PrecomputeGrid();
+    void PrecomputeGrids(); // 重命名为 PrecomputeGrids
+
+    // 辅助函数：计算单轴网格
+    void ComputeSingleAxisGrid(float AxisHalfSize, float AxisInnerOffset, TArray<float>& OutGrid);
 
     /**
-     * @brief 使用预计算网格生成单面几何体
+     * @brief 生成单面几何体
+     * @param FaceDef 面定义
+     * @param GridU 水平方向使用的网格数据
+     * @param GridV 垂直方向使用的网格数据
+     * @param AxisIndexU U轴对应的索引 (0=X, 1=Y, 2=Z)，用于 UV 计算
+     * @param AxisIndexV V轴对应的索引 (0=X, 1=Y, 2=Z)，用于 UV 计算
      */
-    void GenerateUnfoldedFace(const FUnfoldedFace& FaceDef);
+    void GenerateUnfoldedFace(const FUnfoldedFace& FaceDef, const TArray<float>& GridU, const TArray<float>& GridV, int32 AxisIndexU, int32 AxisIndexV);
 };

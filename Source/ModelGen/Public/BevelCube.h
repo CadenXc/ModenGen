@@ -1,10 +1,5 @@
 // Copyright (c) 2024. All rights reserved.
 
-/**
- * @file BevelCube.h
- * @brief 可配置的程序化圆角立方体生成器
- */
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -15,7 +10,7 @@
 class FBevelCubeBuilder;
 struct FModelGenMeshData;
 
-UCLASS(BlueprintType, meta=(DisplayName = "Bevel Cube"))
+UCLASS(BlueprintType, meta = (DisplayName = "Bevel Cube"))
 class MODELGEN_API ABevelCube : public AProceduralMeshActor
 {
     GENERATED_BODY()
@@ -23,27 +18,27 @@ class MODELGEN_API ABevelCube : public AProceduralMeshActor
 public:
     ABevelCube();
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters", 
-        meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Size"))
-    float CubeSize = 100.0f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters",
+        meta = (MakeEditWidget = true, DisplayName = "Size"))
+        FVector Size = FVector(100.0f, 100.0f, 100.0f);
 
     UFUNCTION(BlueprintCallable, Category = "BevelCube|Parameters")
-    void SetCubeSize(float NewCubeSize);
-    
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters", 
-        meta = (ClampMin = "0.0", ClampMax = "500", UIMin = "0.0", UIMax = "500", DisplayName = "Bevel Size"))
-    float BevelRadius = 10.0f;
-    
-    UFUNCTION(BlueprintCallable, Category = "BevelCube|Parameters")
-    void SetBevelRadius(float NewBevelRadius);
+        void SetSize(FVector NewSize);
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters", 
-        meta = (ClampMin = "0", ClampMax = "4", UIMin = "0", UIMax = "4", 
-        DisplayName = "Bevel Sections", ToolTip = "倒角分段数。0表示不启用倒角"))
-    int32 BevelSegments = 3;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters",
+        meta = (ClampMin = "0.0", ClampMax = "500", UIMin = "0.0", UIMax = "500", DisplayName = "Bevel Radius"))
+        float BevelRadius = 10.0f;
 
     UFUNCTION(BlueprintCallable, Category = "BevelCube|Parameters")
-    void SetBevelSegments(int32 NewBevelSegments);
+        void SetBevelRadius(float NewBevelRadius);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BevelCube|Parameters",
+        meta = (ClampMin = "0", ClampMax = "10", UIMin = "0", UIMax = "10",
+            DisplayName = "Bevel Sections", ToolTip = "倒角分段数。0表示不启用倒角"))
+        int32 BevelSegments = 3;
+
+    UFUNCTION(BlueprintCallable, Category = "BevelCube|Parameters")
+        void SetBevelSegments(int32 NewBevelSegments);
 
     virtual void GenerateMesh() override;
 
@@ -51,12 +46,13 @@ private:
     bool TryGenerateMeshInternal();
 
 public:
-    float GetHalfSize() const { return CubeSize * 0.5f; }
-    float GetInnerOffset() const { return GetHalfSize() - BevelRadius; }
+    FVector GetHalfSize() const { return Size * 0.5f; }
+
+    FVector GetInnerOffset() const { return GetHalfSize() - FVector(BevelRadius); }
+
     int32 GetVertexCount() const;
     int32 GetTriangleCount() const;
 
 public:
-    // 实现父类的纯虚函数
     virtual bool IsValid() const override;
 };

@@ -130,13 +130,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
     void SetSplineSampleStep(float NewStep);
 
-    /** 几何去环阈值：用于检测和移除急转弯处的自交死结。
-     * 值越大，去环越激进（会切掉更大的角）；值越小，保留的细节越多。
-     * 对于护坡，实际使用的阈值会自动根据挤出长度动态放大，但此值为基础下限。
-     */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
         meta = (ClampMin = "1.0", ClampMax = "5000.0", UIMin = "10.0", UIMax = "1000.0", DisplayName = "去环检测距离"))
-    float LoopRemovalThreshold = 100.0f;
+    float LoopRemovalThreshold = 500.0f;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
     void SetLoopRemovalThreshold(float NewValue);

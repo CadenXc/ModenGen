@@ -589,9 +589,9 @@ void FEditableSurfaceBuilder::SimplifyRail(const TArray<FRailPoint>& InPoints, T
         if (DistSq > ThresholdSq || bIsLast)
         {
             OutPoints.Add(CurrentPt);
-        }
-        else
-        {
+            }
+            else
+            {
         }
     }
 }
@@ -894,8 +894,27 @@ void FEditableSurfaceBuilder::GenerateSingleSideSlope(const TArray<FRailPoint>& 
 
         if (Surface.GetWorld())
         {
+            // 1. 绘制当前层的顶点
             for (const FRailPoint& P : NextRail)
                 DrawDebugPoint(Surface.GetWorld(), P.Position, 8.0f, PointColor, true, -1.0f, 0);
+
+            // 2. 绘制"肋骨"连线：连接上一层轨道(StitchPrevRail)与当前层(NextRail)
+            // 取两点数量的最小值，防止越界（虽然通常重采样后数量接近，但为了安全取Min）
+            int32 RibCount = FMath::Min(StitchPrevRail.Num(), NextRail.Num());
+            
+            for (int32 k = 0; k < RibCount; ++k)
+            {
+                DrawDebugLine(
+                    Surface.GetWorld(),
+                    StitchPrevRail[k].Position, // 起点：路面边缘 或 上一层护坡
+                    NextRail[k].Position,       // 终点：当前生成的护坡边缘
+                    PointColor,
+                    true,  // 持久显示
+                    -1.0f, 
+                    0, 
+                    2.0f   // 线宽
+                );
+            }
         }
 
         if (bIsRightSide)
@@ -903,9 +922,9 @@ void FEditableSurfaceBuilder::GenerateSingleSideSlope(const TArray<FRailPoint>& 
             TopStartIndices.Add(NextStartIdx);
             TopEndIndices.Add(NextStartIdx + NextRail.Num() - 1);
             FinalRightRail = NextRail;
-        }
-        else
-        {
+                }
+                else
+                {
             TopStartIndices.Insert(NextStartIdx, 0);
             TopEndIndices.Insert(NextStartIdx + NextRail.Num() - 1, 0);
             FinalLeftRail = NextRail;
@@ -990,8 +1009,8 @@ void FEditableSurfaceBuilder::BuildSideWall(const TArray<FRailPoint>& Rail, bool
         if (bIsRightSide)
             AddQuad(V_TL, V_BL, V_BR, V_TR);
         else
-            AddQuad(V_TR, V_BR, V_BL, V_TL);
-    }
+                    AddQuad(V_TR, V_BR, V_BL, V_TL);
+                }
 }
 
 void FEditableSurfaceBuilder::BuildCap(const TArray<int32>& Indices, bool bIsStartCap)

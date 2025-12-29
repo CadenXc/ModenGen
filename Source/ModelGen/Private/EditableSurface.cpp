@@ -37,8 +37,8 @@ void AEditableSurface::InitializeDefaultWaypoints()
     if (Waypoints.Num() == 0)
     {
         Waypoints.Add(FSurfaceWaypoint(FVector(0, 0, 0), -1.0f));
-        Waypoints.Add(FSurfaceWaypoint(FVector(500, 400, 0.0), -1.0f));
-        Waypoints.Add(FSurfaceWaypoint(FVector(1000, 0, 0.0), -1.0f));
+        Waypoints.Add(FSurfaceWaypoint(FVector(500, 0, 30.0), -1.0f));
+        Waypoints.Add(FSurfaceWaypoint(FVector(1000, 0, 90.0), -1.0f));
     }
 }
 
