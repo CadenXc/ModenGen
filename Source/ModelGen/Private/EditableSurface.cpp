@@ -13,7 +13,6 @@ AEditableSurface::AEditableSurface()
     if (SplineComponent)
     {
         SplineComponent->SetupAttachment(RootComponent);
-        // 【关键修改】设置为 Movable，确保运行时更新样条线能正确触发相关组件更新
         SplineComponent->SetMobility(EComponentMobility::Movable);
     }
 
@@ -37,7 +36,6 @@ void AEditableSurface::InitializeDefaultWaypoints()
 {
     if (Waypoints.Num() == 0)
     {
-        // 【修改】使用 -1.0f 让它们默认跟随全局宽度
         Waypoints.Add(FSurfaceWaypoint(FVector(0, 0, 0), -1.0f));
         Waypoints.Add(FSurfaceWaypoint(FVector(500, 400, 0.0), -1.0f));
         Waypoints.Add(FSurfaceWaypoint(FVector(1000, 0, 0.0), -1.0f));
@@ -143,45 +141,32 @@ void AEditableSurface::UpdateSplineFromWaypoints()
         return (WPWidth > 0.0f) ? WPWidth : SurfaceWidth;
     };
 
-    // 【标准曲线模式】：曲线必须严格穿过每一个路点 (Interpolating)
     if (CurveType == ESurfaceCurveType::Standard)
     {
         for (int32 i = 0; i < Waypoints.Num(); ++i)
         {
             SplineComponent->AddSplinePoint(Waypoints[i].Position, ESplineCoordinateSpace::Local, false);
-            
-            // 设置类型为 Curve (Catmull-Rom)，确保平滑穿过
             SplineComponent->SetSplinePointType(i, ESplinePointType::Curve, false);
             
-            // 【关键修改】使用计算后的实际宽度
             float ActualWidth = GetActualWidth(Waypoints[i].Width);
             SplineComponent->SetScaleAtSplinePoint(i, FVector(1.0f, ActualWidth, 1.0f), false);
         }
     }
-    // --- 光滑模式：中点逼近算法 (Midpoint Approximation) ---
-    // 这种算法生成的曲线最平滑，且点数少，非常适合赛道
     else 
     {
-        // 1. 添加起点 (保持不变)
         SplineComponent->AddSplinePoint(Waypoints[0].Position, ESplineCoordinateSpace::Local, false);
-        // 起点设为 Curve 以保证起始方向准确
         SplineComponent->SetSplinePointType(0, ESplinePointType::Curve, false);
         
-        // 【关键修改】起点宽度
         float StartWidth = GetActualWidth(Waypoints[0].Width);
         SplineComponent->SetScaleAtSplinePoint(0, FVector(1.0f, StartWidth, 1.0f), false);
 
-        // 2. 添加中间点：取相邻路点的中点
-        // 这样样条线会"悬空"在路点连线之间，完美切过弯角
         for (int32 i = 0; i < Waypoints.Num() - 1; ++i)
         {
             const FSurfaceWaypoint& P0 = Waypoints[i];
             const FSurfaceWaypoint& P1 = Waypoints[i+1];
 
-            // 计算中点 (50% 处)
             FVector MidPos = (P0.Position + P1.Position) * 0.5f;
 
-            // 【关键修改】计算两个点的实际宽度，然后取平均
             float W0 = GetActualWidth(P0.Width);
             float W1 = GetActualWidth(P1.Width);
             float MidWidth = (W0 + W1) * 0.5f;
@@ -189,28 +174,19 @@ void AEditableSurface::UpdateSplineFromWaypoints()
             SplineComponent->AddSplinePoint(MidPos, ESplineCoordinateSpace::Local, false);
             int32 NewIdx = SplineComponent->GetNumberOfSplinePoints() - 1;
             
-            // 使用 Curve 类型，UE 会自动让曲线圆滑地通过中点
             SplineComponent->SetSplinePointType(NewIdx, ESplinePointType::Curve, false);
-            
-            // 设置中间点宽度
             SplineComponent->SetScaleAtSplinePoint(NewIdx, FVector(1.0f, MidWidth, 1.0f), false);
         }
 
-        // 3. 添加终点 (保持不变)
         SplineComponent->AddSplinePoint(Waypoints.Last().Position, ESplineCoordinateSpace::Local, false);
         int32 LastIdx = SplineComponent->GetNumberOfSplinePoints() - 1;
         SplineComponent->SetSplinePointType(LastIdx, ESplinePointType::Curve, false);
         
-        // 【关键修改】终点宽度
         float EndWidth = GetActualWidth(Waypoints.Last().Width);
         SplineComponent->SetScaleAtSplinePoint(LastIdx, FVector(1.0f, EndWidth, 1.0f), false);
     }
 
     SplineComponent->UpdateSpline();
-    
-    // 【关键修复】更新完样条线后，必须立即触发网格重建！
-    // 否则从外部（如TS/蓝图）调用 UpdateSplineFromWaypoints 后，画面不会有任何变化。
-    // 注意：在 OnConstruction 中会再次调用 GenerateMesh，但这是幂等的，不会造成问题。
     GenerateMesh();
 }
 
@@ -218,8 +194,6 @@ void AEditableSurface::UpdateWaypointsFromSpline()
 {
     if (!SplineComponent) return;
 
-    // 【重要修复】光滑模式下，样条线是生成的，绝不能反向写入路点！
-    // 否则路点会被吸附到曲线上，导致控制杆丢失，所有平滑效果失效。
     if (CurveType != ESurfaceCurveType::Standard)
     {
         UE_LOG(LogTemp, Warning, TEXT("UpdateWaypointsFromSpline blocked in Smooth Mode to prevent data collapse."));
@@ -245,7 +219,6 @@ void AEditableSurface::GenerateMesh()
 {
     if (!TryGenerateMeshInternal())
     {
-        // [修复] 使用继承自父类的 ProceduralMeshComponent
         if (ProceduralMeshComponent)
         {
             ProceduralMeshComponent->ClearAllMeshSections();
@@ -255,7 +228,6 @@ void AEditableSurface::GenerateMesh()
 
 bool AEditableSurface::TryGenerateMeshInternal()
 {
-    // 【关键修复】防御性检查：如果有路点但样条线没数据（可能因为时序问题或错误的Clear），强制恢复
     if (SplineComponent && SplineComponent->GetNumberOfSplinePoints() < 2 && Waypoints.Num() >= 2)
     {
         UE_LOG(LogTemp, Warning, TEXT("AEditableSurface: 检测到样条线数据丢失，正在尝试从 Waypoints 恢复..."));
@@ -275,7 +247,6 @@ bool AEditableSurface::TryGenerateMeshInternal()
                 SplineComponent->AddSplinePoint(Waypoints[i].Position, ESplineCoordinateSpace::Local, false);
                 SplineComponent->SetSplinePointType(i, ESplinePointType::Curve, false);
                 
-                // 【修改】使用计算后的实际宽度
                 float ActualWidth = GetActualWidth(Waypoints[i].Width);
                 SplineComponent->SetScaleAtSplinePoint(i, FVector(1.0f, ActualWidth, 1.0f), false);
             }
@@ -286,7 +257,6 @@ bool AEditableSurface::TryGenerateMeshInternal()
             SplineComponent->AddSplinePoint(Waypoints[0].Position, ESplineCoordinateSpace::Local, false);
             SplineComponent->SetSplinePointType(0, ESplinePointType::Curve, false);
             
-            // 【修改】起点宽度
             float StartWidth = GetActualWidth(Waypoints[0].Width);
             SplineComponent->SetScaleAtSplinePoint(0, FVector(1.0f, StartWidth, 1.0f), false);
             
@@ -294,7 +264,6 @@ bool AEditableSurface::TryGenerateMeshInternal()
             {
                 FVector MidPos = (Waypoints[i].Position + Waypoints[i + 1].Position) * 0.5f;
                 
-                // 【修改】计算两个点的实际宽度，然后取平均
                 float W0 = GetActualWidth(Waypoints[i].Width);
                 float W1 = GetActualWidth(Waypoints[i + 1].Width);
                 float MidWidth = (W0 + W1) * 0.5f;
@@ -309,7 +278,6 @@ bool AEditableSurface::TryGenerateMeshInternal()
             int32 LastIdx = SplineComponent->GetNumberOfSplinePoints() - 1;
             SplineComponent->SetSplinePointType(LastIdx, ESplinePointType::Curve, false);
             
-            // 【修改】终点宽度
             float EndWidth = GetActualWidth(Waypoints.Last().Width);
             SplineComponent->SetScaleAtSplinePoint(LastIdx, FVector(1.0f, EndWidth, 1.0f), false);
         }
@@ -334,7 +302,6 @@ bool AEditableSurface::TryGenerateMeshInternal()
 
     if (Builder.Generate(MeshData))
     {
-        // [修复] 使用继承自父类的 ProceduralMeshComponent
         if (ProceduralMeshComponent)
         {
             // 应用生成的网格数据到组件
@@ -387,7 +354,6 @@ void AEditableSurface::AddNewWaypoint()
             NewWP.Position += FVector(100, 0, 0);
         }
         
-        // 【修改】新加的点默认继承全局宽度 (-1.0f)
         NewWP.Width = -1.0f;
         
         Waypoints.Add(NewWP);
@@ -437,6 +403,7 @@ void AEditableSurface::PrintParametersInfo()
     UE_LOG(LogTemp, Warning, TEXT("【几何参数】"));
     UE_LOG(LogTemp, Warning, TEXT("  曲面宽度: %.2f"), SurfaceWidth);
     UE_LOG(LogTemp, Warning, TEXT("  采样精度(步长): %.2f"), SplineSampleStep);
+    UE_LOG(LogTemp, Warning, TEXT("  去环检测距离: %.2f"), LoopRemovalThreshold);
     UE_LOG(LogTemp, Warning, TEXT("  曲线类型: %d"), (int32)CurveType);
     UE_LOG(LogTemp, Warning, TEXT("  纹理映射: %d"), (int32)TextureMapping);
     UE_LOG(LogTemp, Warning, TEXT(""));
@@ -491,7 +458,6 @@ void AEditableSurface::SetSurfaceWidth(float NewSurfaceWidth)
 {
     SurfaceWidth = NewSurfaceWidth;
 
-    // 【关键修改】全局宽度改变了，必须重新计算样条线上所有"继承宽度"点的 Scale
     UpdateSplineFromWaypoints();
     
     // UpdateSplineFromWaypoints 内部已经调用了 GenerateMesh，所以这里不需要重复调用
@@ -501,6 +467,12 @@ void AEditableSurface::SetSplineSampleStep(float NewStep)
 {
     // 限制最小值防止死循环或显存爆炸
     SplineSampleStep = FMath::Max(NewStep, 5.0f);
+    GenerateMesh();
+}
+
+void AEditableSurface::SetLoopRemovalThreshold(float NewValue)
+{
+    LoopRemovalThreshold = FMath::Max(NewValue, 1.0f);
     GenerateMesh();
 }
 

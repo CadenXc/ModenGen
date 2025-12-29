@@ -90,6 +90,7 @@ private:
     USplineComponent* SplineComponent;
     float SurfaceWidth;
     float SplineSampleStep;
+    float LoopRemovalThreshold;
     bool bEnableThickness;
     float ThicknessValue;
     int32 SideSmoothness;
@@ -115,18 +116,35 @@ private:
     void CalculateCornerGeometry();
     void GenerateGridMesh();
     void GenerateThickness();
+    void GenerateZipperThickness(); // [新增] 适配拉链法的厚度生成函数
 
     // 拉链法核心数据
     TArray<FRailPoint> LeftRailRaw;   // 原始左侧边线（基于样条采样）
     TArray<FRailPoint> RightRailRaw;  // 原始右侧边线（基于样条采样）
     TArray<FRailPoint> LeftRailResampled;  // 重采样后的左侧边线（基于物理长度）
     TArray<FRailPoint> RightRailResampled; // 重采样后的右侧边线（基于物理长度）
+    
+    // [新增] 用于追踪最终的最外侧轨道（用于生成侧壁）
+    TArray<FRailPoint> FinalLeftRail;
+    TArray<FRailPoint> FinalRightRail;
+    
+    // [新增] 用于记录起点和终点横截面的顶点索引（从左到右排序）
+    TArray<int32> TopStartIndices;
+    TArray<int32> TopEndIndices;
 
     // 拉链法核心函数
     void GenerateZipperRoadMesh(); // 替代 GenerateGridMesh 的入口
     void BuildRawRails();          // 1. 构建原始边线
     void ResampleRails();          // 2. 根据物理长度重采样
-    void StitchRails();            // 3. 缝合左右边线 (Zipper)
+    void StitchRails();            // 3. 缝合左右边线 (Zipper) - 保留兼容性
+    void StitchRailsInternal(int32 LeftStartIdx, int32 RightStartIdx, int32 LeftCount, int32 RightCount, bool bReverseWinding = false); // 内部缝合函数
+    
+    // 拉链法：护坡生成
+    void GenerateZipperSlopes(int32 LeftRoadStartIdx, int32 RightRoadStartIdx);
+    void BuildSingleSideSlopeVertices(const TArray<FRailPoint>& InputPoints, bool bIsRightSide);
+    
+    // 基于参考轨道，向外挤出并生成清洗后的下一层轨道（逐层拉链法）
+    void BuildNextSlopeRail(const TArray<FRailPoint>& ReferenceRail, TArray<FRailPoint>& OutSlopeRail, bool bIsRightSide, float OffsetH, float OffsetV);
 
     // 辅助：对一条点序列进行重采样
     void ResampleSingleRail(const TArray<FRailPoint>& InPoints, TArray<FRailPoint>& OutPoints, float SegmentLength);
