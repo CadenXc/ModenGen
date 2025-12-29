@@ -228,15 +228,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Waypoints")
     void SetWaypoints(const FString& WaypointsString);
 
-    /** 安全设置：自动推开过近的路点，防止弯道自交 */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Safety",
-        meta = (DisplayName = "自动松弛路点"))
-    bool bAutoRelaxWaypoints = true;
-
-    /** 执行物理松弛算法 */
-    UFUNCTION(BlueprintCallable, CallInEditor, Category = "EditableSurface|Safety")
-    void RelaxWaypoints();
-
     virtual void GenerateMesh() override;
 
 public:
@@ -248,4 +239,7 @@ public:
 private:
     bool TryGenerateMeshInternal();
     void InitializeDefaultWaypoints();
+    
+    /** 核心逻辑：从 Waypoints 重建 SplineComponent 的数据 */
+    void RebuildSplineData();
 };

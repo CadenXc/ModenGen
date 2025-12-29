@@ -20,14 +20,6 @@ struct FSurfaceSamplePoint
     float InterpolatedWidth; // 当前采样点的宽度
 };
 
-struct FProfilePoint
-{
-    float OffsetH;
-    float OffsetV;
-    float U;
-    bool bIsSlope;
-};
-
 struct FCornerData
 {
     FVector MiterVector;
@@ -77,12 +69,6 @@ public:
 
     void Clear();
 
-    /** 初始化采样数据（用于调试） */
-    void InitializeForDebug();
-
-    /** 打印防穿模调试信息 */
-    void PrintAntiPenetrationDebugInfo();
-
 private:
     const AEditableSurface& Surface;
 
@@ -102,21 +88,11 @@ private:
 
     // 核心数据缓存
     TArray<FSurfaceSamplePoint> SampledPath;
-    TArray<FProfilePoint> ProfileDefinition;
     TArray<FCornerData> PathCornerData;
-
-    // Grid 结构信息（用于厚度生成）
-    int32 GridStartIndex = 0;
-    int32 GridNumRows = 0;
-    int32 GridNumCols = 0;
 
     // 内部核心流程函数
     void SampleSplinePath();
-    void BuildProfileDefinition();
     void CalculateCornerGeometry();
-    void GenerateGridMesh();
-    void GenerateThickness();
-    void GenerateZipperThickness(); // [新增] 适配拉链法的厚度生成函数
 
     // 拉链法核心数据
     TArray<FRailPoint> LeftRailRaw;   // 原始左侧边线（基于样条采样）
@@ -132,16 +108,21 @@ private:
     TArray<int32> TopStartIndices;
     TArray<int32> TopEndIndices;
 
-    // 拉链法核心函数
-    void GenerateZipperRoadMesh(); // 替代 GenerateGridMesh 的入口
-    void BuildRawRails();          // 1. 构建原始边线
-    void ResampleRails();          // 2. 根据物理长度重采样
-    void StitchRails();            // 3. 缝合左右边线 (Zipper) - 保留兼容性
-    void StitchRailsInternal(int32 LeftStartIdx, int32 RightStartIdx, int32 LeftCount, int32 RightCount, bool bReverseWinding = false); // 内部缝合函数
+    // 核心生成函数
+    void GenerateRoadSurface();
+    void GenerateSlopes(int32 LeftRoadStartIdx, int32 RightRoadStartIdx);
+    void GenerateThickness();
     
-    // 拉链法：护坡生成
-    void GenerateZipperSlopes(int32 LeftRoadStartIdx, int32 RightRoadStartIdx);
-    void BuildSingleSideSlopeVertices(const TArray<FRailPoint>& InputPoints, bool bIsRightSide);
+    // 结构化辅助函数
+    FVector CalculateRawPointPosition(const FSurfaceSamplePoint& Sample, const FCornerData& Corner, float HalfWidth, bool bIsRightSide);
+    FVector CalculateSurfaceNormal(const FRailPoint& Pt, bool bIsRightSide) const;
+    void GenerateSingleSideSlope(const TArray<FRailPoint>& BaseRail, float Length, float Gradient, int32 StartIndex, bool bIsRightSide);
+    void BuildSideWall(const TArray<FRailPoint>& Rail, bool bIsRightSide);
+    void BuildCap(const TArray<int32>& Indices, bool bIsStartCap);
+    
+    // 辅助函数
+    void BuildRawRails();
+    void StitchRailsInternal(int32 LeftStartIdx, int32 RightStartIdx, int32 LeftCount, int32 RightCount, bool bReverseWinding = false);
     
     // 基于参考轨道，向外挤出并生成清洗后的下一层轨道（逐层拉链法）
     void BuildNextSlopeRail(const TArray<FRailPoint>& ReferenceRail, TArray<FRailPoint>& OutSlopeRail, bool bIsRightSide, float OffsetH, float OffsetV);
@@ -154,4 +135,7 @@ private:
     
     // 辅助：去除几何环/尾巴（Path Shortcutting / Loop Removal）
     void RemoveGeometricLoops(TArray<FRailPoint>& InPoints, float Threshold);
+    
+    // 辅助：应用单调性约束（防止顶点倒车）
+    void ApplyMonotonicityConstraint(FVector& Pos, const FVector& LastValidPos, const FVector& Tangent);
 };

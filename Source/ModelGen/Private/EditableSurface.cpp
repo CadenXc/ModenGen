@@ -42,101 +42,14 @@ void AEditableSurface::InitializeDefaultWaypoints()
     }
 }
 
-void AEditableSurface::RelaxWaypoints()
-{
-    if (Waypoints.Num() < 3) return; // 至少需要3个点才能进行松弛
-
-    // 计算最小距离：路面宽度的1.2倍
-    float MinDist = SurfaceWidth * 1.2f;
-    float MinDistSquared = MinDist * MinDist;
-
-    const int32 MaxIterations = 10;
-    
-    for (int32 Iter = 0; Iter < MaxIterations; ++Iter)
-    {
-        bool bAnyMoved = false;
-
-        // 遍历所有相邻的三元组 (P0, P1, P2)
-        for (int32 i = 0; i < Waypoints.Num() - 2; ++i)
-        {
-            FVector& P0 = Waypoints[i].Position;
-            FVector& P1 = Waypoints[i + 1].Position;
-            FVector& P2 = Waypoints[i + 2].Position;
-
-            // 检查 P1 和 P2 是否太近
-            FVector Delta = P2 - P1;
-            float DistSquared = Delta.SizeSquared();
-
-            if (DistSquared < MinDistSquared)
-            {
-                bAnyMoved = true;
-                
-                // 计算需要移动的距离
-                float CurrentDist = FMath::Sqrt(DistSquared);
-                float PushDistance = (MinDist - CurrentDist) * 0.5f; // 各移动一半
-                
-                if (CurrentDist > KINDA_SMALL_NUMBER)
-                {
-                    FVector PushDir = Delta / CurrentDist;
-                    
-                    // 第一轮迭代：优先移动 P2
-                    // 后续迭代：同时移动 P1 和 P2
-                    if (Iter == 0)
-                    {
-                        P2 += PushDir * PushDistance * 2.0f; // P2 移动全部距离
-                    }
-                    else
-                    {
-                        P1 -= PushDir * PushDistance;
-                        P2 += PushDir * PushDistance;
-                    }
-                }
-                else
-                {
-                    // 如果两点重合，沿 P0->P1 方向推开
-                    FVector Dir = (P1 - P0).GetSafeNormal();
-                    if (Dir.IsZero())
-                    {
-                        Dir = FVector::ForwardVector;
-                    }
-                    
-                    if (Iter == 0)
-                    {
-                        P2 = P1 + Dir * MinDist;
-                    }
-                    else
-                    {
-                        P1 -= Dir * PushDistance;
-                        P2 = P1 + Dir * MinDist;
-                    }
-                }
-            }
-        }
-
-        // 如果没有移动任何点，提前退出
-        if (!bAnyMoved)
-        {
-            break;
-        }
-    }
-}
-
-void AEditableSurface::UpdateSplineFromWaypoints()
+void AEditableSurface::RebuildSplineData()
 {
     if (!SplineComponent) return;
-
-    // 自动松弛路点（如果启用）
-    if (bAutoRelaxWaypoints)
-    {
-        RelaxWaypoints();
-    }
 
     SplineComponent->ClearSplinePoints(false);
 
     if (Waypoints.Num() < 2) return;
 
-    // 辅助 Lambda：获取实际宽度
-    // 如果路点宽度 <= 0，则使用全局 SurfaceWidth，否则使用路点自定义宽度
     auto GetActualWidth = [&](float WPWidth) -> float {
         return (WPWidth > 0.0f) ? WPWidth : SurfaceWidth;
     };
@@ -187,6 +100,11 @@ void AEditableSurface::UpdateSplineFromWaypoints()
     }
 
     SplineComponent->UpdateSpline();
+}
+
+void AEditableSurface::UpdateSplineFromWaypoints()
+{
+    RebuildSplineData();
     GenerateMesh();
 }
 
@@ -230,59 +148,8 @@ bool AEditableSurface::TryGenerateMeshInternal()
 {
     if (SplineComponent && SplineComponent->GetNumberOfSplinePoints() < 2 && Waypoints.Num() >= 2)
     {
-        UE_LOG(LogTemp, Warning, TEXT("AEditableSurface: 检测到样条线数据丢失，正在尝试从 Waypoints 恢复..."));
-        
-        // 直接重建 Spline 数据，避免调用 UpdateSplineFromWaypoints（防止递归）
-        SplineComponent->ClearSplinePoints(false);
-        
-        // 定义 Lambda (与 UpdateSplineFromWaypoints 中的逻辑一致)
-        auto GetActualWidth = [&](float WPWidth) -> float {
-            return (WPWidth > 0.0f) ? WPWidth : SurfaceWidth;
-        };
-        
-        if (CurveType == ESurfaceCurveType::Standard)
-        {
-            for (int32 i = 0; i < Waypoints.Num(); ++i)
-            {
-                SplineComponent->AddSplinePoint(Waypoints[i].Position, ESplineCoordinateSpace::Local, false);
-                SplineComponent->SetSplinePointType(i, ESplinePointType::Curve, false);
-                
-                float ActualWidth = GetActualWidth(Waypoints[i].Width);
-                SplineComponent->SetScaleAtSplinePoint(i, FVector(1.0f, ActualWidth, 1.0f), false);
-            }
-        }
-        else
-        {
-            // Smooth 模式：中点逼近算法
-            SplineComponent->AddSplinePoint(Waypoints[0].Position, ESplineCoordinateSpace::Local, false);
-            SplineComponent->SetSplinePointType(0, ESplinePointType::Curve, false);
-            
-            float StartWidth = GetActualWidth(Waypoints[0].Width);
-            SplineComponent->SetScaleAtSplinePoint(0, FVector(1.0f, StartWidth, 1.0f), false);
-            
-            for (int32 i = 0; i < Waypoints.Num() - 1; ++i)
-            {
-                FVector MidPos = (Waypoints[i].Position + Waypoints[i + 1].Position) * 0.5f;
-                
-                float W0 = GetActualWidth(Waypoints[i].Width);
-                float W1 = GetActualWidth(Waypoints[i + 1].Width);
-                float MidWidth = (W0 + W1) * 0.5f;
-                
-                SplineComponent->AddSplinePoint(MidPos, ESplineCoordinateSpace::Local, false);
-                int32 NewIdx = SplineComponent->GetNumberOfSplinePoints() - 1;
-                SplineComponent->SetSplinePointType(NewIdx, ESplinePointType::Curve, false);
-                SplineComponent->SetScaleAtSplinePoint(NewIdx, FVector(1.0f, MidWidth, 1.0f), false);
-            }
-            
-            SplineComponent->AddSplinePoint(Waypoints.Last().Position, ESplineCoordinateSpace::Local, false);
-            int32 LastIdx = SplineComponent->GetNumberOfSplinePoints() - 1;
-            SplineComponent->SetSplinePointType(LastIdx, ESplinePointType::Curve, false);
-            
-            float EndWidth = GetActualWidth(Waypoints.Last().Width);
-            SplineComponent->SetScaleAtSplinePoint(LastIdx, FVector(1.0f, EndWidth, 1.0f), false);
-        }
-        
-        SplineComponent->UpdateSpline();
+        UE_LOG(LogTemp, Warning, TEXT("AEditableSurface: 检测到样条线数据丢失，正在恢复..."));
+        RebuildSplineData();
     }
     
     // 检查样条线是否有足够的数据点
@@ -448,7 +315,6 @@ void AEditableSurface::PrintParametersInfo()
     UE_LOG(LogTemp, Warning, TEXT(""));
     
     UE_LOG(LogTemp, Warning, TEXT("【安全设置】"));
-    UE_LOG(LogTemp, Warning, TEXT("  自动松弛路点: %s"), bAutoRelaxWaypoints ? TEXT("是") : TEXT("否"));
     UE_LOG(LogTemp, Warning, TEXT(""));
     
     UE_LOG(LogTemp, Warning, TEXT("=========================================="));
