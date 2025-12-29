@@ -474,36 +474,8 @@ FVector FEditableSurfaceBuilder::CalculateRawPointPosition(const FSurfaceSampleP
     
     float BaseOffset = bIsRightSide ? (HalfWidth * WidthScaleRatio) : (-HalfWidth * WidthScaleRatio);
 
-    bool bIsInner = (bIsRightSide && !Corner.bIsConvexLeft) || (!bIsRightSide && Corner.bIsConvexLeft);
-
-    float AppliedScale = Corner.MiterScale;
-    float MiterDist = 0.0f;
-
-    if (bIsInner)
-    {
-        if (AppliedScale > 2.0f) AppliedScale = 2.0f; 
-        MiterDist = BaseOffset * AppliedScale;
-
-        if (Corner.TurnRadius < 10000.0f)
-        {
-             float MaxDist = FMath::Max(Corner.TurnRadius - 2.0f, 0.0f);
-            if (bIsRightSide)
-            {
-                 if (MiterDist > MaxDist) MiterDist = MaxDist;
-             }
-             else
-             {
-                 if (FMath::Abs(MiterDist) > MaxDist) MiterDist = -MaxDist;
-             }
-        }
-            }
-            else
-            {
-        if (AppliedScale > 4.0f) AppliedScale = 4.0f;
-        MiterDist = BaseOffset * AppliedScale;
-    }
-
-    return Sample.Location + (Corner.MiterVector * MiterDist);
+    // 直接使用基础偏移量，不使用 Miter 缩放
+    return Sample.Location + (Sample.RightVector * BaseOffset);
 }
 
 void FEditableSurfaceBuilder::ResampleSingleRail(const TArray<FRailPoint>& InPoints, TArray<FRailPoint>& OutPoints, float SegmentLength)
