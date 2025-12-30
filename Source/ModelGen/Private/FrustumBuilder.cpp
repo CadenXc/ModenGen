@@ -173,7 +173,6 @@ void FFrustumBuilder::GenerateSides()
         TopBevelHeight = CalculateBevelHeight(Frustum.TopRadius);
         BottomBevelHeight = CalculateBevelHeight(Frustum.BottomRadius);
 
-        // 【核心修复】：恢复旧版逻辑，沿着侧边棱移动计算倒角起点
         const float RadiusDiff = Frustum.TopRadius - Frustum.BottomRadius;
         const float SideLength = FMath::Sqrt(RadiusDiff * RadiusDiff + Frustum.Height * Frustum.Height);
 
@@ -580,7 +579,6 @@ void FFrustumBuilder::CreateCutPlaneSurface(float Angle, const TArray<int32>& Pr
             return FVector2D(U * ModelGenConstants::GLOBAL_UV_SCALE, V * ModelGenConstants::GLOBAL_UV_SCALE);
         };
 
-        // 关键修改：内侧顶点 (V_In1, V_In2) 使用传入的 InnerNormal
         int32 V_In1 = AddVertex(P1_Inner, InnerNormal, GetCutUV(P1_Inner));
         int32 V_Out1 = AddVertex(P1_Outer, N1_Outer, GetCutUV(P1_Outer));
         int32 V_Out2 = AddVertex(P2_Outer, N2_Outer, GetCutUV(P2_Outer));

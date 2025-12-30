@@ -41,38 +41,27 @@ bool FSphereBuilder::Generate(FModelGenMeshData& OutMeshData)
     HorizontalCut = Sphere.HorizontalCut;
     VerticalCut = Sphere.VerticalCut;
 
-    // --- 【防崩溃措施 1】：严格的参数钳制 ---
-
-    // 限制 HorizontalCut 最大值，保留微小余量防止除以零或几何消失
     if (HorizontalCut >= 1.0f - KINDA_SMALL_NUMBER)
     {
         HorizontalCut = 1.0f - KINDA_SMALL_NUMBER;
     }
 
-    // 限制 VerticalCut 最小值，防止生成极细的切片导致物理引擎报错
-    // 如果想要完全闭合，VerticalCut 必须 > 0
     if (VerticalCut <= KINDA_SMALL_NUMBER)
     {
-        // 切片太薄，直接不生成，视为失败但不崩溃
         return false;
     }
 
-    // --- 【防崩溃措施 2】：几何尺寸检查 ---
-    // 如果 球体半径 * 角度比例 太小，说明网格会缩成一团，容易导致精度问题
     const float PhiRange = PI * (1.0f - HorizontalCut);
     const float ThetaRange = VerticalCut * 2.0f * PI;
 
-    // 检查弧长精度（可选，根据项目需求调整阈值）
     const float MinArcLength = 0.01f; // 0.01cm
     if (Radius * PhiRange < MinArcLength || Radius * ThetaRange < MinArcLength)
     {
-        // 几何体过小，放弃生成
         return false;
     }
 
     ReserveMemory();
 
-    // 计算 Z 偏移量
     const float EndPhi = PhiRange; // StartPhi is 0
     const float CutPlaneZ = Radius * FMath::Cos(EndPhi);
     ZOffset = -CutPlaneZ;
@@ -135,7 +124,6 @@ void FSphereBuilder::SafeAddTriangle(int32 V0, int32 V1, int32 V2)
 
 void FSphereBuilder::SafeAddQuad(int32 V0, int32 V1, int32 V2, int32 V3)
 {
-    // 四边形拆分为两个三角形处理
     SafeAddTriangle(V0, V1, V3);
     SafeAddTriangle(V1, V2, V3);
 }
@@ -179,7 +167,6 @@ void FSphereBuilder::GenerateSphereMesh()
         }
     }
 
-    // 2. 生成面
     for (int32 v = 0; v < NumRings; ++v)
     {
         for (int32 h = 0; h < NumSegments; ++h)
@@ -189,24 +176,16 @@ void FSphereBuilder::GenerateSphereMesh()
             int32 V2 = GridIndices[v + 1][h];   // Bottom-Left
             int32 V3 = GridIndices[v + 1][h + 1]; // Bottom-Right
 
-            // 使用 SafeAdd 替代直接 Add，并在极点处逻辑明确化
-
-            // 顶部极点 (v=0)
             if (v == 0)
             {
-                // Top Triangle: V0和V1在几何上重合，但在索引上可能是不同的
-                // 如果它们索引不同但位置相同，SafeAddTriangle 不会过滤，这没问题
-                // 但如果索引相同，SafeAddTriangle 会过滤
                 SafeAddTriangle(V0, V3, V2);
             }
-            // 底部极点 (如果完全闭合)
             else if (v == NumRings - 1 && FMath::IsNearlyEqual(EndPhi, PI))
             {
                 SafeAddTriangle(V0, V1, V2);
             }
             else
             {
-                // 标准四边形
                 SafeAddQuad(V0, V1, V3, V2);
             }
         }
@@ -219,13 +198,11 @@ void FSphereBuilder::GenerateCaps()
     const float StartTheta = 0.0f;
     const float EndTheta = VerticalCut * 2.0f * PI;
 
-    // 只有当有实际开口时才生成盖子
     if (EndPhi < PI - KINDA_SMALL_NUMBER)
     {
         GenerateHorizontalCap(EndPhi, true);
     }
 
-    // 只有当不是完整圆周时才生成竖切面
     if (VerticalCut < 1.0f - KINDA_SMALL_NUMBER)
     {
         GenerateVerticalCap(StartTheta, true);

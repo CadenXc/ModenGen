@@ -5,7 +5,6 @@
 #include "ModelGenConstants.h"
 
 #include "Components/SplineComponent.h"
-#include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 
 FEditableSurfaceBuilder::FEditableSurfaceBuilder(const AEditableSurface& InSurface)
@@ -171,11 +170,6 @@ bool FEditableSurfaceBuilder::Generate(FModelGenMeshData& OutMeshData)
         return false;
     }
 
-    if (Surface.GetWorld())
-    {
-        FlushPersistentDebugLines(Surface.GetWorld());
-    }
-
     Clear();
 
     if (!bEnableThickness)
@@ -189,8 +183,9 @@ bool FEditableSurfaceBuilder::Generate(FModelGenMeshData& OutMeshData)
     
     if (bEnableThickness)
     {
-    GenerateThickness();
+        GenerateThickness();
     }
+
     if (MeshData.Triangles.Num() > 0)
     {
         TArray<int32> CleanTriangles;
@@ -305,60 +300,6 @@ void FEditableSurfaceBuilder::GenerateRoadSurface()
 
     UE_LOG(LogTemp, Log, TEXT("Zipper Resample: Left Points=%d, Right Points=%d"), 
         LeftRailResampled.Num(), RightRailResampled.Num());
-
-    if (Surface.GetWorld())
-    {
-        FColor LeftPointColor = FColor::Cyan;
-        FColor RightPointColor = FColor::Yellow;
-        FColor LeftLineColor = FColor::Cyan;
-        FColor RightLineColor = FColor::Yellow;
-        FColor CenterLineColor = FColor::Green;
-
-        // 绘制左侧边线
-        for (int32 i = 0; i < LeftRailResampled.Num(); ++i)
-        {
-            const FRailPoint& Pt = LeftRailResampled[i];
-            DrawDebugPoint(Surface.GetWorld(), Pt.Position, 10.0f, LeftPointColor, true, -1.0f, 0);
-            
-            if (i > 0)
-            {
-                DrawDebugLine(Surface.GetWorld(), LeftRailResampled[i - 1].Position, Pt.Position, LeftLineColor, true, -1.0f, 0, 3.0f);
-            }
-        }
-
-        // 绘制右侧边线
-        for (int32 i = 0; i < RightRailResampled.Num(); ++i)
-        {
-            const FRailPoint& Pt = RightRailResampled[i];
-            DrawDebugPoint(Surface.GetWorld(), Pt.Position, 10.0f, RightPointColor, true, -1.0f, 0);
-            
-            if (i > 0)
-            {
-                DrawDebugLine(Surface.GetWorld(), RightRailResampled[i - 1].Position, Pt.Position, RightLineColor, true, -1.0f, 0, 3.0f);
-            }
-        }
-
-        // 绘制从原始采样点到左右边线的连线（仅显示部分点，避免过于密集）
-        int32 DebugSampleStep = FMath::Max(1, SampledPath.Num() / 20); // 最多显示20个采样点
-        for (int32 i = 0; i < SampledPath.Num(); i += DebugSampleStep)
-        {
-            const FSurfaceSamplePoint& Sample = SampledPath[i];
-            const FCornerData& Corner = PathCornerData[i];
-            
-            // 找到最近的左右边线点（简化版，使用原始边线）
-            if (i < LeftRailRaw.Num() && i < RightRailRaw.Num())
-            {
-                DrawDebugLine(Surface.GetWorld(), Sample.Location, LeftRailRaw[i].Position, CenterLineColor, true, -1.0f, 0, 1.0f);
-                DrawDebugLine(Surface.GetWorld(), Sample.Location, RightRailRaw[i].Position, CenterLineColor, true, -1.0f, 0, 1.0f);
-            }
-
-            // 绘制旋转中心（仅第一个点）
-            if (i == 0 && Corner.TurnRadius < FLT_MAX - 1.0f)
-            {
-                DrawDebugSphere(Surface.GetWorld(), Corner.RotationCenter, 20.0f, 8, FColor::Red, true, -1.0f, 0, 2.0f);
-            }
-        }
-    }
 
     int32 LeftRoadStartIdx = MeshData.Vertices.Num();
     for (const FRailPoint& Pt : LeftRailResampled)
@@ -872,7 +813,6 @@ void FEditableSurfaceBuilder::GenerateSingleSideSlope(const TArray<FRailPoint>& 
     int32 StitchPrevCount = BaseRail.Num();
 
     float TotalHeight = Length * Gradient;
-    FColor PointColor = bIsRightSide ? FColor::Orange : FColor::Magenta;
 
     for (int32 i = 1; i <= SideSmoothness; ++i)
     {
@@ -891,31 +831,6 @@ void FEditableSurfaceBuilder::GenerateSingleSideSlope(const TArray<FRailPoint>& 
 
         bool bReverseWinding = !bIsRightSide;
         StitchRailsInternal(StitchPrevStartIdx, NextStartIdx, StitchPrevCount, NextRail.Num(), bReverseWinding);
-
-        if (Surface.GetWorld())
-        {
-            // 1. 绘制当前层的顶点
-            for (const FRailPoint& P : NextRail)
-                DrawDebugPoint(Surface.GetWorld(), P.Position, 8.0f, PointColor, true, -1.0f, 0);
-
-            // 2. 绘制"肋骨"连线：连接上一层轨道(StitchPrevRail)与当前层(NextRail)
-            // 取两点数量的最小值，防止越界（虽然通常重采样后数量接近，但为了安全取Min）
-            int32 RibCount = FMath::Min(StitchPrevRail.Num(), NextRail.Num());
-            
-            for (int32 k = 0; k < RibCount; ++k)
-            {
-                DrawDebugLine(
-                    Surface.GetWorld(),
-                    StitchPrevRail[k].Position, // 起点：路面边缘 或 上一层护坡
-                    NextRail[k].Position,       // 终点：当前生成的护坡边缘
-                    PointColor,
-                    true,  // 持久显示
-                    -1.0f, 
-                    0, 
-                    2.0f   // 线宽
-                );
-            }
-        }
 
         if (bIsRightSide)
         {

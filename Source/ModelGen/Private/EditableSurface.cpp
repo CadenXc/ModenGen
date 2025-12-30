@@ -325,13 +325,10 @@ void AEditableSurface::SetSurfaceWidth(float NewSurfaceWidth)
     SurfaceWidth = NewSurfaceWidth;
 
     UpdateSplineFromWaypoints();
-    
-    // UpdateSplineFromWaypoints 内部已经调用了 GenerateMesh，所以这里不需要重复调用
 }
 
 void AEditableSurface::SetSplineSampleStep(float NewStep)
 {
-    // 限制最小值防止死循环或显存爆炸
     SplineSampleStep = FMath::Max(NewStep, 5.0f);
     GenerateMesh();
 }
@@ -404,14 +401,11 @@ bool AEditableSurface::IsValid() const
 
 int32 AEditableSurface::CalculateVertexCountEstimate() const
 {
-    // 基于自适应采样估算：使用样条长度和路点数量
     int32 CrossSectionPoints = 2 + (SideSmoothness * 2);
     
-    // 估算采样点数量：基于路点数量和样条长度
     int32 NumWaypoints = Waypoints.Num();
     float SplineLength = SplineComponent ? SplineComponent->GetSplineLength() : 1000.0f;
     
-    // 保守估算：每100单位长度至少1个采样点，每个路点之间至少2个采样点
     int32 EstimatedSamples = FMath::Max(
         FMath::CeilToInt(SplineLength / 100.0f),
         NumWaypoints * 2
@@ -436,8 +430,6 @@ void AEditableSurface::SetWaypoints(const FString& WaypointsString)
     // 清空现有路点
     Waypoints.Empty();
 
-    // 解析字符串格式：x1,y1,z1;x2,y2,z2;...
-    // 使用分号分隔不同的路点，逗号分隔坐标
     TArray<FString> WaypointStrings;
     WaypointsString.ParseIntoArray(WaypointStrings, TEXT(";"), true);
 
@@ -474,10 +466,8 @@ void AEditableSurface::SetWaypoints(const FString& WaypointsString)
         }
     }
 
-    // 如果解析成功且路点数量足够，更新样条线和网格
     if (Waypoints.Num() >= 2)
     {
-        // 这里会触发 UpdateSplineFromWaypoints -> GenerateMesh
         UpdateSplineFromWaypoints();
     }
     else
