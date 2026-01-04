@@ -269,15 +269,15 @@ void FEditableSurfaceBuilder::GenerateRoadSurface()
 
     int32 LeftRawCountBefore = LeftRailRaw.Num();
     int32 RightRawCountBefore = RightRailRaw.Num();
-    
+
     RemoveGeometricLoops(LeftRailRaw, UserLoopThreshold);
     RemoveGeometricLoops(RightRailRaw, UserLoopThreshold);
 
     // 调试日志：查看去环前后的点数变化
-    UE_LOG(LogTemp, Log, TEXT("Zipper Loop Removal: Left %d -> %d, Right %d -> %d"), 
+    UE_LOG(LogTemp, Log, TEXT("Zipper Loop Removal: Left %d -> %d, Right %d -> %d"),
         LeftRawCountBefore, LeftRailRaw.Num(), RightRawCountBefore, RightRailRaw.Num());
 
-    float WeldThreshold = 5.0f; 
+    float WeldThreshold = 5.0f;
     TArray<FRailPoint> LeftRailSimplified;
     TArray<FRailPoint> RightRailSimplified;
 
@@ -285,15 +285,70 @@ void FEditableSurfaceBuilder::GenerateRoadSurface()
     SimplifyRail(RightRailRaw, RightRailSimplified, WeldThreshold);
 
     // 调试日志：查看简化前后的点数变化
-    UE_LOG(LogTemp, Log, TEXT("Zipper Simplify: Left Raw=%d -> Simplified=%d, Right Raw=%d -> Simplified=%d"), 
+    UE_LOG(LogTemp, Log, TEXT("Zipper Simplify: Left Raw=%d -> Simplified=%d, Right Raw=%d -> Simplified=%d"),
         LeftRailRaw.Num(), LeftRailSimplified.Num(), RightRailRaw.Num(), RightRailSimplified.Num());
 
+
+    // 1. 计算两条轨道的实际几何长度
+    auto CalculateRailGeoLength = [](const TArray<FRailPoint>& Points) -> float {
+        if (Points.Num() < 2) return 0.0f;
+        float Len = 0.0f;
+        for (int32 i = 0; i < Points.Num() - 1; ++i)
+        {
+            Len += FVector::Dist(Points[i].Position, Points[i + 1].Position);
+        }
+        return Len;
+        };
+
+    float LenLeft = CalculateRailGeoLength(LeftRailSimplified);
+    float LenRight = CalculateRailGeoLength(RightRailSimplified);
+
+    float MaxGeoLen = FMath::Max(LenLeft, LenRight);
+
+    float TargetMaxV = 0.0f;
+    if (TextureMapping == ESurfaceTextureMapping::Stretch)
+    {
+        TargetMaxV = 1.0f;
+    }
+    else
+    {
+        TargetMaxV = MaxGeoLen * ModelGenConstants::GLOBAL_UV_SCALE;
+    }
+
+    // 3. 将对齐后的 UV 写入到 Simplified 数组中
+    auto ApplyAlignedUVs = [&](TArray<FRailPoint>& Points, float MyTotalLen, float InTargetMaxV) {
+        if (Points.Num() == 0) return;
+
+        float CurrentDist = 0.0f;
+
+        // 强制起点 UV 为 0
+        Points[0].UV.Y = 0.0f;
+
+        for (int32 i = 0; i < Points.Num(); ++i)
+        {
+            if (i > 0)
+            {
+                CurrentDist += FVector::Dist(Points[i - 1].Position, Points[i].Position);
+            }
+
+            // 计算当前点在自己路径上的百分比 (0.0 ~ 1.0)
+            float Ratio = (MyTotalLen > KINDA_SMALL_NUMBER) ? (CurrentDist / MyTotalLen) : 0.0f;
+
+            // 关键：将自身的百分比映射到 TargetMaxV (长边的 UV 长度)
+            Points[i].UV.Y = Ratio * InTargetMaxV;
+        }
+        };
+
+    ApplyAlignedUVs(LeftRailSimplified, LenLeft, TargetMaxV);
+    ApplyAlignedUVs(RightRailSimplified, LenRight, TargetMaxV);
+
     float ResampleStep = FMath::Max(SplineSampleStep, 10.0f);
-    
+
+    // ResampleSingleRail 现在会插值我们刚刚计算好的 UV
     ResampleSingleRail(LeftRailSimplified, LeftRailResampled, ResampleStep);
     ResampleSingleRail(RightRailSimplified, RightRailResampled, ResampleStep);
 
-    UE_LOG(LogTemp, Log, TEXT("Zipper Resample: Left Points=%d, Right Points=%d"), 
+    UE_LOG(LogTemp, Log, TEXT("Zipper Resample: Left Points=%d, Right Points=%d"),
         LeftRailResampled.Num(), RightRailResampled.Num());
 
     int32 LeftRoadStartIdx = MeshData.Vertices.Num();
@@ -309,7 +364,7 @@ void FEditableSurfaceBuilder::GenerateRoadSurface()
         FVector FinalN = CalculateSurfaceNormal(Pt, true);
         AddVertex(Pt.Position, FinalN, Pt.UV);
     }
-    
+
     StitchRailsInternal(LeftRoadStartIdx, RightRoadStartIdx, LeftRailResampled.Num(), RightRailResampled.Num());
 
     TopStartIndices.Reset();
@@ -383,22 +438,34 @@ void FEditableSurfaceBuilder::BuildRawRails()
             ApplyMonotonicityConstraint(LeftPos, LastValidLeftPos, Sample.Tangent);
             ApplyMonotonicityConstraint(RightPos, LastValidRightPos, Sample.Tangent);
         }
-        
+
         LastValidLeftPos = LeftPos;
         LastValidRightPos = RightPos;
 
+        float U_Left = 0.0f;
+        float U_Right = 1.0f; // 默认为 1.0 (拉伸模式)
+
+        if (TextureMapping == ESurfaceTextureMapping::Default)
+        {
+            float PhysicalWidth = Sample.InterpolatedWidth;
+
+            U_Right = PhysicalWidth * ModelGenConstants::GLOBAL_UV_SCALE;
+        }
+
         FRailPoint LPoint;
         LPoint.Position = LeftPos;
-        LPoint.Normal = Sample.Normal; 
+        LPoint.Normal = Sample.Normal;
         LPoint.Tangent = Sample.Tangent;
-        LPoint.UV = FVector2D(0.0f, 0.0f); 
+
+        LPoint.UV = FVector2D(U_Left, 0.0f);
         LeftRailRaw.Add(LPoint);
 
         FRailPoint RPoint;
         RPoint.Position = RightPos;
         RPoint.Normal = Sample.Normal;
         RPoint.Tangent = Sample.Tangent;
-        RPoint.UV = FVector2D(1.0f, 0.0f); 
+        LPoint.UV = FVector2D(U_Right, 0.0f); // 注意：这里原代码写的 LPoint 可能有笔误，应该是 RPoint.UV
+        RPoint.UV = FVector2D(U_Right, 0.0f);
         RightRailRaw.Add(RPoint);
     }
 }
@@ -425,9 +492,9 @@ void FEditableSurfaceBuilder::ResampleSingleRail(const TArray<FRailPoint>& InPoi
     {
         FVector P_Prev = InPoints[FMath::Max(0, i - 1)].Position;
         FVector P_Next = InPoints[FMath::Min(InPoints.Num() - 1, i + 1)].Position;
-        
+
         FVector Tangent = (P_Next - P_Prev).GetSafeNormal();
-        
+
         if (Tangent.IsZero())
         {
             Tangent = InPoints[i].Tangent;
@@ -442,7 +509,7 @@ void FEditableSurfaceBuilder::ResampleSingleRail(const TArray<FRailPoint>& InPoi
 
     for (int32 i = 0; i < InPoints.Num() - 1; ++i)
     {
-        float SegLen = FVector::Dist(InPoints[i].Position, InPoints[i+1].Position);
+        float SegLen = FVector::Dist(InPoints[i].Position, InPoints[i + 1].Position);
         TotalLength += SegLen;
         AccumulatedDists.Add(TotalLength);
     }
@@ -464,7 +531,7 @@ void FEditableSurfaceBuilder::ResampleSingleRail(const TArray<FRailPoint>& InPoi
     for (int32 i = 0; i <= NumSegments; ++i)
     {
         float TargetDist = static_cast<float>(i) * ActualStep;
-        
+
         while (CurrentIndex < AccumulatedDists.Num() - 1 && AccumulatedDists[CurrentIndex + 1] < TargetDist)
         {
             CurrentIndex++;
@@ -474,8 +541,7 @@ void FEditableSurfaceBuilder::ResampleSingleRail(const TArray<FRailPoint>& InPoi
         {
             FRailPoint EndPt = InPoints.Last();
             EndPt.DistanceAlongRail = TotalLength;
-            float V = (TextureMapping == ESurfaceTextureMapping::Stretch) ? 1.0f : TotalLength * ModelGenConstants::GLOBAL_UV_SCALE;
-            EndPt.UV.Y = V;
+
             OutPoints.Add(EndPt);
             continue;
         }
@@ -490,16 +556,14 @@ void FEditableSurfaceBuilder::ResampleSingleRail(const TArray<FRailPoint>& InPoi
 
         FVector T0 = GeoTangents[CurrentIndex] * Span;
         FVector T1 = GeoTangents[CurrentIndex + 1] * Span;
-        
+
         FRailPoint NewPt;
         NewPt.Position = FMath::CubicInterp(P0.Position, T0, P1.Position, T1, Alpha);
         NewPt.Normal = FMath::Lerp(P0.Normal, P1.Normal, Alpha).GetSafeNormal();
         NewPt.Tangent = FMath::Lerp(P0.Tangent, P1.Tangent, Alpha).GetSafeNormal();
-        NewPt.UV.X = P0.UV.X;
         NewPt.DistanceAlongRail = TargetDist;
 
-        float V = (TextureMapping == ESurfaceTextureMapping::Stretch) ? (TargetDist / TotalLength) : (TargetDist * ModelGenConstants::GLOBAL_UV_SCALE);
-        NewPt.UV.Y = V;
+        NewPt.UV = FMath::Lerp(P0.UV, P1.UV, Alpha);
 
         OutPoints.Add(NewPt);
     }
