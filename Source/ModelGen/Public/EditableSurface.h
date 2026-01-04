@@ -125,14 +125,14 @@ public:
     /** 样条线采样步长（越小越平滑，但性能开销越大） */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
         meta = (ClampMin = "10.0", ClampMax = "1000.0", UIMin = "10.0", UIMax = "500.0", DisplayName = "采样精度(步长)"))
-    float SplineSampleStep = 50.0f;
+    float SplineSampleStep = 10.0f;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
     void SetSplineSampleStep(float NewStep);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
         meta = (ClampMin = "1.0", ClampMax = "5000.0", UIMin = "10.0", UIMax = "1000.0", DisplayName = "去环检测距离"))
-    float LoopRemovalThreshold = 500.0f;
+    float LoopRemovalThreshold = 10.0f;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
     void SetLoopRemovalThreshold(float NewValue);
@@ -157,14 +157,14 @@ public:
     /** 曲面两侧平滑度 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Smoothing",
         meta = (ClampMin = "0", ClampMax = "5", UIMin = "0", UIMax = "5", DisplayName = "曲面两侧平滑度"))
-    int32 SideSmoothness = 0;
+    int32 SideSmoothness = 1;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
     void SetSideSmoothness(int32 NewSideSmoothness);
 
     /** 护坡参数 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Slope",
-        meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "右侧护坡长度", EditCondition = "SideSmoothness >= 1"))
+        meta = (ClampMin = "0.01", ClampMax = "2000", UIMin = "0.01", UIMax = "1000", DisplayName = "右侧护坡长度", EditCondition = "SideSmoothness >= 1"))
     float RightSlopeLength = 30.0f;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")

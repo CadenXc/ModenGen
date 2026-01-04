@@ -1,11 +1,6 @@
-// Copyright (c) 2024. All rights reserved.
-
 #include "EditableSurfaceBuilder.h"
-
 #include "ModelGenConstants.h"
-
 #include "Components/SplineComponent.h"
-#include "Engine/World.h"
 
 FEditableSurfaceBuilder::FEditableSurfaceBuilder(const AEditableSurface& InSurface)
     : Surface(InSurface)
@@ -886,8 +881,26 @@ void FEditableSurfaceBuilder::GenerateThickness()
     BuildSideWall(FinalLeftRail, false);
     BuildSideWall(FinalRightRail, true);
 
-    BuildCap(TopStartIndices, true);
-    BuildCap(TopEndIndices, false);
+    // 计算端面法线
+    FVector StartCapNormal = -FVector::ForwardVector;
+    FVector EndCapNormal = FVector::ForwardVector;
+
+    if (FinalLeftRail.Num() > 0 && FinalRightRail.Num() > 0)
+    {
+        FVector StartTanL = FinalLeftRail[0].Tangent;
+        FVector StartTanR = FinalRightRail[0].Tangent;
+        FVector AvgStartTan = (StartTanL + StartTanR).GetSafeNormal();
+
+        FVector EndTanL = FinalLeftRail.Last().Tangent;
+        FVector EndTanR = FinalRightRail.Last().Tangent;
+        FVector AvgEndTan = (EndTanL + EndTanR).GetSafeNormal();
+
+        StartCapNormal = -AvgStartTan;
+        EndCapNormal = AvgEndTan;
+    }
+
+    BuildCap(TopStartIndices, true, StartCapNormal);
+    BuildCap(TopEndIndices, false, EndCapNormal);
 }
 
 void FEditableSurfaceBuilder::BuildSideWall(const TArray<FRailPoint>& Rail, bool bIsRightSide)
@@ -895,18 +908,24 @@ void FEditableSurfaceBuilder::BuildSideWall(const TArray<FRailPoint>& Rail, bool
     if (Rail.Num() < 2) return;
 
     float V_Bottom = ThicknessValue * ModelGenConstants::GLOBAL_UV_SCALE;
-    
+
     for (int32 i = 0; i < Rail.Num() - 1; ++i)
     {
         const FRailPoint& P0 = Rail[i];
         const FRailPoint& P1 = Rail[i + 1];
 
-        FVector SegDir = (P1.Position - P0.Position).GetSafeNormal();
-        FVector WallNormal;
+        FVector Normal0, Normal1;
+
         if (bIsRightSide)
-            WallNormal = FVector::CrossProduct(SegDir, P0.Normal).GetSafeNormal();
+        {
+            Normal0 = FVector::CrossProduct(P0.Normal, P0.Tangent).GetSafeNormal();
+            Normal1 = FVector::CrossProduct(P1.Normal, P1.Tangent).GetSafeNormal();
+        }
         else
-            WallNormal = FVector::CrossProduct(P0.Normal, SegDir).GetSafeNormal();
+        {
+            Normal0 = FVector::CrossProduct(P0.Tangent, P0.Normal).GetSafeNormal();
+            Normal1 = FVector::CrossProduct(P1.Tangent, P1.Normal).GetSafeNormal();
+        }
 
         FVector TopPos0 = P0.Position;
         FVector TopPos1 = P1.Position;
@@ -915,24 +934,26 @@ void FEditableSurfaceBuilder::BuildSideWall(const TArray<FRailPoint>& Rail, bool
 
         float U0 = P0.DistanceAlongRail * ModelGenConstants::GLOBAL_UV_SCALE;
         float U1 = P1.DistanceAlongRail * ModelGenConstants::GLOBAL_UV_SCALE;
-        
-        int32 V_TL = AddVertex(TopPos0, WallNormal, FVector2D(U0, 0.0f));
-        int32 V_TR = AddVertex(TopPos1, WallNormal, FVector2D(U1, 0.0f));
-        int32 V_BL = AddVertex(BotPos0, WallNormal, FVector2D(U0, V_Bottom));
-        int32 V_BR = AddVertex(BotPos1, WallNormal, FVector2D(U1, V_Bottom));
+
+        int32 V_TL = AddVertex(TopPos0, Normal0, FVector2D(U0, 0.0f));
+        int32 V_TR = AddVertex(TopPos1, Normal1, FVector2D(U1, 0.0f));
+        int32 V_BL = AddVertex(BotPos0, Normal0, FVector2D(U0, V_Bottom));
+        int32 V_BR = AddVertex(BotPos1, Normal1, FVector2D(U1, V_Bottom));
 
         if (bIsRightSide)
             AddQuad(V_TL, V_BL, V_BR, V_TR);
         else
-                    AddQuad(V_TR, V_BR, V_BL, V_TL);
-                }
+            AddQuad(V_TR, V_BR, V_BL, V_TL);
+    }
 }
 
-void FEditableSurfaceBuilder::BuildCap(const TArray<int32>& Indices, bool bIsStartCap)
+void FEditableSurfaceBuilder::BuildCap(const TArray<int32>& Indices, bool bIsStartCap, const FVector& OverrideNormal)
 {
     if (Indices.Num() < 2) return;
 
     float V_Bottom = ThicknessValue * ModelGenConstants::GLOBAL_UV_SCALE;
+
+    FVector FaceNormal = OverrideNormal;
 
     for (int32 i = 0; i < Indices.Num() - 1; ++i)
     {
@@ -941,19 +962,14 @@ void FEditableSurfaceBuilder::BuildCap(const TArray<int32>& Indices, bool bIsSta
 
         FVector P_TL = MeshData.Vertices[TopIdx0];
         FVector P_TR = MeshData.Vertices[TopIdx1];
+
         FVector Normal0 = MeshData.Normals[TopIdx0];
         FVector Normal1 = MeshData.Normals[TopIdx1];
-        
+
         FVector P_BL = P_TL - (Normal0 * ThicknessValue);
         FVector P_BR = P_TR - (Normal1 * ThicknessValue);
 
-        FVector FaceNormal;
-        if (bIsStartCap)
-            FaceNormal = FVector::CrossProduct(P_BL - P_TL, P_TR - P_TL).GetSafeNormal();
-        else
-            FaceNormal = FVector::CrossProduct(P_TR - P_TL, P_BL - P_TL).GetSafeNormal();
-
-        float U0 = 0.0f; 
+        float U0 = 0.0f;
         float U1 = 1.0f;
 
         int32 V_TL = AddVertex(P_TL, FaceNormal, FVector2D(U0, 0.0f));
@@ -967,7 +983,6 @@ void FEditableSurfaceBuilder::BuildCap(const TArray<int32>& Indices, bool bIsSta
             AddQuad(V_TR, V_BR, V_BL, V_TL);
     }
 }
-
 void FEditableSurfaceBuilder::ApplyMonotonicityConstraint(FVector& Pos, const FVector& LastValidPos, const FVector& Tangent)
 {
     FVector Delta = Pos - LastValidPos;
