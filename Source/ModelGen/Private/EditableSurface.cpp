@@ -204,25 +204,48 @@ bool AEditableSurface::SetWaypointPosition(int32 Index, const FVector& NewPositi
     return false;
 }
 
+void AEditableSurface::SetWaypointWidth(int32 Index, float NewWidth)
+{
+    if (Waypoints.IsValidIndex(Index))
+    {
+        if (!FMath::IsNearlyEqual(Waypoints[Index].Width, NewWidth))
+        {
+            Waypoints[Index].Width = NewWidth;
+            UpdateSplineFromWaypoints();
+            GenerateMesh();
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("SetWaypointWidth: 无效的索引 %d"), Index);
+    }
+}
+
+void AEditableSurface::SetNextWaypointDistance(float NewDistance)
+{
+    NextWaypointDistance = FMath::Max(NewDistance, 1.0f);
+}
+
 void AEditableSurface::AddNewWaypoint()
 {
     if (Waypoints.Num() > 0)
     {
         FSurfaceWaypoint NewWP = Waypoints.Last();
-        // 尝试沿最后两个点的方向延伸
+
         if (Waypoints.Num() >= 2)
         {
             FVector Dir = (Waypoints.Last().Position - Waypoints[Waypoints.Num() - 2].Position).GetSafeNormal();
             if (Dir.IsZero()) Dir = FVector::ForwardVector;
-            NewWP.Position += Dir * 100.0f;
+
+            NewWP.Position += Dir * NextWaypointDistance;
         }
         else
         {
-            NewWP.Position += FVector(100, 0, 0);
+            NewWP.Position += FVector(NextWaypointDistance, 0, 0);
         }
-        
+
         NewWP.Width = -1.0f;
-        
+
         Waypoints.Add(NewWP);
     }
     else

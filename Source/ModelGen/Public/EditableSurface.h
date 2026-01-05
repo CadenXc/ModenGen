@@ -70,11 +70,7 @@ class MODELGEN_API AEditableSurface : public AProceduralMeshActor
 public:
     AEditableSurface();
 
-    //~ Begin AActor Interface
     virtual void OnConstruction(const FTransform& Transform) override;
-    //~ End AActor Interface
-
-    //~ Begin Geometry Parameters
 
     /** 路点数组（控制点） */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Waypoints",
@@ -89,9 +85,16 @@ public:
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Waypoints")
     bool SetWaypointPosition(int32 Index, const FVector& NewPosition);
 
-    /** 添加一个新的路点 */
-    UFUNCTION(BlueprintCallable, CallInEditor, Category = "EditableSurface|Tools", meta = (DisplayName = "添加新路点 (+100)"))
-    void AddNewWaypoint();
+    /** 设置指定索引的路点宽度 (<= 0 表示使用全局宽度) */
+    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Waypoints")
+	void SetWaypointWidth(int32 Index, float NewWidth);
+
+    /** 设置下一次添加路点时的延伸距离 */
+    UFUNCTION(BlueprintCallable, Category = "EditableSurface|Tools", meta = (DisplayName = "设置新增路点距离"))
+	void SetNextWaypointDistance(float NewDistance);
+
+    UFUNCTION(BlueprintCallable, CallInEditor, Category = "EditableSurface|Tools", meta = (DisplayName = "添加新路点 (延伸)"))
+	void AddNewWaypoint();
 
     /** 要删除的路点索引 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Tools",
@@ -199,7 +202,7 @@ public:
     /** 曲线类型 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "EditableSurface|Geometry",
         meta = (DisplayName = "曲线类型"))
-    ESurfaceCurveType CurveType = ESurfaceCurveType::Standard;
+    ESurfaceCurveType CurveType = ESurfaceCurveType::Smooth;
 
     UFUNCTION(BlueprintCallable, Category = "EditableSurface|Parameters")
     void SetCurveType(ESurfaceCurveType NewCurveType);
@@ -235,7 +238,8 @@ public:
 private:
     bool TryGenerateMeshInternal();
     void InitializeDefaultWaypoints();
-    
-    /** 核心逻辑：从 Waypoints 重建 SplineComponent 的数据 */
     void RebuildSplineData();
+
+    float NextWaypointDistance = 200.0f;
+
 };

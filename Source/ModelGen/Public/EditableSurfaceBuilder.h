@@ -82,6 +82,7 @@ private:
     float LeftSlopeLength;
     float LeftSlopeGradient;
     ESurfaceTextureMapping TextureMapping;
+	float CachedMaxProfileLength;
 
     // 核心数据缓存
     TArray<FSurfaceSamplePoint> SampledPath;
@@ -119,4 +120,6 @@ private:
     void SimplifyRail(const TArray<FRailPoint>& InPoints, TArray<FRailPoint>& OutPoints, float MergeThreshold);
     void RemoveGeometricLoops(TArray<FRailPoint>& InPoints, float Threshold);
     void ApplyMonotonicityConstraint(FVector& Pos, const FVector& LastValidPos, const FVector& Tangent);
+
+    void CorrectRailUVs(TArray<FRailPoint>& Rail, float TargetTotalLength);
 };
