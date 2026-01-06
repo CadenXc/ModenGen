@@ -5,13 +5,11 @@
 FEditableSurfaceBuilder::FEditableSurfaceBuilder(const AEditableSurface& InSurface)
     : Surface(InSurface)
 {
-    // 缓存配置数据
     SplineComponent = InSurface.SplineComponent;
     SurfaceWidth = InSurface.SurfaceWidth;
     SplineSampleStep = InSurface.SplineSampleStep;
     LoopRemovalThreshold = InSurface.LoopRemovalThreshold;
     
-    // 安全检查：防止用户输入过小的值导致崩溃
     if (SplineSampleStep < 1.0f) SplineSampleStep = 10.0f;
     if (LoopRemovalThreshold < 1.0f) LoopRemovalThreshold = 10.0f;
 
@@ -29,7 +27,6 @@ FEditableSurfaceBuilder::FEditableSurfaceBuilder(const AEditableSurface& InSurfa
 
 void FEditableSurfaceBuilder::Clear()
 {
-    // 调用父类清理
     FModelGenMeshBuilder::Clear();
     
     SampledPath.Empty();
@@ -48,18 +45,10 @@ void FEditableSurfaceBuilder::Clear()
 
 int32 FEditableSurfaceBuilder::CalculateVertexCountEstimate() const
 {
-    // 基于新的网格方案估算
-    // 横截面点数：路面2个点 + 左右护坡各 SideSmoothness 个点
     int32 ProfilePointCount = 2 + (SideSmoothness * 2);
-    
-    // 路径采样点数：基于样条长度，使用 SplineSampleStep
     float SplineLength = SplineComponent ? SplineComponent->GetSplineLength() : 1000.0f;
     int32 PathSampleCount = FMath::CeilToInt(SplineLength / SplineSampleStep) + 1;
-    
-    // 总顶点数 = 路径采样点数 × 横截面点数
     int32 BaseCount = PathSampleCount * ProfilePointCount;
-    
-    // 如果启用厚度，需要底面和侧壁
     return bEnableThickness ? BaseCount * 2 + (PathSampleCount * 2) : BaseCount;
 }
 
@@ -262,7 +251,6 @@ void FEditableSurfaceBuilder::SampleSplinePath()
 
 void FEditableSurfaceBuilder::GenerateRoadSurface()
 {
-    // 步骤 1: 构建原始边线 (基于中心样条的切片)
     BuildRawRails();
 
     float UserLoopThreshold = LoopRemovalThreshold;
@@ -273,10 +261,6 @@ void FEditableSurfaceBuilder::GenerateRoadSurface()
     RemoveGeometricLoops(LeftRailRaw, UserLoopThreshold);
     RemoveGeometricLoops(RightRailRaw, UserLoopThreshold);
 
-    // 调试日志：查看去环前后的点数变化
-    UE_LOG(LogTemp, Log, TEXT("Zipper Loop Removal: Left %d -> %d, Right %d -> %d"),
-        LeftRawCountBefore, LeftRailRaw.Num(), RightRawCountBefore, RightRailRaw.Num());
-
     float WeldThreshold = 5.0f;
     TArray<FRailPoint> LeftRailSimplified;
     TArray<FRailPoint> RightRailSimplified;
@@ -284,32 +268,18 @@ void FEditableSurfaceBuilder::GenerateRoadSurface()
     SimplifyRail(LeftRailRaw, LeftRailSimplified, WeldThreshold);
     SimplifyRail(RightRailRaw, RightRailSimplified, WeldThreshold);
 
-    // 调试日志：查看简化前后的点数变化
-    UE_LOG(LogTemp, Log, TEXT("Zipper Simplify: Left Raw=%d -> Simplified=%d, Right Raw=%d -> Simplified=%d"),
-        LeftRailRaw.Num(), LeftRailSimplified.Num(), RightRailRaw.Num(), RightRailSimplified.Num());
-
     float ResampleStep = FMath::Max(SplineSampleStep, 10.0f);
 
     ResampleSingleRail(LeftRailSimplified, LeftRailResampled, ResampleStep);
     ResampleSingleRail(RightRailSimplified, RightRailResampled, ResampleStep);
 
-    UE_LOG(LogTemp, Log, TEXT("Zipper Resample: Left Points=%d, Right Points=%d"),
-        LeftRailResampled.Num(), RightRailResampled.Num());
-
-    // ================== 【修改开始：计算最大长度并修正UV】 ==================
-
-    // 1. 计算左右两边的实际物理总长度
     float LenL = (LeftRailResampled.Num() > 0) ? LeftRailResampled.Last().DistanceAlongRail : 0.0f;
     float LenR = (RightRailResampled.Num() > 0) ? RightRailResampled.Last().DistanceAlongRail : 0.0f;
 
-    // 2. 找出最长的一边作为基准长度 (Target Length)并缓存，供护坡使用
     CachedMaxProfileLength = FMath::Max(LenL, LenR);
 
-    // 3. 强制修正两边的UV，使它们在UV空间中长度一致（形成长方形UV布局）
     CorrectRailUVs(LeftRailResampled, CachedMaxProfileLength);
     CorrectRailUVs(RightRailResampled, CachedMaxProfileLength);
-
-    // ================== 【修改结束】 ==================
 
     int32 LeftRoadStartIdx = MeshData.Vertices.Num();
     for (const FRailPoint& Pt : LeftRailResampled)
@@ -402,10 +372,8 @@ void FEditableSurfaceBuilder::BuildRawRails()
         LastValidLeftPos = LeftPos;
         LastValidRightPos = RightPos;
 
-        // Sample.InterpolatedWidth 来自 Spline Scale Y，代表当前的实际路宽数值
         float ActualPhysicalWidth = Sample.InterpolatedWidth;
 
-        // 计算基于物理宽度的 UV.X
         float U_Left = 0.0f;
         float U_Right = ActualPhysicalWidth * ModelGenConstants::GLOBAL_UV_SCALE;
 
@@ -432,7 +400,6 @@ FVector FEditableSurfaceBuilder::CalculateRawPointPosition(const FSurfaceSampleP
     
     float BaseOffset = bIsRightSide ? (HalfWidth * WidthScaleRatio) : (-HalfWidth * WidthScaleRatio);
 
-    // 直接使用基础偏移量，不使用 Miter 缩放
     return Sample.Location + (Sample.RightVector * BaseOffset);
 }
 
@@ -590,7 +557,6 @@ void FEditableSurfaceBuilder::RemoveGeometricLoops(TArray<FRailPoint>& InPoints,
                 
                 if (CountToRemove > 0)
                 {
-                    UE_LOG(LogTemp, Log, TEXT("检测到几何环！删除索引 %d 到 %d 之间的 %d 个点"), i, BestJ, CountToRemove);
                     InPoints.RemoveAt(i + 1, CountToRemove);
                     bLoopFound = true;
                     break; // 数组变了，跳出 for 循环，重新开始下一轮 while
@@ -605,7 +571,6 @@ void FEditableSurfaceBuilder::StitchRailsInternal(int32 LeftStartIdx, int32 Righ
 {
     if (LeftCount < 2 || RightCount < 2) return;
 
-    // 开始缝合 (Triangulation)
     int32 L = 0;
     int32 R = 0;
 
@@ -616,8 +581,6 @@ void FEditableSurfaceBuilder::StitchRailsInternal(int32 LeftStartIdx, int32 Righ
         int32 CurrentR = RightStartIdx + R;
         int32 NextR = RightStartIdx + R + 1;
 
-        // 计算下一步的相对进度 (0.0 ~ 1.0)
-        // 注意：分母使用 (Count - 1) 因为索引是从 0 到 Count-1
         float RatioNextL = (float)(L + 1) / (float)(LeftCount - 1);
         float RatioNextR = (float)(R + 1) / (float)(RightCount - 1);
 
@@ -639,7 +602,6 @@ void FEditableSurfaceBuilder::StitchRailsInternal(int32 LeftStartIdx, int32 Righ
         }
     }
 
-    // 处理剩余的尾部
     while (L < LeftCount - 1)
     {
         int32 CurrentL = LeftStartIdx + L;
@@ -672,7 +634,6 @@ void FEditableSurfaceBuilder::BuildNextSlopeRail(const TArray<FRailPoint>& Refer
     int32 NumPoints = ReferenceRail.Num();
     if (NumPoints < 2) return;
 
-    // 1. 构建原始点 (Raw Generation)
     TArray<FRailPoint> RawPoints;
     RawPoints.Reserve(NumPoints);
 
@@ -684,7 +645,6 @@ void FEditableSurfaceBuilder::BuildNextSlopeRail(const TArray<FRailPoint>& Refer
         float DistToPrev = 0.0f;
         float DistToNext = 0.0f;
 
-        // 计算进入向量和前向距离
         if (i == 0)
         {
             DirIn = (ReferenceRail[i + 1].Position - CurrentPos).GetSafeNormal();
@@ -697,7 +657,6 @@ void FEditableSurfaceBuilder::BuildNextSlopeRail(const TArray<FRailPoint>& Refer
             DirIn = (CurrentPos - PrevPos).GetSafeNormal();
         }
 
-        // 计算离开向量和后向距离
         if (i == NumPoints - 1)
         {
             DirOut = DirIn;
@@ -710,14 +669,12 @@ void FEditableSurfaceBuilder::BuildNextSlopeRail(const TArray<FRailPoint>& Refer
             DirOut = (NextPos - CurrentPos).GetSafeNormal();
         }
 
-        // 1. 计算平均切线 (角平分线切向)
         FVector SumDir = DirIn + DirOut;
         FVector AvgTangent;
 
         if (SumDir.SizeSquared() < KINDA_SMALL_NUMBER) AvgTangent = DirOut;
         else AvgTangent = SumDir.GetSafeNormal();
 
-        // 2. 计算挤出方向 (Outward Dir)
         FVector UpVec = RefPt.Normal;
         FVector OutwardDir;
 
@@ -894,7 +851,6 @@ void FEditableSurfaceBuilder::GenerateThickness()
     BuildSideWall(FinalLeftRail, false);
     BuildSideWall(FinalRightRail, true);
 
-    // 计算端面法线
     FVector StartCapNormal = -FVector::ForwardVector;
     FVector EndCapNormal = FVector::ForwardVector;
 
@@ -1011,10 +967,8 @@ void FEditableSurfaceBuilder::CorrectRailUVs(TArray<FRailPoint>& Rail, float Tar
 {
     if (Rail.Num() < 2) return;
 
-    // 获取这条线当前的实际物理长度
     float ActualLength = Rail.Last().DistanceAlongRail;
 
-    // 防止除以 0 崩溃
     if (ActualLength < KINDA_SMALL_NUMBER) return;
 
     if (TextureMapping == ESurfaceTextureMapping::Default)

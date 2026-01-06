@@ -1,5 +1,3 @@
-// Copyright (c) 2024. All rights reserved.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -17,7 +15,7 @@ struct FSurfaceSamplePoint
     FVector Tangent;
     float Distance;
     float Alpha;
-    float InterpolatedWidth; // 当前采样点的宽度
+    float InterpolatedWidth;
 };
 
 struct FCornerData
@@ -42,14 +40,13 @@ struct FCornerData
     }
 };
 
-// 用于拉链法的边线点结构
 struct FRailPoint
 {
     FVector Position;
     FVector Normal;
     FVector Tangent;
     FVector2D UV;
-    float DistanceAlongRail; // 沿着这条边线的累计物理距离
+    float DistanceAlongRail;
 
     FRailPoint() 
         : Position(FVector::ZeroVector), Normal(FVector::UpVector), Tangent(FVector::ForwardVector), UV(FVector2D::ZeroVector), DistanceAlongRail(0.f) 
@@ -84,11 +81,9 @@ private:
     ESurfaceTextureMapping TextureMapping;
 	float CachedMaxProfileLength;
 
-    // 核心数据缓存
     TArray<FSurfaceSamplePoint> SampledPath;
     TArray<FCornerData> PathCornerData;
 
-    // 内部核心流程函数
     void SampleSplinePath();
     void CalculateCornerGeometry();
 

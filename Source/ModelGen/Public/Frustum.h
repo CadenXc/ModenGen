@@ -1,10 +1,3 @@
-// Copyright (c) 2024. All rights reserved.
-
-/**
- * @file Frustum.h
- * @brief 可配置的程序化截锥体生成器
- */
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -22,7 +15,6 @@ class MODELGEN_API AFrustum : public AProceduralMeshActor
 public:
     AFrustum();
 
-    //~ Begin Geometry Parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Frustum|Geometry", 
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Top Radius"))
     float TopRadius = 30.0f;

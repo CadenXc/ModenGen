@@ -31,7 +31,6 @@ bool AHollowPrism::TryGenerateMeshInternal()
 
     if (!MeshData.IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("AHollowPrism::TryGenerateMeshInternal - 生成的网格数据无效"));
         return false;
     }
 
@@ -147,7 +146,6 @@ void AHollowPrism::SetInnerRadius(float NewInnerRadius)
             if (!TryGenerateMeshInternal())
             {
                 InnerRadius = OldInnerRadius;
-                UE_LOG(LogTemp, Warning, TEXT("SetInnerRadius: 网格生成失败，参数已恢复为 %f"), OldInnerRadius);
             }
         }
     }
@@ -172,7 +170,6 @@ void AHollowPrism::SetOuterRadius(float NewOuterRadius)
             {
                 OuterRadius = OldOuterRadius;
                 InnerRadius = OldInnerRadius;
-                UE_LOG(LogTemp, Warning, TEXT("SetOuterRadius: 网格生成失败，参数已恢复"));
             }
         }
     }
@@ -190,7 +187,6 @@ void AHollowPrism::SetHeight(float NewHeight)
             if (!TryGenerateMeshInternal())
             {
                 Height = OldHeight;
-                UE_LOG(LogTemp, Warning, TEXT("SetHeight: 网格生成失败，参数已恢复为 %f"), OldHeight);
             }
         }
     }
@@ -215,7 +211,6 @@ void AHollowPrism::SetOuterSides(int32 NewOuterSides)
             {
                 OuterSides = OldOuterSides;
                 InnerSides = OldInnerSides;
-                UE_LOG(LogTemp, Warning, TEXT("SetOuterSides: 网格生成失败，参数已恢复"));
             }
         }
     }
@@ -238,7 +233,6 @@ void AHollowPrism::SetInnerSides(int32 NewInnerSides)
             if (!TryGenerateMeshInternal())
             {
                 InnerSides = OldInnerSides;
-                UE_LOG(LogTemp, Warning, TEXT("SetInnerSides: 网格生成失败，参数已恢复为 %d"), OldInnerSides);
             }
         }
     }
@@ -256,7 +250,6 @@ void AHollowPrism::SetArcAngle(float NewArcAngle)
             if (!TryGenerateMeshInternal())
             {
                 ArcAngle = OldArcAngle;
-                UE_LOG(LogTemp, Warning, TEXT("SetArcAngle: 网格生成失败，参数已恢复为 %f"), OldArcAngle);
             }
         }
     }
@@ -274,7 +267,6 @@ void AHollowPrism::SetBevelRadius(float NewBevelRadius)
             if (!TryGenerateMeshInternal())
             {
                 BevelRadius = OldBevelRadius;
-                UE_LOG(LogTemp, Warning, TEXT("SetBevelRadius: 网格生成失败，参数已恢复为 %f"), OldBevelRadius);
             }
         }
     }
@@ -292,7 +284,6 @@ void AHollowPrism::SetBevelSegments(int32 NewBevelSegments)
             if (!TryGenerateMeshInternal())
             {
                 BevelSegments = OldBevelSegments;
-                UE_LOG(LogTemp, Warning, TEXT("SetBevelSegments: 网格生成失败，参数已恢复为 %d"), OldBevelSegments);
             }
         }
     }

@@ -181,36 +181,28 @@ void FFrustumBuilder::GenerateSides()
             const float RadiusDir = RadiusDiff / SideLength;
             const float HeightDir = Frustum.Height / SideLength;
 
-            // 顶部：沿着棱向下移动
             TopR = Frustum.TopRadius - TopBevelHeight * RadiusDir;
             TopZ = Frustum.Height - TopBevelHeight * HeightDir;
 
-            // 底部：沿着棱向上移动
             BottomR = Frustum.BottomRadius + BottomBevelHeight * RadiusDir;
             BottomZ = BottomBevelHeight * HeightDir;
         }
         else
         {
-            // 圆柱体情况
             const float MinRadius = FMath::Min(Frustum.TopRadius, Frustum.BottomRadius);
             const float EffectiveBevel = FMath::Min(Frustum.BevelRadius, MinRadius);
             TopZ -= EffectiveBevel;
             BottomZ += EffectiveBevel;
         }
 
-        // 倒角弧长 (用于UV偏移)
         TopBevelArc = (PI * TopBevelHeight) * 0.5f;
     }
-
-    // 计算侧面几何长度
     float SideHeight = TopZ - BottomZ;
     float SideRadiusDiff = TopR - BottomR;
     float TotalSideLength = FMath::Sqrt(SideHeight * SideHeight + SideRadiusDiff * SideRadiusDiff);
 
-    // V 从高值开始递减
     float CurrentV = TopBevelArc + TotalSideLength;
 
-    // 统一 UV 参考半径
     float UVReferenceRadius = FMath::Max(Frustum.TopRadius, Frustum.BottomRadius);
 
     TArray<FVector2D> BottomRef = GetRingPos2D(BottomR, Frustum.BottomSides);
@@ -321,11 +313,9 @@ void FFrustumBuilder::GenerateBevels()
 
     float UVReferenceRadius = FMath::Max(Frustum.TopRadius, Frustum.BottomRadius);
 
-    // 计算侧边棱信息 (用于几何计算)
     const float RadiusDiff = Frustum.TopRadius - Frustum.BottomRadius;
     const float SideLength = FMath::Sqrt(RadiusDiff * RadiusDiff + Frustum.Height * Frustum.Height);
 
-    // 计算 WallTopZ 和 WallTopR（在 Top Bevel 和 Bottom Bevel 中都需要使用）
     float WallTopZ, WallTopR;
     if (SideLength > KINDA_SMALL_NUMBER)
     {
@@ -340,7 +330,6 @@ void FFrustumBuilder::GenerateBevels()
         WallTopR = Frustum.TopRadius - TopBevelHeight;
     }
 
-    // --- Top Bevel ---
     {
         TArray<int32> PreviousTopRing = TopSideRing;
         float CapTopR = Frustum.TopRadius - TopBevelHeight;
@@ -377,11 +366,9 @@ void FFrustumBuilder::GenerateBevels()
         TopCapRing = PreviousTopRing;
     }
 
-    // --- Bottom Bevel ---
     {
         TArray<int32> PreviousBottomRing = BottomSideRing;
 
-        // 【核心修复】：恢复旧版几何计算
         float WallBotZ, WallBotR;
         if (SideLength > KINDA_SMALL_NUMBER)
         {
@@ -397,10 +384,8 @@ void FFrustumBuilder::GenerateBevels()
         }
         float CapBotR = Frustum.BottomRadius - BottomBevelHeight;
 
-        // V 计算
         const float TopBevelArc = (PI * TopBevelHeight) * 0.5f;
 
-        // 需要计算侧面缩短后的实际长度
         float SideH_Projected = WallTopZ - WallBotZ;
         float SideR_Projected = WallTopR - WallBotR;
         float ActualSideLen = FMath::Sqrt(SideH_Projected * SideH_Projected + SideR_Projected * SideR_Projected);
@@ -438,8 +423,6 @@ void FFrustumBuilder::GenerateBevels()
     }
 }
 
-// ... (GenerateCaps, CreateCapDisk, GenerateCutPlanes, CreateCutPlaneSurface, CreateVertexRing, ApplyBend, CalculateBevelHeight 保持不变) ...
-// 确保 CalculateBevelHeight 存在
 float FFrustumBuilder::CalculateBevelHeight(float Radius) const
 {
     return FMath::Min(Frustum.BevelRadius, Radius);
@@ -503,7 +486,6 @@ void FFrustumBuilder::GenerateCutPlanes()
         return;
     }
 
-    // 1. 计算两个切面的面法线
     const float StartNormalAngle = StartAngle - HALF_PI; // StartFace 法线向外
     const FVector StartFaceNormal(FMath::Cos(StartNormalAngle), FMath::Sin(StartNormalAngle), 0.0f);
 
@@ -511,20 +493,15 @@ void FFrustumBuilder::GenerateCutPlanes()
     const float EndNormalAngle = EndAngleVal + HALF_PI;  // EndFace 法线向外
     const FVector EndFaceNormal(FMath::Cos(EndNormalAngle), FMath::Sin(EndNormalAngle), 0.0f);
 
-    // 2. 准备内侧轴线 (0,0,Z) 的法线
     FVector StartInnerNormal = StartFaceNormal;
     FVector EndInnerNormal = EndFaceNormal;
 
-    // 3. 如果开启倒角，计算平滑法线 (两个面法线的平均值/角平分线)
     if (bEnableBevel)
     {
-        // 两个向量相加即为角平分方向 (因为长度都是1)
         FVector SmoothCenterNormal = (StartFaceNormal + EndFaceNormal).GetSafeNormal();
 
-        // 极特殊情况：如果 ArcAngle 接近 360 或 0，向量可能抵消，需做保护
         if (SmoothCenterNormal.IsNearlyZero())
         {
-            // 指向圆弧开口的反方向
             float BisectAngle = StartAngle + ArcAngleRadians * 0.5f + PI; 
             SmoothCenterNormal = FVector(FMath::Cos(BisectAngle), FMath::Sin(BisectAngle), 0.0f);
         }
@@ -533,7 +510,6 @@ void FFrustumBuilder::GenerateCutPlanes()
         EndInnerNormal = SmoothCenterNormal;
     }
 
-    // 4. 生成切面，传入计算好的内侧法线
     CreateCutPlaneSurface(StartAngle, StartSliceIndices, true, StartInnerNormal);
     CreateCutPlaneSurface(EndAngleVal, EndSliceIndices, false, EndInnerNormal);
 }
@@ -558,11 +534,9 @@ void FFrustumBuilder::CreateCutPlaneSurface(float Angle, const TArray<int32>& Pr
         FVector P1_Outer = GetPosByIndex(Idx1);
         FVector P2_Outer = GetPosByIndex(Idx2);
 
-        // 内侧点位于中心轴
         FVector P1_Inner(0.0f, 0.0f, P1_Outer.Z);
         FVector P2_Inner(0.0f, 0.0f, P2_Outer.Z);
 
-        // 外侧法线 (如果有 Bevel 则沿用 MeshData 中的平滑法线，否则用平面法线)
         FVector N1_Outer = PlaneNormal;
         FVector N2_Outer = PlaneNormal;
 

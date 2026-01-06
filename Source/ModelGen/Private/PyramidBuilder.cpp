@@ -115,7 +115,6 @@ void FPyramidBuilder::GenerateSlices()
     const float Z_Mid = BevelRadius;
     const float Z_Top = Height;
 
-    // 1. 法线参数
     float SideH = Height - BevelRadius;
     float SideSlopeLen = FMath::Sqrt(BevelTopRadius * BevelTopRadius + SideH * SideH);
 
@@ -129,14 +128,12 @@ void FPyramidBuilder::GenerateSlices()
 
     for (int32 i = 0; i < Sides; ++i)
     {
-        // --- 位置计算 ---
         FVector P_Bot_L = GetRingPos(i, BevelTopRadius, Z_Bottom);
         FVector P_Bot_R = GetRingPos(i + 1, BevelTopRadius, Z_Bottom);
         FVector P_Mid_L = GetRingPos(i, BevelTopRadius, Z_Mid);
         FVector P_Mid_R = GetRingPos(i + 1, BevelTopRadius, Z_Mid);
         FVector P_Tip = TopPoint;
 
-        // --- 法线计算 ---
         FVector N_Bevel_L, N_Bevel_R, N_Bevel_TL, N_Bevel_TR;
         FVector N_Side_L, N_Side_R, N_Side_Tip;
 
@@ -167,18 +164,13 @@ void FPyramidBuilder::GenerateSlices()
             N_Side_L = N_Side_R = N_Side_Tip = FaceN_Side;
         }
 
-        // --- UV 计算 (反转V轴以修复贴图倒置) ---
         float W_Bot = FVector::Dist(P_Bot_L, P_Bot_R);
         float HalfW = W_Bot * 0.5f * ModelGenConstants::GLOBAL_UV_SCALE;
 
-        // 计算各段的高度 (UV单位)
         float V_Bevel = BevelSlopeLen * ModelGenConstants::GLOBAL_UV_SCALE;
         float V_Side = SideSlopeLen * ModelGenConstants::GLOBAL_UV_SCALE;
         float V_Total = V_Bevel + V_Side;
 
-        // 底部 (Z=0) 对应 V=V_Total (纹理底部)
-        // 中间 (Z=Bevel) 对应 V=V_Side
-        // 顶部 (Z=Height) 对应 V=0 (纹理顶部)
 
         FVector2D UV_Bot_L(0.0f, V_Total);
         FVector2D UV_Bot_R(W_Bot * ModelGenConstants::GLOBAL_UV_SCALE, V_Total);
@@ -188,20 +180,16 @@ void FPyramidBuilder::GenerateSlices()
 
         FVector2D UV_Tip(HalfW, 0.0f);
 
-        // --- 顶点生成与索引 ---
 
-        // Bevel (注意UV左右反转以匹配之前修正的渲染方向)
         int32 V0 = GetOrAddVertex(P_Bot_L, N_Bevel_L, UV_Bot_R);
         int32 V1 = GetOrAddVertex(P_Bot_R, N_Bevel_R, UV_Bot_L);
         int32 V2 = GetOrAddVertex(P_Mid_R, N_Bevel_TR, UV_Mid_L);
         int32 V3 = GetOrAddVertex(P_Mid_L, N_Bevel_TL, UV_Mid_R);
 
-        // Side
         int32 V_Side_L = GetOrAddVertex(P_Mid_L, N_Side_L, UV_Mid_R);
         int32 V_Side_R = GetOrAddVertex(P_Mid_R, N_Side_R, UV_Mid_L);
         int32 V_Side_Top = GetOrAddVertex(P_Tip, N_Side_Tip, UV_Tip);
 
-        // --- 面生成 ---
         AddQuad(V0, V3, V2, V1);
         AddTriangle(V_Side_R, V_Side_L, V_Side_Top);
     }

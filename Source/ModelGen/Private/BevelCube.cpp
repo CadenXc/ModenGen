@@ -80,7 +80,6 @@ void ABevelCube::SetSize(FVector NewSize)
         BevelRadius = MaxAllowedRadius;
     }
 
-    // 3. 应用并生成
     Size = NewSize;
 
     if (ProceduralMeshComponent)

@@ -1,5 +1,3 @@
-// Copyright (c) 2024. All rights reserved.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -23,34 +21,27 @@ protected:
 public:    
     virtual void Tick(float DeltaTime) override;
 
-    // StaticMesh组件
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "CustomModel|Component")
     UStaticMeshComponent* StaticMeshComponent;
 
-    // 材质设置
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CustomModel|Materials")
     UMaterialInterface* StaticMeshMaterial = nullptr;
 
-    // 可见性控制
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CustomModel|Display")
     bool bShowStaticMesh = true;
 
-    // 模型类型选择
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CustomModel|Model", 
         meta = (DisplayName = "模型类型"))
     FString ModelTypeName = TEXT("BevelCube");
 
-    // 生成StaticMesh的方法
     UFUNCTION(BlueprintCallable, Category = "CustomModel|Model", 
         meta = (DisplayName = "Generate Mesh", CallInEditor = "true"))
     void GenerateMesh();
 
-    // 切换模型类型
     UFUNCTION(BlueprintCallable, Category = "CustomModel|Model", 
         meta = (DisplayName = "Set Model Type"))
     void SetModelType(const FString& NewModelTypeName);
 
 protected:
-    // 更新StaticMesh
     void UpdateStaticMesh();
 };

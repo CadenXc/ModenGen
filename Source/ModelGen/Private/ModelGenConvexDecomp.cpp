@@ -1,5 +1,3 @@
-// Copyright (c) 2024. All rights reserved.
-
 #include "ModelGenConvexDecomp.h"
 #include "ProceduralMeshComponent.h"
 #include "PhysicsEngine/BodySetup.h"
@@ -14,41 +12,28 @@ bool FModelGenConvexDecomp::GenerateConvexHulls(
 {
     if (!ProceduralMeshComponent || !BodySetup)
     {
-        UE_LOG(LogTemp, Warning, TEXT("ConvexDecomp: 输入参数无效"));
         return false;
     }
 
-    // 1. 提取网格数据
     FMeshData MeshData;
     if (!ExtractMeshData(ProceduralMeshComponent, MeshData))
     {
-        UE_LOG(LogTemp, Warning, TEXT("ConvexDecomp: 无法提取网格数据"));
         return false;
     }
 
     if (MeshData.Vertices.Num() < 4 || MeshData.Indices.Num() < 3)
     {
-        UE_LOG(LogTemp, Warning, TEXT("ConvexDecomp: 顶点或索引数量不足（顶点=%d, 索引=%d）"), 
-            MeshData.Vertices.Num(), MeshData.Indices.Num());
         return false;
     }
 
-    UE_LOG(LogTemp, Log, TEXT("ConvexDecomp: 开始计算，顶点数=%d, 三角形数=%d"), 
-        MeshData.Vertices.Num(), MeshData.Indices.Num() / 3);
 
-    // 2. 配置参数
     FDecompParams Params;
     Params.TargetHullCount = FMath::Clamp(HullCount, 1, 64);
     Params.MaxHullVertices = FMath::Clamp(MaxHullVerts, 6, 32);
-    // 将HullPrecision映射到最大递归深度（经验值：100000 -> 深度10）
-    // 增加深度以支持更复杂的分割
     Params.MaxDepth = FMath::Clamp(FMath::FloorToInt(FMath::Log2(static_cast<float>(HullPrecision) / 3000.0f)) + 5, 5, 15);
-    Params.MinVolumeRatio = 0.001f; // 最小体积比例为0.1%（进一步降低阈值）
+    Params.MinVolumeRatio = 0.001f;
 
-    UE_LOG(LogTemp, Log, TEXT("ConvexDecomp: 参数 - HullCount=%d, MaxHullVerts=%d, MaxDepth=%d"), 
-        Params.TargetHullCount, Params.MaxHullVertices, Params.MaxDepth);
 
-    // 3. 初始化所有三角形的索引
     TArray<int32> AllTriangleIndices;
     const int32 NumTriangles = MeshData.Indices.Num() / 3;
     AllTriangleIndices.Reserve(NumTriangles);
@@ -57,26 +42,21 @@ bool FModelGenConvexDecomp::GenerateConvexHulls(
         AllTriangleIndices.Add(i);
     }
 
-    // 4. 递归分解
     TArray<FKConvexElem> ConvexElems;
     RecursiveDecompose(MeshData, AllTriangleIndices, Params, 0, ConvexElems);
 
-    // 5. 如果凸包数量不足，尝试进一步分割较大的凸包
     if (ConvexElems.Num() < Params.TargetHullCount && ConvexElems.Num() > 0)
     {
-        // 按体积排序，优先分割最大的
         ConvexElems.Sort([](const FKConvexElem& A, const FKConvexElem& B) {
             return A.ElemBox.GetVolume() > B.ElemBox.GetVolume();
         });
         
-        // 尝试分割最大的几个凸包
         int32 NumToSplit = FMath::Min(ConvexElems.Num(), Params.TargetHullCount - ConvexElems.Num());
         TArray<FKConvexElem> NewElems;
         
         for (int32 i = 0; i < NumToSplit && ConvexElems.Num() + NewElems.Num() < Params.TargetHullCount; ++i)
         {
             const FKConvexElem& LargeElem = ConvexElems[i];
-            // 如果顶点数足够多，尝试分割
             if (LargeElem.VertexData.Num() > Params.MaxHullVertices)
             {
                 FBox ElemBounds = LargeElem.ElemBox;
@@ -104,7 +84,6 @@ bool FModelGenConvexDecomp::GenerateConvexHulls(
                         }
                     }
                     
-                    // 如果分割后两边都有足够的点，创建两个新凸包
                     if (LeftPoints.Num() >= 4 && RightPoints.Num() >= 4)
                     {
                         FKConvexElem LeftElem, RightElem;
@@ -113,10 +92,9 @@ bool FModelGenConvexDecomp::GenerateConvexHulls(
                         {
                             NewElems.Add(LeftElem);
                             NewElems.Add(RightElem);
-                            // 移除原来的大凸包
                             ConvexElems.RemoveAt(i);
-                            i--; // 调整索引
-                            NumToSplit--; // 减少需要分割的数量
+                            i--; 
+                            NumToSplit--; 
                         }
                     }
                 }
@@ -126,39 +104,30 @@ bool FModelGenConvexDecomp::GenerateConvexHulls(
         ConvexElems.Append(NewElems);
     }
     
-    // 6. 限制凸包数量（如果超过目标数量，保留体积较大的）
     if (ConvexElems.Num() > Params.TargetHullCount)
     {
-        // 按体积排序，保留较大的
         ConvexElems.Sort([](const FKConvexElem& A, const FKConvexElem& B) {
             return A.ElemBox.GetVolume() > B.ElemBox.GetVolume();
         });
         ConvexElems.SetNum(Params.TargetHullCount);
     }
 
-    // 7. 添加到BodySetup
     BodySetup->AggGeom.ConvexElems.Empty();
     for (FKConvexElem& Elem : ConvexElems)
     {
         if (Elem.VertexData.Num() >= 4)
         {
             BodySetup->AggGeom.ConvexElems.Add(Elem);
-            UE_LOG(LogTemp, Log, TEXT("ConvexDecomp: 凸包 - 顶点数=%d, 中心=(%.2f, %.2f, %.2f), 大小=(%.2f, %.2f, %.2f)"),
-                Elem.VertexData.Num(),
-                Elem.ElemBox.GetCenter().X, Elem.ElemBox.GetCenter().Y, Elem.ElemBox.GetCenter().Z,
-                Elem.ElemBox.GetSize().X, Elem.ElemBox.GetSize().Y, Elem.ElemBox.GetSize().Z);
         }
     }
 
     const int32 FinalConvexCount = BodySetup->AggGeom.ConvexElems.Num();
     if (FinalConvexCount > 0)
     {
-        UE_LOG(LogTemp, Log, TEXT("ConvexDecomp: 最终生成 %d 个有效凸包元素"), FinalConvexCount);
         return true;
     }
     else
     {
-        UE_LOG(LogTemp, Warning, TEXT("ConvexDecomp: 未生成有效的凸包元素"));
         return false;
     }
 }
@@ -175,13 +144,11 @@ bool FModelGenConvexDecomp::ExtractMeshData(UProceduralMeshComponent* Procedural
 
         const int32 FirstVertexIndex = OutMeshData.Vertices.Num();
 
-        // 添加顶点
         for (const FProcMeshVertex& ProcVertex : Section->ProcVertexBuffer)
         {
             OutMeshData.Vertices.Add(ProcVertex.Position);
         }
 
-        // 添加索引（需要调整偏移）
         for (uint32 Index : Section->ProcIndexBuffer)
         {
             OutMeshData.Indices.Add(FirstVertexIndex + Index);
@@ -203,35 +170,29 @@ void FModelGenConvexDecomp::RecursiveDecompose(
         return;
     }
 
-    // 收集所有相关顶点（只使用这些三角形中的顶点，确保不包含其他区域的顶点）
     TSet<int32> UniqueVertexIndices;
     for (int32 TriIdx : TriangleIndices)
     {
         const int32 BaseIdx = TriIdx * 3;
         if (BaseIdx + 2 < MeshData.Indices.Num())
         {
-            // 只添加属于这些三角形的顶点
             UniqueVertexIndices.Add(MeshData.Indices[BaseIdx]);
             UniqueVertexIndices.Add(MeshData.Indices[BaseIdx + 1]);
             UniqueVertexIndices.Add(MeshData.Indices[BaseIdx + 2]);
         }
     }
 
-    // 计算当前区域的包围盒，用于后续过滤顶点
     FBox CurrentBounds = CalculateTriangleBounds(MeshData, TriangleIndices);
 
-    // 如果三角形数量太少，直接生成凸包
     if (TriangleIndices.Num() <= 3)
     {
         TArray<FVector> Points;
         Points.Reserve(UniqueVertexIndices.Num());
-        // 只使用在当前包围盒内的顶点，避免包含其他区域的顶点
         for (int32 VertIdx : UniqueVertexIndices)
         {
             if (VertIdx < MeshData.Vertices.Num())
             {
                 FVector Vertex = MeshData.Vertices[VertIdx];
-                // 检查顶点是否在当前区域内（使用扩展的包围盒，允许小的容差）
                 if (CurrentBounds.IsValid && CurrentBounds.ExpandBy(1.0f).IsInside(Vertex))
                 {
                     Points.Add(Vertex);
@@ -250,18 +211,15 @@ void FModelGenConvexDecomp::RecursiveDecompose(
         return;
     }
 
-    // 如果达到最大深度，直接生成凸包
     if (CurrentDepth >= Params.MaxDepth)
     {
         TArray<FVector> Points;
         Points.Reserve(UniqueVertexIndices.Num());
-        // 只使用在当前包围盒内的顶点
         for (int32 VertIdx : UniqueVertexIndices)
         {
             if (VertIdx < MeshData.Vertices.Num())
             {
                 FVector Vertex = MeshData.Vertices[VertIdx];
-                // 检查顶点是否在当前区域内
                 if (CurrentBounds.IsValid && CurrentBounds.ExpandBy(1.0f).IsInside(Vertex))
                 {
                     Points.Add(Vertex);
@@ -280,20 +238,16 @@ void FModelGenConvexDecomp::RecursiveDecompose(
         return;
     }
 
-    // 如果已经达到目标数量，但还可以继续分割以获得更好的效果
-    // 只有当顶点数很少时才停止
     if (UniqueVertexIndices.Num() <= Params.MaxHullVertices && 
         OutConvexElems.Num() >= Params.TargetHullCount)
     {
         TArray<FVector> Points;
         Points.Reserve(UniqueVertexIndices.Num());
-        // 只使用在当前包围盒内的顶点
         for (int32 VertIdx : UniqueVertexIndices)
         {
             if (VertIdx < MeshData.Vertices.Num())
             {
                 FVector Vertex = MeshData.Vertices[VertIdx];
-                // 检查顶点是否在当前区域内
                 if (CurrentBounds.IsValid && CurrentBounds.ExpandBy(1.0f).IsInside(Vertex))
                 {
                     Points.Add(Vertex);
@@ -312,19 +266,16 @@ void FModelGenConvexDecomp::RecursiveDecompose(
         return;
     }
 
-    // 计算包围盒
     FBox Bounds = CalculateTriangleBounds(MeshData, TriangleIndices);
     if (!Bounds.IsValid)
     {
         return;
     }
 
-    // 选择最长轴进行分割
     int32 LongestAxis = GetLongestAxis(Bounds);
     FVector Center = Bounds.GetCenter();
     FVector Extent = Bounds.GetExtent();
 
-    // 创建分割平面
     FPlane SplitPlane;
     if (LongestAxis == 0) // X轴
     {
@@ -339,19 +290,15 @@ void FModelGenConvexDecomp::RecursiveDecompose(
         SplitPlane = FPlane(Center, FVector(0, 0, 1));
     }
 
-    // 分割网格
     TArray<int32> LeftTriangles, RightTriangles;
     SplitMeshByPlane(MeshData, TriangleIndices, SplitPlane, LeftTriangles, RightTriangles);
 
-    // 如果分割后一边的三角形数量太少（少于10%），说明分割不够均匀，尝试调整分割平面
     const int32 TotalTriangles = TriangleIndices.Num();
-    const float MinSplitRatio = 0.1f; // 至少保留10%的三角形
+    const float MinSplitRatio = 0.1f; 
     
     if (LeftTriangles.Num() < TotalTriangles * MinSplitRatio || 
         RightTriangles.Num() < TotalTriangles * MinSplitRatio)
     {
-        // 分割不够均匀，尝试使用更智能的分割策略
-        // 基于三角形中心点的分布来调整分割平面
         FVector LeftCenter(0), RightCenter(0);
         int32 LeftCount = 0, RightCount = 0;
         
@@ -384,14 +331,12 @@ void FModelGenConvexDecomp::RecursiveDecompose(
             }
         }
         
-        // 如果分割不均匀，使用新的中心点重新分割
         if (LeftCount > 0 && RightCount > 0)
         {
             LeftCenter /= LeftCount;
             RightCenter /= RightCount;
             FVector NewCenter = (LeftCenter + RightCenter) * 0.5f;
             
-            // 使用新的中心点创建分割平面
             if (LongestAxis == 0)
             {
                 SplitPlane = FPlane(NewCenter, FVector(1, 0, 0));
@@ -405,28 +350,20 @@ void FModelGenConvexDecomp::RecursiveDecompose(
                 SplitPlane = FPlane(NewCenter, FVector(0, 0, 1));
             }
             
-            // 重新分割
             LeftTriangles.Empty();
             RightTriangles.Empty();
             SplitMeshByPlane(MeshData, TriangleIndices, SplitPlane, LeftTriangles, RightTriangles);
         }
     }
 
-    // 检查分割是否有效
-    // 使用三角形数量作为主要判断条件，而不是体积（体积可能不准确）
-    // 根据目标凸包数量和当前深度动态调整最小三角形数量
-    // 如果还需要更多凸包，允许更细的分割
     const int32 RemainingHulls = Params.TargetHullCount - OutConvexElems.Num();
     const int32 DepthFactor = FMath::Max(1, Params.MaxDepth - CurrentDepth);
     const int32 MinTriangles = FMath::Max(4, TriangleIndices.Num() / FMath::Max(10, 20 - RemainingHulls * 2));
 
-    // 递归处理左右两部分
     if (LeftTriangles.Num() > 0)
     {
-        // 计算左侧区域的包围盒
         FBox LeftBounds = CalculateTriangleBounds(MeshData, LeftTriangles);
         
-        // 如果三角形数量太少，直接生成凸包
         if (LeftTriangles.Num() <= MinTriangles)
         {
             TSet<int32> LeftVertices;
@@ -441,13 +378,11 @@ void FModelGenConvexDecomp::RecursiveDecompose(
                 }
             }
             TArray<FVector> LeftPoints;
-            // 只使用在左侧包围盒内的顶点
             for (int32 VertIdx : LeftVertices)
             {
                 if (VertIdx < MeshData.Vertices.Num())
                 {
                     FVector Vertex = MeshData.Vertices[VertIdx];
-                    // 检查顶点是否在左侧区域内
                     if (LeftBounds.IsValid && LeftBounds.ExpandBy(1.0f).IsInside(Vertex))
                     {
                         LeftPoints.Add(Vertex);
@@ -465,14 +400,12 @@ void FModelGenConvexDecomp::RecursiveDecompose(
         }
         else
         {
-            // 如果三角形数量足够，继续递归分割
             if (LeftTriangles.Num() > MinTriangles)
             {
                 RecursiveDecompose(MeshData, LeftTriangles, Params, CurrentDepth + 1, OutConvexElems);
             }
             else
             {
-                // 体积太小，直接生成凸包
                 TSet<int32> LeftVertices;
                 for (int32 TriIdx : LeftTriangles)
                 {
@@ -485,13 +418,11 @@ void FModelGenConvexDecomp::RecursiveDecompose(
                     }
                 }
                 TArray<FVector> LeftPoints;
-                // 只使用在左侧包围盒内的顶点
                 for (int32 VertIdx : LeftVertices)
                 {
                     if (VertIdx < MeshData.Vertices.Num())
                     {
                         FVector Vertex = MeshData.Vertices[VertIdx];
-                        // 检查顶点是否在左侧区域内
                         if (LeftBounds.IsValid && LeftBounds.ExpandBy(1.0f).IsInside(Vertex))
                         {
                             LeftPoints.Add(Vertex);
@@ -512,10 +443,8 @@ void FModelGenConvexDecomp::RecursiveDecompose(
 
     if (RightTriangles.Num() > 0)
     {
-        // 计算右侧区域的包围盒
         FBox RightBounds = CalculateTriangleBounds(MeshData, RightTriangles);
         
-        // 如果三角形数量太少，直接生成凸包
         if (RightTriangles.Num() <= MinTriangles)
         {
             TSet<int32> RightVertices;
@@ -530,13 +459,11 @@ void FModelGenConvexDecomp::RecursiveDecompose(
                 }
             }
             TArray<FVector> RightPoints;
-            // 只使用在右侧包围盒内的顶点
             for (int32 VertIdx : RightVertices)
             {
                 if (VertIdx < MeshData.Vertices.Num())
                 {
                     FVector Vertex = MeshData.Vertices[VertIdx];
-                    // 检查顶点是否在右侧区域内
                     if (RightBounds.IsValid && RightBounds.ExpandBy(1.0f).IsInside(Vertex))
                     {
                         RightPoints.Add(Vertex);
@@ -554,14 +481,12 @@ void FModelGenConvexDecomp::RecursiveDecompose(
         }
         else
         {
-            // 如果三角形数量足够，继续递归分割
             if (RightTriangles.Num() > MinTriangles)
             {
                 RecursiveDecompose(MeshData, RightTriangles, Params, CurrentDepth + 1, OutConvexElems);
             }
             else
             {
-                // 体积太小，直接生成凸包
                 TSet<int32> RightVertices;
                 for (int32 TriIdx : RightTriangles)
                 {
@@ -574,13 +499,11 @@ void FModelGenConvexDecomp::RecursiveDecompose(
                     }
                 }
                 TArray<FVector> RightPoints;
-                // 只使用在右侧包围盒内的顶点
                 for (int32 VertIdx : RightVertices)
                 {
                     if (VertIdx < MeshData.Vertices.Num())
                     {
                         FVector Vertex = MeshData.Vertices[VertIdx];
-                        // 检查顶点是否在右侧区域内
                         if (RightBounds.IsValid && RightBounds.ExpandBy(1.0f).IsInside(Vertex))
                         {
                             RightPoints.Add(Vertex);
@@ -607,10 +530,9 @@ bool FModelGenConvexDecomp::GenerateConvexHull(const TArray<FVector>& Points, FK
         return false;
     }
 
-    // 去重：移除重复的点
     TArray<FVector> UniquePoints;
     TMap<FIntVector, FVector> QuantizedMap;
-    const float QuantizeScale = 100.0f; // 1cm精度
+    const float QuantizeScale = 100.0f;
 
     for (const FVector& Point : Points)
     {
@@ -632,49 +554,39 @@ bool FModelGenConvexDecomp::GenerateConvexHull(const TArray<FVector>& Points, FK
         UniquePoints = Points;
     }
 
-    // 使用QuickHull算法（基于参考实现）
-    TArray<FFace*> AllFaces; // 用于内存管理
+    TArray<FFace*> AllFaces; 
     TArray<FFace*> PendingFaces;
     FFace* HeadFace = nullptr;
     TArray<int32> UnassignedPoints;
     
-    // 初始化未分配点列表
     for (int32 i = 0; i < UniquePoints.Num(); ++i)
     {
         UnassignedPoints.Add(i);
     }
 
-    // 构建初始四面体
     if (!BuildInitialTetrahedron(UniquePoints, AllFaces, UnassignedPoints))
     {
-        // 如果无法构建四面体，使用简化的凸包
         OutConvexElem.VertexData = UniquePoints;
         OutConvexElem.UpdateElemBox();
         return UniquePoints.Num() >= 4;
     }
 
-    // 分配外部点集
     PartitionOutsideSet(PendingFaces, AllFaces, UniquePoints, UnassignedPoints, HeadFace);
 
-    // 如果存在待处理面，进行QuickHull扫描
     const float Epsilon = 0.0001f;
     while (PendingFaces.Num() > 0)
     {
-        // 从待处理面中选择一个
         FFace* CurrentFace = PendingFaces[0];
         PendingFaces.RemoveAt(0);
 
-        // 找到最远的点
         int32 FurthestPointIdx = FindFurthestPoint(UniquePoints, CurrentFace);
         if (FurthestPointIdx == -1)
         {
             continue;
         }
 
-        // 从外部点集中移除这个点
         CurrentFace->OutsidePoints.Remove(FurthestPointIdx);
 
-        // 找到所有可见面
         TArray<FFace*> VisibleFaces;
         TMap<int32, FBoundaryEdge> BoundaryEdges;
         FindVisibleFaces(UniquePoints, FurthestPointIdx, CurrentFace, VisibleFaces, BoundaryEdges);
@@ -684,40 +596,32 @@ bool FModelGenConvexDecomp::GenerateConvexHull(const TArray<FVector>& Points, FK
             continue;
         }
 
-        // 收集所有可见面的外部点
         TArray<int32> UnassignedPointsForNewFaces;
         for (FFace* VisFace : VisibleFaces)
         {
             UnassignedPointsForNewFaces.Append(VisFace->OutsidePoints);
             VisFace->OutsidePoints.Empty();
             
-            // 从待处理列表中移除可见面
             PendingFaces.Remove(VisFace);
         }
 
-        // 构建新面
         TArray<FFace*> NewFaces;
         ConstructNewFaces(UniquePoints, FurthestPointIdx, NewFaces, BoundaryEdges, VisibleFaces);
         
-        // 将新面添加到AllFaces
         AllFaces.Append(NewFaces);
 
-        // 删除可见面（从AllFaces中移除并释放内存）
         for (FFace* VisFace : VisibleFaces)
         {
             AllFaces.Remove(VisFace);
             delete VisFace;
         }
 
-        // 分配外部点集
         PartitionOutsideSet(PendingFaces, NewFaces, UniquePoints, UnassignedPointsForNewFaces, HeadFace);
     }
 
-    // 从面中提取所有唯一的顶点
     TSet<int32> HullVertexIndices;
     TArray<FFace*> VisitedFaces;
     
-    // 递归遍历所有面（从HeadFace开始）
     if (HeadFace)
     {
         TArray<FFace*> Stack;
@@ -744,13 +648,11 @@ bool FModelGenConvexDecomp::GenerateConvexHull(const TArray<FVector>& Points, FK
         }
     }
 
-    // 重置访问标志
     for (FFace* Face : VisitedFaces)
     {
         Face->bVisited = false;
     }
 
-    // 构建输出
     OutConvexElem.VertexData.Empty();
     OutConvexElem.VertexData.Reserve(HullVertexIndices.Num());
     for (int32 VertIdx : HullVertexIndices)
@@ -761,13 +663,11 @@ bool FModelGenConvexDecomp::GenerateConvexHull(const TArray<FVector>& Points, FK
         }
     }
 
-    // 清理内存
     for (FFace* Face : AllFaces)
     {
         delete Face;
     }
 
-    // 如果顶点数太多，进行简化
     if (OutConvexElem.VertexData.Num() > 32)
     {
         FVector Center(0);
@@ -812,7 +712,6 @@ bool FModelGenConvexDecomp::BuildInitialTetrahedron(
 
     const float Epsilon = 0.0001f;
 
-    // 检查是否所有点共线
     int32 P0Idx = 0, P1Idx = 1, P2Idx = Points.Num() - 1;
     while (P1Idx < P2Idx && IsCollinear(Points[P0Idx], Points[P1Idx], Points[P2Idx], Epsilon))
     {
@@ -820,10 +719,9 @@ bool FModelGenConvexDecomp::BuildInitialTetrahedron(
     }
     if (P1Idx >= P2Idx)
     {
-        return false; // 所有点共线
+        return false;
     }
 
-    // 找到X轴最小、最大和Y轴最小的点
     int32 MinXIdx = 0, MaxXIdx = 0, MinYIdx = 0;
     for (int32 i = 1; i < Points.Num(); ++i)
     {
@@ -832,7 +730,6 @@ bool FModelGenConvexDecomp::BuildInitialTetrahedron(
         if (Points[i].Y < Points[MinYIdx].Y) MinYIdx = i;
     }
 
-    // 如果这三个点不共线，使用它们
     if (!IsCollinear(Points[MinXIdx], Points[MaxXIdx], Points[MinYIdx], Epsilon))
     {
         P0Idx = MinXIdx;
@@ -840,7 +737,6 @@ bool FModelGenConvexDecomp::BuildInitialTetrahedron(
         P2Idx = MinYIdx;
     }
 
-    // 计算平面
     FVector Normal = FVector::CrossProduct(Points[P1Idx] - Points[P0Idx], Points[P2Idx] - Points[P0Idx]);
     float NormalLen = Normal.Size();
     if (NormalLen < Epsilon)
@@ -850,7 +746,6 @@ bool FModelGenConvexDecomp::BuildInitialTetrahedron(
     Normal /= NormalLen;
     float D = -FVector::DotProduct(Normal, Points[P0Idx]);
 
-    // 找到距离平面最远的点
     float MinDist = 0.0f, MaxDist = 0.0f;
     int32 MinDistIdx = -1, MaxDistIdx = -1;
     for (int32 i = 0; i < Points.Num(); ++i)
@@ -872,17 +767,15 @@ bool FModelGenConvexDecomp::BuildInitialTetrahedron(
     int32 P3Idx = MaxDistIdx;
     if (P3Idx == -1 || IsCoplanar(Points[P0Idx], Points[P1Idx], Points[P2Idx], Points[P3Idx], Epsilon))
     {
-        // 尝试使用最小距离的点
         if (MinDistIdx != -1)
         {
-            // 交换P0和P2
             int32 Temp = P0Idx;
             P0Idx = P2Idx;
             P2Idx = Temp;
             P3Idx = MinDistIdx;
             if (IsCoplanar(Points[P0Idx], Points[P1Idx], Points[P2Idx], Points[P3Idx], Epsilon))
             {
-                return false; // 所有点共面
+                return false;
             }
         }
         else
@@ -891,13 +784,11 @@ bool FModelGenConvexDecomp::BuildInitialTetrahedron(
         }
     }
 
-    // 创建四个面
     FFace* F0 = new FFace(P0Idx, P2Idx, P1Idx);
     FFace* F1 = new FFace(P0Idx, P1Idx, P3Idx);
     FFace* F2 = new FFace(P0Idx, P3Idx, P2Idx);
     FFace* F3 = new FFace(P1Idx, P2Idx, P3Idx);
 
-    // 设置邻居关系
     F0->Neighbor[0] = F2;
     F0->Neighbor[1] = F3;
     F0->Neighbor[2] = F1;
@@ -919,7 +810,6 @@ bool FModelGenConvexDecomp::BuildInitialTetrahedron(
     OutFaces.Add(F2);
     OutFaces.Add(F3);
 
-    // 从未分配点列表中移除已使用的点
     OutUnassignedPoints.Remove(P0Idx);
     OutUnassignedPoints.Remove(P1Idx);
     OutUnassignedPoints.Remove(P2Idx);
@@ -964,9 +854,8 @@ void FModelGenConvexDecomp::FindVisibleFaces(
 
     if (!StartFace) return;
 
-    TSet<FFace*> BoundaryFaces; // 记录所有边界面的集合
+    TSet<FFace*> BoundaryFaces;
 
-    // 使用BFS找到所有可见面
     TArray<FFace*> Stack;
     Stack.Add(StartFace);
     StartFace->bVisited = true;
@@ -981,27 +870,21 @@ void FModelGenConvexDecomp::FindVisibleFaces(
             FFace* Neighbor = Current->Neighbor[i];
             if (!Neighbor) continue;
             
-            // 如果邻居已经被访问过，跳过
             if (Neighbor->bVisited) continue;
 
             float Dist = Neighbor->GetDistance(Points, Points[PointIndex]);
-            if (Dist > 0.0001f) // 点在面的外部，面可见
+            if (Dist > 0.0001f)
             {
                 Neighbor->bVisited = true;
                 OutVisibleFaces.Add(Neighbor);
                 Stack.Add(Neighbor);
             }
-            else // 面不可见，边是边界
+            else
             {
-                // 记录边界边
                 int32 V0 = Current->V0;
                 int32 V1 = Current->V1;
                 int32 V2 = Current->V2;
                 
-                // 根据邻居索引确定边的顶点
-                // Neighbor[0] 对应边 V0-V1
-                // Neighbor[1] 对应边 V1-V2
-                // Neighbor[2] 对应边 V2-V0
                 int32 EdgeV0, EdgeV1;
                 if (i == 0)
                 {
@@ -1019,7 +902,6 @@ void FModelGenConvexDecomp::FindVisibleFaces(
                     EdgeV1 = V0;
                 }
                 
-                // 使用较小的索引作为key（确保边的方向一致）
                 int32 Key = FMath::Min(EdgeV0, EdgeV1) * 10000 + FMath::Max(EdgeV0, EdgeV1);
                 if (!OutBoundaryEdges.Contains(Key))
                 {
@@ -1030,7 +912,6 @@ void FModelGenConvexDecomp::FindVisibleFaces(
         }
     }
 
-    // 重置访问标志
     for (FFace* Face : OutVisibleFaces)
     {
         Face->bVisited = false;
@@ -1052,14 +933,12 @@ void FModelGenConvexDecomp::ConstructNewFaces(
 
     if (BoundaryEdges.Num() < 3) return;
 
-    // 构建边界边的链
     TArray<FBoundaryEdge> EdgeList;
     for (auto& Pair : BoundaryEdges)
     {
         EdgeList.Add(Pair.Value);
     }
 
-    // 按顺序连接边界边
     TArray<FBoundaryEdge> OrderedEdges;
     if (EdgeList.Num() > 0)
     {
@@ -1084,23 +963,18 @@ void FModelGenConvexDecomp::ConstructNewFaces(
         }
     }
 
-    // 为每条边界边创建新面
     for (const FBoundaryEdge& Edge : OrderedEdges)
     {
         FFace* NewFace = new FFace(PointIndex, Edge.V0, Edge.V1);
         
-        // 设置邻居关系
         NewFace->Neighbor[1] = Edge.NeighborFace;
         if (Edge.NeighborFace)
         {
-            // 更新邻居面的邻居关系（找到指向已删除面的邻居）
-            // 需要找到Edge.NeighborFace中哪条边对应这条边界边
             for (int32 i = 0; i < 3; ++i)
             {
                 FFace* OldNeighbor = Edge.NeighborFace->Neighbor[i];
                 if (!OldNeighbor) continue;
                 
-                // 检查这个邻居是否包含Edge的两个顶点（说明是共享这条边的面）
                 bool bSharesEdge = false;
                 if ((OldNeighbor->V0 == Edge.V0 && OldNeighbor->V1 == Edge.V1) ||
                     (OldNeighbor->V1 == Edge.V0 && OldNeighbor->V2 == Edge.V1) ||
@@ -1112,10 +986,8 @@ void FModelGenConvexDecomp::ConstructNewFaces(
                     bSharesEdge = true;
                 }
                 
-                // 如果这个邻居共享边界边，并且它在可见面列表中（将被删除），则更新邻居关系
                 if (bSharesEdge)
                 {
-                    // 检查OldNeighbor是否在可见面列表中
                     bool bIsVisible = VisibleFaces.Contains(OldNeighbor);
                     
                     if (bIsVisible)
@@ -1130,7 +1002,6 @@ void FModelGenConvexDecomp::ConstructNewFaces(
         OutNewFaces.Add(NewFace);
     }
 
-    // 设置新面之间的邻居关系
     for (int32 i = 0; i < OutNewFaces.Num(); ++i)
     {
         int32 PrevIdx = (i - 1 + OutNewFaces.Num()) % OutNewFaces.Num();
@@ -1147,7 +1018,6 @@ void FModelGenConvexDecomp::PartitionOutsideSet(
     TArray<int32>& UnassignedPoints,
     FFace*& HeadFace)
 {
-    // 为每个新面分配外部点
     for (FFace* Face : NewFaces)
     {
         Face->OutsidePoints.Empty();
@@ -1159,7 +1029,7 @@ void FModelGenConvexDecomp::PartitionOutsideSet(
             if (PointIdx == Face->V0 || PointIdx == Face->V1 || PointIdx == Face->V2) continue;
 
             float Dist = Face->GetDistance(Points, Points[PointIdx]);
-            if (Dist > 0.0001f) // 点在外部
+            if (Dist > 0.0001f)
             {
                 Face->OutsidePoints.Add(PointIdx);
                 UnassignedPoints.RemoveAt(i);
@@ -1172,7 +1042,7 @@ void FModelGenConvexDecomp::PartitionOutsideSet(
         }
         else
         {
-            HeadFace = Face; // 没有外部点的面作为头面
+            HeadFace = Face;
         }
     }
 }
@@ -1220,7 +1090,7 @@ void FModelGenConvexDecomp::SplitMeshByPlane(
     OutLeftTriangles.Empty();
     OutRightTriangles.Empty();
 
-    const float Epsilon = 0.0001f; // 容差值，避免边界问题
+    const float Epsilon = 0.0001f;
 
     for (int32 TriIdx : TriangleIndices)
     {
@@ -1245,11 +1115,9 @@ void FModelGenConvexDecomp::SplitMeshByPlane(
         FVector V1 = MeshData.Vertices[V1Idx];
         FVector V2 = MeshData.Vertices[V2Idx];
 
-        // 使用三角形中心点来判断，这样更准确，避免跨越平面的三角形被错误分类
         FVector TriCenter = (V0 + V1 + V2) / 3.0f;
         float CenterDist = SplitPlane.PlaneDot(TriCenter);
 
-        // 如果中心点在平面左侧（负值），分配给左侧；否则分配给右侧
         if (CenterDist < -Epsilon)
         {
             OutLeftTriangles.Add(TriIdx);
@@ -1260,7 +1128,6 @@ void FModelGenConvexDecomp::SplitMeshByPlane(
         }
         else
         {
-            // 如果中心点正好在平面上（容差范围内），根据大多数顶点的位置决定
             float D0 = SplitPlane.PlaneDot(V0);
             float D1 = SplitPlane.PlaneDot(V1);
             float D2 = SplitPlane.PlaneDot(V2);
@@ -1287,15 +1154,15 @@ int32 FModelGenConvexDecomp::GetLongestAxis(const FBox& Bounds)
     FVector Extent = Bounds.GetExtent();
     if (Extent.X >= Extent.Y && Extent.X >= Extent.Z)
     {
-        return 0; // X轴
+        return 0;
     }
     else if (Extent.Y >= Extent.Z)
     {
-        return 1; // Y轴
+        return 1;
     }
     else
     {
-        return 2; // Z轴
+        return 2;
     }
 }
 

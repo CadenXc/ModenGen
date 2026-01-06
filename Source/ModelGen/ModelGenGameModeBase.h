@@ -6,9 +6,6 @@
 #include "GameFramework/GameModeBase.h"
 #include "ModelGenGameModeBase.generated.h"
 
-/**
- * 
- */
 UCLASS()
 class MODELGEN_API AModelGenGameModeBase : public AGameModeBase
 {

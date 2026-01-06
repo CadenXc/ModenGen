@@ -1,20 +1,10 @@
 // Copyright (c) 2024. All rights reserved.
 
-/**
- * @file ModelGenMeshBuilder.h
- * @brief 通用网格构建器基类
- * * 该文件定义了可被所有几何体生成器继承的通用构建器基类。
- * 提供了统一的mesh构建、顶点管理和验证功能。
- */
-
 #pragma once
 
 #include "CoreMinimal.h"
 #include "ModelGenMeshData.h"
 
-/**
- * 端盖类型枚举
- */
 UENUM(BlueprintType)
 enum class EEndCapType : uint8
 {
@@ -22,9 +12,6 @@ enum class EEndCapType : uint8
     End     UMETA(DisplayName = "结束端盖")
 };
 
-/**
- * 高度位置枚举
- */
 UENUM(BlueprintType)
 enum class EHeightPosition : uint8
 {
@@ -32,9 +19,6 @@ enum class EHeightPosition : uint8
     Bottom  UMETA(DisplayName = "底部")
 };
 
-/**
- * 内外侧枚举
- */
 UENUM(BlueprintType)
 enum class EInnerOuter : uint8
 {
@@ -42,10 +26,6 @@ enum class EInnerOuter : uint8
     Outer   UMETA(DisplayName = "外侧")
 };
 
- /**
-  * 通用网格构建器基类
-  * 提供所有几何体生成器的基础功能
-  */
 class MODELGEN_API FModelGenMeshBuilder
 {
 public:

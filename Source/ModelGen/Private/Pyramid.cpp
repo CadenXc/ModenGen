@@ -1,10 +1,5 @@
 // Copyright (c) 2024. All rights reserved.
 
-/**
- * @file Pyramid.cpp
- * @brief 可配置的程序化金字塔生成器的实现
- */
-
 #include "Pyramid.h"
 #include "PyramidBuilder.h"
 #include "ModelGenMeshData.h"
@@ -36,7 +31,6 @@ bool APyramid::TryGenerateMeshInternal()
 
     if (!MeshData.IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("APyramid::TryGenerateMeshInternal - 生成的网格数据无效"));
         return false;
     }
 
@@ -61,7 +55,6 @@ void APyramid::GeneratePyramid(float InBaseRadius, float InHeight, int32 InSides
             BaseRadius = OldBaseRadius;
             Height = OldHeight;
             Sides = OldSides;
-            UE_LOG(LogTemp, Warning, TEXT("GeneratePyramid: 网格生成失败，参数已恢复"));
         }
     }
 }
@@ -114,7 +107,6 @@ void APyramid::SetBaseRadius(float NewBaseRadius)
             if (!TryGenerateMeshInternal())
             {
                 BaseRadius = OldBaseRadius;
-                UE_LOG(LogTemp, Warning, TEXT("SetBaseRadius: 网格生成失败，参数已恢复为 %f"), OldBaseRadius);
             }
         }
     }
@@ -132,7 +124,6 @@ void APyramid::SetHeight(float NewHeight)
             if (!TryGenerateMeshInternal())
             {
                 Height = OldHeight;
-                UE_LOG(LogTemp, Warning, TEXT("SetHeight: 网格生成失败，参数已恢复为 %f"), OldHeight);
             }
         }
     }
@@ -150,7 +141,6 @@ void APyramid::SetSides(int32 NewSides)
             if (!TryGenerateMeshInternal())
             {
                 Sides = OldSides;
-                UE_LOG(LogTemp, Warning, TEXT("SetSides: 网格生成失败，参数已恢复为 %d"), OldSides);
             }
         }
     }
@@ -168,7 +158,6 @@ void APyramid::SetBevelRadius(float NewBevelRadius)
             if (!TryGenerateMeshInternal())
             {
                 BevelRadius = OldBevelRadius;
-                UE_LOG(LogTemp, Warning, TEXT("SetBevelRadius: 网格生成失败，参数已恢复为 %f"), OldBevelRadius);
             }
         }
     }
@@ -186,7 +175,6 @@ void APyramid::SetSmoothSides(bool bNewSmoothSides)
             if (!TryGenerateMeshInternal())
             {
                 bSmoothSides = OldSmoothSides;
-                UE_LOG(LogTemp, Warning, TEXT("SetSmoothSides: 网格生成失败，参数已恢复"));
             }
         }
     }

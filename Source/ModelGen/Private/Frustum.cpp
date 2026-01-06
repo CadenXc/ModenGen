@@ -31,7 +31,6 @@ bool AFrustum::TryGenerateMeshInternal()
 
     if (!MeshData.IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("AFrustum::TryGenerateMeshInternal - 生成的网格数据无效"));
         return false;
     }
 
@@ -93,7 +92,6 @@ void AFrustum::SetTopRadius(float NewTopRadius)
             if (!TryGenerateMeshInternal())
             {
                 TopRadius = OldTopRadius;
-                UE_LOG(LogTemp, Warning, TEXT("SetTopRadius: 网格生成失败，参数已恢复为 %f"), OldTopRadius);
             }
         }
     }
@@ -111,7 +109,6 @@ void AFrustum::SetBottomRadius(float NewBottomRadius)
             if (!TryGenerateMeshInternal())
             {
                 BottomRadius = OldBottomRadius;
-                UE_LOG(LogTemp, Warning, TEXT("SetBottomRadius: 网格生成失败，参数已恢复为 %f"), OldBottomRadius);
             }
         }
     }
@@ -129,7 +126,6 @@ void AFrustum::SetHeight(float NewHeight)
             if (!TryGenerateMeshInternal())
             {
                 Height = OldHeight;
-                UE_LOG(LogTemp, Warning, TEXT("SetHeight: 网格生成失败，参数已恢复为 %f"), OldHeight);
             }
         }
     }
@@ -152,7 +148,6 @@ void AFrustum::SetTopSides(int32 NewTopSides)
             if (!TryGenerateMeshInternal())
             {
                 TopSides = OldTopSides;
-                UE_LOG(LogTemp, Warning, TEXT("SetTopSides: 网格生成失败，参数已恢复为 %d"), OldTopSides);
             }
         }
     }
@@ -177,7 +172,6 @@ void AFrustum::SetBottomSides(int32 NewBottomSides)
             {
                 BottomSides = OldBottomSides;
                 TopSides = OldTopSides;
-                UE_LOG(LogTemp, Warning, TEXT("SetBottomSides: 网格生成失败，参数已恢复"));
             }
         }
     }
@@ -195,7 +189,6 @@ void AFrustum::SetHeightSegments(int32 NewHeightSegments)
             if (!TryGenerateMeshInternal())
             {
                 HeightSegments = OldHeightSegments;
-                UE_LOG(LogTemp, Warning, TEXT("SetHeightSegments: 网格生成失败，参数已恢复为 %d"), OldHeightSegments);
             }
         }
     }
@@ -213,7 +206,6 @@ void AFrustum::SetBevelRadius(float NewBevelRadius)
             if (!TryGenerateMeshInternal())
             {
                 BevelRadius = OldBevelRadius;
-                UE_LOG(LogTemp, Warning, TEXT("SetBevelRadius: 网格生成失败，参数已恢复为 %f"), OldBevelRadius);
             }
         }
     }
@@ -231,7 +223,6 @@ void AFrustum::SetBendAmount(float NewBendAmount)
             if (!TryGenerateMeshInternal())
             {
                 BendAmount = OldBendAmount;
-                UE_LOG(LogTemp, Warning, TEXT("SetBendAmount: 网格生成失败，参数已恢复为 %f"), OldBendAmount);
             }
         }
     }
@@ -249,7 +240,6 @@ void AFrustum::SetMinBendRadius(float NewMinBendRadius)
             if (!TryGenerateMeshInternal())
             {
                 MinBendRadius = OldMinBendRadius;
-                UE_LOG(LogTemp, Warning, TEXT("SetMinBendRadius: 网格生成失败，参数已恢复为 %f"), OldMinBendRadius);
             }
         }
     }
@@ -267,7 +257,6 @@ void AFrustum::SetArcAngle(float NewArcAngle)
             if (!TryGenerateMeshInternal())
             {
                 ArcAngle = OldArcAngle;
-                UE_LOG(LogTemp, Warning, TEXT("SetArcAngle: 网格生成失败，参数已恢复为 %f"), OldArcAngle);
             }
         }
     }
@@ -285,7 +274,6 @@ void AFrustum::SetBevelSegments(int32 NewBevelSegments)
             if (!TryGenerateMeshInternal())
             {
                 BevelSegments = OldBevelSegments;
-                UE_LOG(LogTemp, Warning, TEXT("SetBevelSegments: 网格生成失败，参数已恢复为 %d"), OldBevelSegments);
             }
         }
     }

@@ -35,7 +35,6 @@ bool ASphere::TryGenerateMeshInternal()
 
     if (!MeshData.IsValid())
     {
-        UE_LOG(LogTemp, Warning, TEXT("ASphere::TryGenerateMeshInternal - 网格生成结果为空（可能是参数导致几何体消失）"));
         return false;
     }
 
@@ -47,8 +46,8 @@ bool ASphere::IsValid() const
 {
     return Radius > KINDA_SMALL_NUMBER &&
         Sides >= 4 && Sides <= 64 &&
-        HorizontalCut >= 0.0f && HorizontalCut < 1.0f && // 不能等于1
-        VerticalCut > KINDA_SMALL_NUMBER && VerticalCut <= 1.0f; // 不能等于0
+        HorizontalCut >= 0.0f && HorizontalCut < 1.0f &&
+        VerticalCut > KINDA_SMALL_NUMBER && VerticalCut <= 1.0f;
 }
 
 int32 ASphere::CalculateVertexCountEstimate() const
@@ -69,7 +68,6 @@ int32 ASphere::CalculateTriangleCountEstimate() const
 
 void ASphere::SetSides(int32 NewSides)
 {
-    // 钳制范围
     if (NewSides < 4) NewSides = 4;
     if (NewSides > 64) NewSides = 64;
 
@@ -83,7 +81,6 @@ void ASphere::SetSides(int32 NewSides)
             if (!TryGenerateMeshInternal())
             {
                 Sides = OldSides;
-                UE_LOG(LogTemp, Warning, TEXT("SetSides: 网格生成失败，参数已恢复为 %d"), OldSides);
             }
         }
     }
@@ -105,10 +102,7 @@ void ASphere::SetHorizontalCut(float NewHorizontalCut)
 
         if (ProceduralMeshComponent)
         {
-            if (!TryGenerateMeshInternal())
-            {
-                UE_LOG(LogTemp, Warning, TEXT("SetHorizontalCut: 该参数下无法生成有效网格"));
-            }
+            TryGenerateMeshInternal();
         }
     }
 }
@@ -130,10 +124,7 @@ void ASphere::SetVerticalCut(float NewVerticalCut)
 
         if (ProceduralMeshComponent)
         {
-            if (!TryGenerateMeshInternal())
-            {
-                UE_LOG(LogTemp, Warning, TEXT("SetVerticalCut: 该参数下无法生成有效网格"));
-            }
+            TryGenerateMeshInternal();
         }
     }
 }
@@ -150,7 +141,6 @@ void ASphere::SetRadius(float NewRadius)
             if (!TryGenerateMeshInternal())
             {
                 Radius = OldRadius;
-                UE_LOG(LogTemp, Warning, TEXT("SetRadius: 网格生成失败，参数已恢复为 %f"), OldRadius);
             }
         }
     }

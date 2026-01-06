@@ -8,7 +8,6 @@ AEditableSurface::AEditableSurface()
 {
     PrimaryActorTick.bCanEverTick = false;
 
-    // 创建样条线组件
     SplineComponent = CreateDefaultSubobject<USplineComponent>(TEXT("SplineComponent"));
     if (SplineComponent)
     {
@@ -16,19 +15,13 @@ AEditableSurface::AEditableSurface()
         SplineComponent->SetMobility(EComponentMobility::Movable);
     }
 
-    // 初始化默认路点
     InitializeDefaultWaypoints();
 }
 
 void AEditableSurface::OnConstruction(const FTransform& Transform)
 {
-    // 调用父类的 OnConstruction (父类会初始化 PMC 等)
     Super::OnConstruction(Transform);
-
-    // 确保数据同步
     UpdateSplineFromWaypoints();
-
-    // 生成网格
     GenerateMesh();
 }
 
@@ -114,12 +107,10 @@ void AEditableSurface::UpdateWaypointsFromSpline()
 
     if (CurveType != ESurfaceCurveType::Standard)
     {
-        UE_LOG(LogTemp, Warning, TEXT("UpdateWaypointsFromSpline blocked in Smooth Mode to prevent data collapse."));
         return;
     }
 
     int32 NumPoints = SplineComponent->GetNumberOfSplinePoints();
-    // 只有数量一致时才尝试同步，避免误操作
     if (NumPoints != Waypoints.Num())
     {
         return; 
@@ -148,21 +139,17 @@ bool AEditableSurface::TryGenerateMeshInternal()
 {
     if (SplineComponent && SplineComponent->GetNumberOfSplinePoints() < 2 && Waypoints.Num() >= 2)
     {
-        UE_LOG(LogTemp, Warning, TEXT("AEditableSurface: 检测到样条线数据丢失，正在恢复..."));
         RebuildSplineData();
     }
     
-    // 检查样条线是否有足够的数据点
     if (!SplineComponent || SplineComponent->GetNumberOfSplinePoints() < 2 || Waypoints.Num() < 2)
     {
         return false;
     }
 
     FEditableSurfaceBuilder Builder(*this);
-
     FModelGenMeshData MeshData;
 
-    // 预分配内存以优化性能
     int32 EstVerts = Builder.CalculateVertexCountEstimate();
     int32 EstTris = Builder.CalculateTriangleCountEstimate();
     MeshData.Reserve(EstVerts, EstTris);
@@ -171,7 +158,6 @@ bool AEditableSurface::TryGenerateMeshInternal()
     {
         if (ProceduralMeshComponent)
         {
-            // 应用生成的网格数据到组件
             MeshData.ToProceduralMesh(ProceduralMeshComponent, 0);
         }
 
@@ -181,7 +167,6 @@ bool AEditableSurface::TryGenerateMeshInternal()
     return false;
 }
 
-// ---------------- Getters and Setters ----------------
 
 FVector AEditableSurface::GetWaypointPosition(int32 Index) const
 {
@@ -214,10 +199,6 @@ void AEditableSurface::SetWaypointWidth(int32 Index, float NewWidth)
             UpdateSplineFromWaypoints();
             GenerateMesh();
         }
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("SetWaypointWidth: 无效的索引 %d"), Index);
     }
 }
 
@@ -270,77 +251,14 @@ void AEditableSurface::RemoveWaypointByIndex(int32 Index)
         UpdateSplineFromWaypoints();
         GenerateMesh();
     }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("Cannot remove waypoint: Index invalid or too few waypoints left."));
-    }
 }
 
 void AEditableSurface::PrintWaypointInfo()
 {
-    for (int32 i = 0; i < Waypoints.Num(); ++i)
-    {
-        UE_LOG(LogTemp, Log, TEXT("WP[%d]: Pos=%s, Width=%.2f"),
-            i, *Waypoints[i].Position.ToString(), Waypoints[i].Width);
-    }
 }
 
 void AEditableSurface::PrintParametersInfo()
 {
-    UE_LOG(LogTemp, Warning, TEXT("========== EditableSurface 参数信息 =========="));
-    UE_LOG(LogTemp, Warning, TEXT(""));
-    
-    UE_LOG(LogTemp, Warning, TEXT("【几何参数】"));
-    UE_LOG(LogTemp, Warning, TEXT("  曲面宽度: %.2f"), SurfaceWidth);
-    UE_LOG(LogTemp, Warning, TEXT("  采样精度(步长): %.2f"), SplineSampleStep);
-    UE_LOG(LogTemp, Warning, TEXT("  去环检测距离: %.2f"), LoopRemovalThreshold);
-    UE_LOG(LogTemp, Warning, TEXT("  曲线类型: %d"), (int32)CurveType);
-    UE_LOG(LogTemp, Warning, TEXT("  纹理映射: %d"), (int32)TextureMapping);
-    UE_LOG(LogTemp, Warning, TEXT(""));
-    
-    UE_LOG(LogTemp, Warning, TEXT("【厚度参数】"));
-    UE_LOG(LogTemp, Warning, TEXT("  启用厚度: %s"), bEnableThickness ? TEXT("是") : TEXT("否"));
-    if (bEnableThickness)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("  厚度值: %.2f"), ThicknessValue);
-    }
-    UE_LOG(LogTemp, Warning, TEXT(""));
-    
-    UE_LOG(LogTemp, Warning, TEXT("【平滑参数】"));
-    UE_LOG(LogTemp, Warning, TEXT("  两侧平滑度: %d"), SideSmoothness);
-    UE_LOG(LogTemp, Warning, TEXT(""));
-    
-    UE_LOG(LogTemp, Warning, TEXT("【护坡参数】"));
-    if (SideSmoothness >= 1)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("  右侧护坡长度: %.2f"), RightSlopeLength);
-        UE_LOG(LogTemp, Warning, TEXT("  右侧护坡斜率: %.2f"), RightSlopeGradient);
-        UE_LOG(LogTemp, Warning, TEXT("  左侧护坡长度: %.2f"), LeftSlopeLength);
-        UE_LOG(LogTemp, Warning, TEXT("  左侧护坡斜率: %.2f"), LeftSlopeGradient);
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("  (平滑度 < 1，护坡未启用)"));
-    }
-    UE_LOG(LogTemp, Warning, TEXT(""));
-    
-    UE_LOG(LogTemp, Warning, TEXT("【路点信息】"));
-    UE_LOG(LogTemp, Warning, TEXT("  路点数量: %d"), Waypoints.Num());
-    if (SplineComponent)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("  样条线点数: %d"), SplineComponent->GetNumberOfSplinePoints());
-        UE_LOG(LogTemp, Warning, TEXT("  样条线长度: %.2f"), SplineComponent->GetSplineLength());
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("  样条线组件: 无效"));
-    }
-    UE_LOG(LogTemp, Warning, TEXT(""));
-    
-    UE_LOG(LogTemp, Warning, TEXT("【安全设置】"));
-    UE_LOG(LogTemp, Warning, TEXT(""));
-    
-    UE_LOG(LogTemp, Warning, TEXT("=========================================="));
 }
 
 void AEditableSurface::SetSurfaceWidth(float NewSurfaceWidth)
@@ -446,11 +364,9 @@ void AEditableSurface::SetWaypoints(const FString& WaypointsString)
 {
     if (WaypointsString.IsEmpty())
     {
-        UE_LOG(LogTemp, Warning, TEXT("AEditableSurface::SetWaypoints - 输入字符串为空"));
         return;
     }
 
-    // 清空现有路点
     Waypoints.Empty();
 
     TArray<FString> WaypointStrings;
@@ -463,7 +379,6 @@ void AEditableSurface::SetWaypoints(const FString& WaypointsString)
             continue;
         }
 
-        // 解析坐标：x,y,z
         TArray<FString> Coords;
         WaypointStr.ParseIntoArray(Coords, TEXT(","), true);
 
@@ -477,24 +392,15 @@ void AEditableSurface::SetWaypoints(const FString& WaypointsString)
         }
         else if (Coords.Num() == 2)
         {
-            // 如果只有两个坐标，Z 默认为 0
             float X = FCString::Atof(*Coords[0]);
             float Y = FCString::Atof(*Coords[1]);
             
             Waypoints.Add(FSurfaceWaypoint(FVector(X, Y, 0.0f)));
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning, TEXT("AEditableSurface::SetWaypoints - 无效的路点格式: %s"), *WaypointStr);
         }
     }
 
     if (Waypoints.Num() >= 2)
     {
         UpdateSplineFromWaypoints();
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("AEditableSurface::SetWaypoints - 路点数量不足（需要至少2个），当前: %d"), Waypoints.Num());
     }
 }

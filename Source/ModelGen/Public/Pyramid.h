@@ -1,10 +1,5 @@
 // Copyright (c) 2024. All rights reserved.
 
-/**
- * @file Pyramid.h
- * @brief 可配置的程序化金字塔生成器
- */
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -22,7 +17,6 @@ class MODELGEN_API APyramid : public AProceduralMeshActor
 public:
     APyramid();
 
-    //~ Begin Geometry Parameters
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid|Geometry",
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Base Radius"))
     float BaseRadius = 70.0f;
@@ -51,7 +45,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Pyramid|Parameters")
     void SetBevelRadius(float NewBevelRadius);
 
-    /** 侧面光滑 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pyramid|Smoothing", 
         meta = (DisplayName = "Smooth Sides", ToolTip = "Smooth sides (soft edges)"))
     bool bSmoothSides = false;

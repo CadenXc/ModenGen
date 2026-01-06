@@ -62,8 +62,6 @@ int32 FModelGenMeshData::AddVertex(const FVector& Position, const FVector& Norma
     Normals.Add(Normal);
     UVs.Add(UV);
     VertexColors.Add(Color);
-    // 不在这里计算切线，让 CalculateTangents() 统一基于 UV 计算
-    // 使用零向量作为占位符，CalculateTangents() 会重新计算
     Tangents.Add(FProcMeshTangent(FVector::ZeroVector, false));
 
     VertexCount = Vertices.Num();
@@ -72,20 +70,17 @@ int32 FModelGenMeshData::AddVertex(const FVector& Position, const FVector& Norma
 
 void FModelGenMeshData::AddTriangle(int32 V1, int32 V2, int32 V3)
 {
-    // 退化三角形过滤
     if (V1 == V2 || V2 == V3 || V1 == V3)
     {
         return;
     }
 
-    // 规范化三角形键（排序后编码为64位）
     int32 A = V1, B = V2, C = V3;
     if (A > B) Swap(A, B);
     if (B > C) Swap(B, C);
     if (A > B) Swap(A, B);
     const uint64 Key = (static_cast<uint64>(A) << 42) | (static_cast<uint64>(B) << 21) | static_cast<uint64>(C);
 
-    // 去重：若已存在则跳过
     if (TriangleKeySet.Contains(Key))
     {
         return;
@@ -116,7 +111,6 @@ void FModelGenMeshData::Merge(const FModelGenMeshData& Other)
     VertexColors.Append(Other.VertexColors);
     Tangents.Append(Other.Tangents);
 
-    // 合并三角形数据（需要调整索引）
     for (int32 i = 0; i < Other.Triangles.Num(); ++i)
     {
         Triangles.Add(Other.Triangles[i] + VertexOffset);
@@ -131,39 +125,15 @@ void FModelGenMeshData::ToProceduralMesh(UProceduralMeshComponent* MeshComponent
 {
     if (!MeshComponent)
     {
-        UE_LOG(LogTemp, Error, TEXT("FModelGenMeshData::ToProceduralMesh - MeshComponent is null"));
         return;
     }
 
     if (!IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("FModelGenMeshData::ToProceduralMesh - Mesh data is not valid"));
-        UE_LOG(LogTemp, Error, TEXT("FModelGenMeshData::ToProceduralMesh - Vertices: %d, Triangles: %d, Normals: %d, UVs: %d, Tangents: %d"),
-            Vertices.Num(), Triangles.Num(), Normals.Num(), UVs.Num(), Tangents.Num());
-        UE_LOG(LogTemp, Error, TEXT("FModelGenMeshData::ToProceduralMesh - TriangleCount: %d"),
-            TriangleCount);
-
-        // 检查三角形索引的有效性
-        for (int32 i = 0; i < FMath::Min(Triangles.Num(), 30); ++i) // 只检查前30个索引
-        {
-            if (i % 3 == 0)
-            {
-                UE_LOG(LogTemp, Error, TEXT("FModelGenMeshData::ToProceduralMesh - Triangle %d: [%d, %d, %d]"),
-                    i / 3, Triangles[i], Triangles[i + 1], Triangles[i + 2]);
-            }
-        }
         return;
     }
 
-    UE_LOG(LogTemp, Log, TEXT("FModelGenMeshData::ToProceduralMesh - Creating mesh section with %d vertices, %d triangles"),
-        Vertices.Num(), TriangleCount);
-
-    // 检查组件是否启用了碰撞，如果启用了则创建碰撞几何体
     bool bCreateCollision = MeshComponent->GetCollisionEnabled() != ECollisionEnabled::NoCollision;
-    UE_LOG(LogTemp, Log, TEXT("FModelGenMeshData::ToProceduralMesh - 碰撞设置: %s"), 
-        bCreateCollision ? TEXT("创建碰撞几何体") : TEXT("不创建碰撞几何体"));
-
-    // 传递我们手动生成的UV数据，而不是一个空数组
     MeshComponent->CreateMeshSection_LinearColor(SectionIndex, Vertices, Triangles, Normals, UVs, VertexColors, Tangents, bCreateCollision);
 }
 
@@ -174,19 +144,14 @@ void FModelGenMeshData::CalculateTangents()
         return;
     }
 
-    // 硬边模式：保持原始法线，但让引擎基于 UV 正确计算切线
-    // 保存原始法线（硬边模式）
     TArray<FVector> OriginalNormals = Normals;
     
-    // 准备输出数组
     TArray<FVector> OutNormals;
     TArray<FProcMeshTangent> OutTangents;
     
     OutNormals.SetNum(Vertices.Num());
     OutTangents.SetNum(Vertices.Num());
     
-    // 使用引擎计算切线和法线（基于 UV 和几何形状）
-    // 这会基于 UV 正确计算切线方向
     UKismetProceduralMeshLibrary::CalculateTangentsForMesh(
         Vertices, 
         Triangles, 
@@ -195,12 +160,7 @@ void FModelGenMeshData::CalculateTangents()
         OutTangents
     );
     
-    // 恢复原始法线（硬边模式）
     Normals = MoveTemp(OriginalNormals);
-    
-    // 直接使用引擎计算的切线（已经基于 UV 正确计算）
-    // 即使法线是硬边的，引擎计算的切线也应该能正确工作
-    // 因为切线主要基于 UV 展开方向，而不是法线
     Tangents = MoveTemp(OutTangents);
 }
 

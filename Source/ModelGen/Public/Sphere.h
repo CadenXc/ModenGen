@@ -1,10 +1,3 @@
-// Copyright (c) 2024. All rights reserved.
-
-/**
- * @file Sphere.h
- * @brief 可配置的程序化球体生成器
- */
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -22,8 +15,6 @@ class MODELGEN_API ASphere : public AProceduralMeshActor
 public:
     ASphere();
 
-    //~ Begin Geometry Parameters
-    /** 边数（球体的分段数） */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sphere|Geometry", 
         meta = (ClampMin = "4", ClampMax = "64", UIMin = "4", UIMax = "64", DisplayName = "边数"))
     int32 Sides = 16;
@@ -31,7 +22,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Sphere|Parameters")
     void SetSides(int32 NewSides);
 
-    /** 横截断（0-1，表示从顶部到底部的截断比例） */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sphere|Geometry", 
         meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0", DisplayName = "横截断"))
     float HorizontalCut = 0.0f;
@@ -39,7 +29,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Sphere|Parameters")
     void SetHorizontalCut(float NewHorizontalCut);
 
-    /** 竖截断（0-1，表示球体的角度范围比例，0=无球体，1=完整球体） */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sphere|Geometry", 
         meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0", DisplayName = "竖截断"))
     float VerticalCut = 1.0f;
@@ -47,7 +36,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Sphere|Parameters")
     void SetVerticalCut(float NewVerticalCut);
 
-    /** 半径 */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sphere|Geometry", 
         meta = (ClampMin = "0.01", ClampMax = "1000", UIMin = "0.01", UIMax = "1000", DisplayName = "Radius"))
     float Radius = 50.0f;

@@ -1,13 +1,5 @@
 // Copyright (c) 2024. All rights reserved.
 
-/**
- * @file ModelGenMeshData.h
- * @brief 通用网格数据结构
- * 
- * 该文件定义了可被所有几何体生成器复用的通用网格数据结构。
- * 提供了统一的mesh数据存储、验证和操作方法。
- */
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -15,10 +7,6 @@
 
 #include "ModelGenMeshData.generated.h"
 
-/**
- * 通用网格数据结构
- * 可以被所有几何体生成器复用
- */
 USTRUCT(BlueprintType)
 struct FModelGenMeshData
 {

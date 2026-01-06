@@ -1,5 +1,3 @@
-// Copyright (c) 2024. All rights reserved.
-
 #include "SphereBuilder.h"
 #include "Sphere.h"
 #include "ModelGenMeshData.h"

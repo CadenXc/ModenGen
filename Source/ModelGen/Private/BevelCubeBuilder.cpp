@@ -29,7 +29,6 @@ bool FBevelCubeBuilder::Generate(FModelGenMeshData& OutMeshData)
     Clear();
     ReserveMemory();
 
-    // 获取各轴尺寸
     HalfSize = BevelCube.GetHalfSize();
     InnerOffset = BevelCube.GetInnerOffset();
 
@@ -114,7 +113,6 @@ void FBevelCubeBuilder::GenerateUnfoldedFace(const FUnfoldedFace& FaceDef, const
     float OffsetU = InnerOffset[AxisIndexU];
     float OffsetV = InnerOffset[AxisIndexV];
 
-    // 1. 生成顶点
     for (int32 v_idx = 0; v_idx < NumV; ++v_idx)
     {
         const float local_v = GridV[v_idx];

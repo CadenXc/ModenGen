@@ -6,7 +6,6 @@
 #include "UObject/Object.h"
 #include "ModelStrategyFactory.generated.h"
 
-// 前向声明
 class AActor;
 class UWorld;
 
@@ -16,31 +15,24 @@ class MODELGEN_API UCustomModelFactory : public UObject
     GENERATED_BODY()
 
     public:
-    // 创建自定义模型Actor（带参数版本）
     UFUNCTION(BlueprintCallable, Category = "ModelFactory")
     static AActor* CreateModelActorWithParams(const FString& ModelTypeName, const TMap<FString, FString>& Parameters, UWorld* World, const FVector& Location = FVector::ZeroVector, const FRotator& Rotation = FRotator::ZeroRotator);
     
-    // 获取所有支持的模型类型
     UFUNCTION(BlueprintCallable, Category = "ModelFactory")
     static TArray<FString> GetSupportedModelTypes();
     
-    // 注册新的模型类型
     UFUNCTION(BlueprintCallable, Category = "ModelFactory")
     static void RegisterModelType(const FString& ModelTypeName, TSubclassOf<AActor> ModelClass);
 
-    // 新增：使用ProceduralMeshActor获取StaticMesh的方法
     UFUNCTION(BlueprintCallable, Category = "ModelFactory|Cache")
     static UStaticMesh* GetOrCreateStaticMesh(AProceduralMeshActor* ProceduralActor);
     
-    // 创建模型并返回StaticMesh（工厂管理临时Actor）
     UFUNCTION(BlueprintCallable, Category = "ModelFactory")
     static UStaticMesh* CreateModelStaticMesh(const FString& ModelTypeName, const TMap<FString, FString>& Parameters, UWorld* World);
 
-    // 创建模型并返回StaticMesh（使用默认参数）
     UFUNCTION(BlueprintCallable, Category = "ModelFactory")
     static UStaticMesh* CreateModelStaticMeshWithDefaults(const FString& ModelTypeName, UWorld* World);
     
-    // 新增：缓存管理方法
     UFUNCTION(BlueprintCallable, Category = "ModelFactory|Cache")
     static void ClearCache();
     

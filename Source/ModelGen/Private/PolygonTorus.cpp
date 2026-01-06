@@ -1,5 +1,3 @@
-// Copyright (c) 2024. All rights reserved.
-
 #include "PolygonTorus.h"
 #include "PolygonTorusBuilder.h"
 #include "ModelGenMeshData.h"
@@ -31,7 +29,6 @@ bool APolygonTorus::TryGenerateMeshInternal()
 
     if (!MeshData.IsValid())
     {
-        UE_LOG(LogTemp, Error, TEXT("APolygonTorus::TryGenerateMeshInternal - 生成的网格数据无效"));
         return false;
     }
 
@@ -76,7 +73,6 @@ void APolygonTorus::SetMajorRadius(float NewMajorRadius)
             if (!TryGenerateMeshInternal())
             {
                 MajorRadius = OldMajorRadius;
-                UE_LOG(LogTemp, Warning, TEXT("SetMajorRadius: 网格生成失败，参数已恢复为 %f"), OldMajorRadius);
             }
         }
     }
@@ -94,7 +90,6 @@ void APolygonTorus::SetMinorRadius(float NewMinorRadius)
             if (!TryGenerateMeshInternal())
             {
                 MinorRadius = OldMinorRadius;
-                UE_LOG(LogTemp, Warning, TEXT("SetMinorRadius: 网格生成失败，参数已恢复为 %f"), OldMinorRadius);
             }
         }
     }
@@ -112,7 +107,6 @@ void APolygonTorus::SetMajorSegments(int32 NewMajorSegments)
             if (!TryGenerateMeshInternal())
             {
                 MajorSegments = OldMajorSegments;
-                UE_LOG(LogTemp, Warning, TEXT("SetMajorSegments: 网格生成失败，参数已恢复为 %d"), OldMajorSegments);
             }
         }
     }
@@ -130,7 +124,6 @@ void APolygonTorus::SetMinorSegments(int32 NewMinorSegments)
             if (!TryGenerateMeshInternal())
             {
                 MinorSegments = OldMinorSegments;
-                UE_LOG(LogTemp, Warning, TEXT("SetMinorSegments: 网格生成失败，参数已恢复为 %d"), OldMinorSegments);
             }
         }
     }
@@ -148,7 +141,6 @@ void APolygonTorus::SetTorusAngle(float NewTorusAngle)
             if (!TryGenerateMeshInternal())
             {
                 TorusAngle = OldTorusAngle;
-                UE_LOG(LogTemp, Warning, TEXT("SetTorusAngle: 网格生成失败，参数已恢复为 %f"), OldTorusAngle);
             }
         }
     }
@@ -166,7 +158,6 @@ void APolygonTorus::SetSmoothCrossSection(bool bNewSmoothCrossSection)
             if (!TryGenerateMeshInternal())
             {
                 bSmoothCrossSection = OldSmoothCrossSection;
-                UE_LOG(LogTemp, Warning, TEXT("SetSmoothCrossSection: 网格生成失败，参数已恢复"));
             }
         }
     }
@@ -184,7 +175,6 @@ void APolygonTorus::SetSmoothVerticalSection(bool bNewSmoothVerticalSection)
             if (!TryGenerateMeshInternal())
             {
                 bSmoothVerticalSection = OldSmoothVerticalSection;
-                UE_LOG(LogTemp, Warning, TEXT("SetSmoothVerticalSection: 网格生成失败，参数已恢复"));
             }
         }
     }

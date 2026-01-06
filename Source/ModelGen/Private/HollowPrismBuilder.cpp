@@ -114,16 +114,12 @@ void FHollowPrismBuilder::ComputeVerticalProfile(EInnerOuter InnerOuter, TArray<
     const float BaseRadius = (InnerOuter == EInnerOuter::Inner) ? HollowPrism.InnerRadius : HollowPrism.OuterRadius;
     const float Sign = (InnerOuter == EInnerOuter::Inner) ? 1.0f : -1.0f;
 
-    // 【核心修复】：调整Z坐标使中心点在底面（Z=0），与其他模型一致
-    // 原来：顶部在Height/2，底部在-Height/2，中心在0
-    // 现在：顶部在Height，底部在0，中心在底面
     const float TopArcCenterZ = HollowPrism.Height - BevelR;
     const float BottomArcCenterZ = BevelR;
     const float ArcCenterR = BaseRadius + (Sign * BevelR);
 
     float CurrentV = 0.0f;
 
-    // Top Bevel
     for (int32 i = 0; i <= Segments; ++i)
     {
         float Alpha = (Segments > 0) ? (float)i / Segments : 1.0f;
@@ -150,7 +146,6 @@ void FHollowPrismBuilder::ComputeVerticalProfile(EInnerOuter InnerOuter, TArray<
         OutProfile.Add(Point);
     }
 
-    // Wall
     {
         float WallHeight = HollowPrism.Height - 2.0f * BevelR;
         if (WallHeight > KINDA_SMALL_NUMBER)
@@ -170,7 +165,6 @@ void FHollowPrismBuilder::ComputeVerticalProfile(EInnerOuter InnerOuter, TArray<
         }
     }
 
-    // Bottom Bevel
     for (int32 i = 1; i <= Segments; ++i)
     {
         float Alpha = (float)i / Segments;
@@ -205,9 +199,6 @@ void FHollowPrismBuilder::GenerateSideGeometry(EInnerOuter InnerOuter)
 
     if (Profile.Num() < 2) return;
 
-    // 【核心修复】：确定 UV 参考半径（圆柱投影）
-    // 内壁使用 InnerRadius，外壁使用 OuterRadius
-    // 这保证了无论在倒角处半径如何变化，UV 展开都是基于主圆柱面的
     const float ReferenceRadius = (InnerOuter == EInnerOuter::Inner) ? HollowPrism.InnerRadius : HollowPrism.OuterRadius;
 
     TArray<TArray<int32>> GridIndices;
@@ -225,7 +216,6 @@ void FHollowPrismBuilder::GenerateSideGeometry(EInnerOuter InnerOuter)
 
         const float CurrentAngleDelta = s * (ArcAngleRadians / Sides);
 
-        // 【核心修复】：U 坐标基于 ReferenceRadius 计算，消除梯形扭曲
         float U = CurrentAngleDelta * ReferenceRadius;
 
         for (int32 p = 0; p < Profile.Num(); ++p)
@@ -350,19 +340,15 @@ void FHollowPrismBuilder::GenerateCutPlanes()
 
 void FHollowPrismBuilder::CreateCutPlane(float Angle, const TArray<int32>& InnerIndices, const TArray<int32>& OuterIndices, bool bIsStartFace)
 {
-    // 法线
     float NormalAngle = Angle + (bIsStartFace ? -HALF_PI : HALF_PI);
     FVector Normal(FMath::Cos(NormalAngle), FMath::Sin(NormalAngle), 0.0f);
 
     int32 NumPoints = InnerIndices.Num();
 
-    // 必须创建新顶点 (硬边)
     TArray<int32> NewInner, NewOuter;
     NewInner.Reserve(NumPoints);
     NewOuter.Reserve(NumPoints);
 
-    // 【核心修复】：调整V坐标计算，因为Z坐标已经从[-Height/2, Height/2]改为[0, Height]
-    // 现在Z在[0, Height]范围内，V = Height - Z，使得顶部（Z=Height）的V=0，底部（Z=0）的V=Height
     const float Height = HollowPrism.Height;
 
     for (int32 i = 0; i < NumPoints; ++i)
@@ -370,11 +356,9 @@ void FHollowPrismBuilder::CreateCutPlane(float Angle, const TArray<int32>& Inner
         FVector P_In = GetPosByIndex(InnerIndices[i]);
         FVector P_Out = GetPosByIndex(OuterIndices[i]);
 
-        // UV = (Radius, V_flipped) * Scale
         float R_In = FVector2D(P_In.X, P_In.Y).Size();
         float R_Out = FVector2D(P_Out.X, P_Out.Y).Size();
 
-        // 【核心修复】：反转V值 (Height - Z) -> (Top=0, Bottom=Height)
         float V_In = Height - P_In.Z;
         float V_Out = Height - P_Out.Z;
 
@@ -385,7 +369,6 @@ void FHollowPrismBuilder::CreateCutPlane(float Angle, const TArray<int32>& Inner
         NewOuter.Add(AddVertex(P_Out, Normal, UV_Out));
     }
 
-    // 生成面
     for (int32 i = 0; i < NumPoints - 1; ++i)
     {
         if (bIsStartFace)

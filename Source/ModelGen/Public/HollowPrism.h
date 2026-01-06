@@ -1,10 +1,5 @@
 // Copyright (c) 2024. All rights reserved.
 
-/**
- * @file HollowPrism.h
- * @brief 可配置的空心棱柱生成器
- */
-
 #pragma once
 
 #include "CoreMinimal.h"
