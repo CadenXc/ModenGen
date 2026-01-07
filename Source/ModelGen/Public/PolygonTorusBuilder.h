@@ -35,6 +35,4 @@ private:
 
     void GenerateEndCaps();
     void CreateCap(const TArray<int32>& RingIndices, bool bIsStart);
-
-    void ValidateAndClampParameters();
 };

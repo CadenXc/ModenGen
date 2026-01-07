@@ -1,31 +1,56 @@
-# Build and Release Folders
-bin-debug/
-bin-release/
-[Oo]bj/
-[Bb]in/
+# ==============================================================================
+# Unreal Engine 4/5 Default Ignore
+# ==============================================================================
 
-# Other files and folders
-.settings/
-
-# Executables
-*.swf
-*.air
-*.ipa
-*.apk
-
-# Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
-# should NOT be excluded as they contain compiler settings and other important
-# information for Eclipse / Flash Builder.
-
-# UE
-.vs/
+# 1. 编译生成的二进制文件 (必须忽略，由源码编译生成)
 Binaries/
-Config/
-Content/
-DerivedDataCache/
-Intermediate/
-Saved/
-Script/
-ModelGen.sln
-ModelGen.uproject
+*/Binaries/
 
+# 2. 中间文件 (必须忽略，生成项目文件时会自动创建)
+Intermediate/
+*/Intermediate/
+
+# 3. 本地缓存与日志 (必须忽略，包含本地设置、日志、截图、自动保存)
+Saved/
+DerivedDataCache/
+
+# 4. 构建脚本生成的临时文件
+Build/Receipts/
+Build/Ad*/
+Build/IOS/
+Build/Android/
+Build/HTML5/
+
+# 5. IDE 生成的项目文件 (必须忽略，右键 .uproject -> Generate Project Files 会生成)
+.idea/
+.vscode/
+.vs/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.user
+*.xcodeproj
+*.xcworkspace
+
+# ==============================================================================
+# Plugins (插件相关)
+# ==============================================================================
+# 忽略插件内的编译文件，但保留插件源码和内容
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+
+# ==============================================================================
+# OS / Misc (操作系统垃圾文件)
+# ==============================================================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ==============================================================================
+# 重点说明：绝对不能忽略以下文件 (不要写进 gitignore)
+# ==============================================================================
+# Content/      <- 存放蓝图、模型、材质，没了它项目就是空的
+# Config/       <- 存放输入设置、游戏模式配置
+# Source/       <- C++ 源码
+# .uproject     <- 项目入口

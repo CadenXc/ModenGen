@@ -268,7 +268,3 @@ void FPolygonTorusBuilder::CreateCap(const TArray<int32>& RingIndices, bool bIsS
         }
     }
 }
-
-void FPolygonTorusBuilder::ValidateAndClampParameters()
-{
-}

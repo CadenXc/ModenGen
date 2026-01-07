@@ -1,5 +1,3 @@
-// Copyright (c) 2024. All rights reserved.
-
 #include "PyramidBuilder.h"
 #include "Pyramid.h"
 #include "ModelGenMeshData.h"

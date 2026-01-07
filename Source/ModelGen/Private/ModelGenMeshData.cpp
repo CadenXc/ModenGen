@@ -1,5 +1,3 @@
-// Copyright (c) 2024. All rights reserved.
-
 #include "ModelGenMeshData.h"
 #include "ProceduralMeshComponent.h"
 #include "KismetProceduralMeshLibrary.h"
@@ -37,7 +35,6 @@ bool FModelGenMeshData::IsValid() const
         UVs.Num() == Vertices.Num() &&
         Tangents.Num() == Vertices.Num();
 
-    // 添加额外的安全检查
     const bool bValidIndices = [this]() -> bool
         {
             for (int32 Index : Triangles)
